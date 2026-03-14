@@ -1,0 +1,61 @@
+# searxng/settings.yml — minimal config for Tinker
+# Place this file at ./searxng/settings.yml before running docker compose.
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "Tinker Search"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json      # Required by Tinker's WebSearchTool
+
+server:
+  # CHANGE THIS before any non-local deployment!
+  secret_key: "tinker-change-me-in-production"
+  limiter: false
+  image_proxy: false
+  bind_address: "0.0.0.0:8080"
+  base_url: "http://localhost:8080/"
+
+redis:
+  url: redis://redis:6379/0
+
+# Enabled engines — tune to your needs
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+    use_mobile_ui: false
+
+  - name: bing
+    engine: bing
+    shortcut: b
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    categories: general
+
+  - name: arxiv
+    engine: arxiv
+    shortcut: arx
+    categories: science
+
+  - name: github
+    engine: github
+    shortcut: gh
+    categories: it
+
+ui:
+  default_theme: simple
+  infinite_scroll: false

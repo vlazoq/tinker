@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name            = "tinker-dashboard"
+version         = "0.1.0"
+description     = "Observability Dashboard for the Tinker autonomous architecture engine"
+requires-python = ">=3.11"
+
+dependencies = [
+    "textual>=0.52.0",      # TUI framework
+    "rich>=13.7.0",         # Rich formatting (bundled with Textual)
+    "loguru>=0.7.0",        # Structured logging
+]
+
+[project.optional-dependencies]
+redis = [
+    "redis[asyncio]>=5.0.0",  # Redis pub/sub subscriber backend
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "textual-dev>=0.52.0",    # textual devtools / live-reload
+]
+
+[project.scripts]
+tinker-dashboard = "tinker.dashboard.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tinker*"]

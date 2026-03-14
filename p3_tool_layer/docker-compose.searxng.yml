@@ -1,0 +1,80 @@
+###############################################################################
+# Tinker — SearXNG Self-Hosted Search Instance
+# Run:  docker compose up -d
+# Then: http://localhost:8080
+###############################################################################
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # SearXNG — privacy-respecting meta-search engine
+  # ---------------------------------------------------------------------------
+  searxng:
+    image: searxng/searxng:latest
+    container_name: tinker-searxng
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      # This secret is used to sign cookies — change before production use!
+      - SEARXNG_SECRET=tinker-change-me-in-production
+      - SEARXNG_BASE_URL=http://localhost:8080/
+      - SEARXNG_BIND_ADDRESS=0.0.0.0:8080
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Redis — SearXNG uses Redis for rate-limit and cache state
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: tinker-searxng-redis
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes: {}
+
+###############################################################################
+# After first `docker compose up`, a default settings.yml will be written to
+# ./searxng/.  Edit it to enable/disable search engines.
+#
+# Key settings to change in ./searxng/settings.yml:
+#
+#   search:
+#     formats:
+#       - html
+#       - json          # <-- REQUIRED for Tinker's WebSearchTool
+#
+#   server:
+#     secret_key: "your-strong-random-secret"
+#     limiter: false    # Disable if running locally with no rate-limit concerns
+#
+#   engines:
+#     - name: google
+#       engine: google
+#       shortcut: g
+#     - name: bing
+#       ...
+###############################################################################

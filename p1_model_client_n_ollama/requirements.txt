@@ -1,0 +1,5 @@
+# Tinker — model_client requirements
+aiohttp>=3.9.0
+
+# Optional: improves token counting accuracy (falls back to char heuristic if absent)
+# tiktoken>=0.6.0

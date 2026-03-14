@@ -1,0 +1,16 @@
+# Tinker Memory Manager — Dependencies
+# Install with: pip install -r requirements.txt
+
+# Storage engines
+redis>=5.0.0                    # Redis client (async support via redis.asyncio)
+duckdb>=0.10.0                  # In-process OLAP DB for session memory
+chromadb>=0.5.0                 # Vector DB for semantic research archive
+aiosqlite>=0.20.0               # Async SQLite for task registry
+
+# Embeddings
+sentence-transformers>=3.0.0    # Local embedding models (MiniLM, nomic-embed-text)
+
+# Test dependencies
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+fakeredis[aioredis]>=2.23.0     # In-process Redis mock for tests
