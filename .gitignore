@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tinker runtime files
+tinker_session.duckdb
+tinker_tasks.sqlite
+tinker_tasks_engine.sqlite
+chroma_db/
+tinker_artifacts/
+tinker_diagrams/
+tinker_workspace/
+
+# Orchestrator state snapshot (written at runtime)
+/tmp/tinker_orchestrator_state.json
+
+# Environment
+.env
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

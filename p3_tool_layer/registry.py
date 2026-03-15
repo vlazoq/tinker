@@ -151,6 +151,61 @@ class ToolRegistry:
     def __repr__(self) -> str:
         return f"ToolRegistry(tools={self.tool_names})"
 
+    # ------------------------------------------------------------------
+    # Orchestrator convenience method
+    # ------------------------------------------------------------------
+
+    async def research(self, query: str) -> dict:
+        """
+        High-level research convenience method expected by the Orchestrator.
+
+        Runs a web search for *query* and, if results are found, optionally
+        scrapes the top result for full-text content.  Returns a unified dict
+        the micro loop can inject into context.
+        """
+        result = await self.execute("web_search", query=query, max_results=5)
+
+        search_data: dict = {}
+        top_url: str = ""
+
+        if result.success and isinstance(result.data, list) and result.data:
+            search_data = {"results": result.data}
+            top_url = result.data[0].get("url", "") if result.data else ""
+        elif result.success and isinstance(result.data, dict):
+            search_data = result.data
+            items = result.data.get("results", [])
+            top_url = items[0].get("url", "") if items else ""
+        else:
+            # Web search unavailable — return a minimal stub
+            return {
+                "query": query,
+                "result": f"Web search unavailable for '{query}'.",
+                "sources": [],
+            }
+
+        # Optional: scrape top result for richer content
+        scraped_text = ""
+        if top_url and "web_scraper" in self._tools:
+            scrape_result = await self.execute("web_scraper", url=top_url)
+            if scrape_result.success:
+                data = scrape_result.data or {}
+                scraped_text = data.get("text", "") if isinstance(data, dict) else str(data)
+
+        sources = []
+        for r in (search_data.get("results") or []):
+            url = r.get("url", "")
+            if url:
+                sources.append(url)
+
+        summary = scraped_text[:2000] if scraped_text else str(search_data)[:1000]
+
+        return {
+            "query": query,
+            "result": summary,
+            "sources": sources,
+            "raw_search": search_data,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Factory — build the default registry with all standard tools

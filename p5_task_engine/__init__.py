@@ -21,6 +21,7 @@ from .generator import TaskGenerator
 from .scorer import PriorityScorer, ScorerWeights
 from .resolver import DependencyResolver, DependencyCycleError
 from .queue import TaskQueue
+from .engine import TaskEngine
 
 __all__ = [
     # Schema
@@ -36,4 +37,6 @@ __all__ = [
     "DependencyResolver",
     "DependencyCycleError",
     "TaskQueue",
+    # Façade
+    "TaskEngine",
 ]

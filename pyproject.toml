@@ -1,0 +1,96 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name            = "tinker"
+version         = "0.1.0"
+description     = "Tinker — Autonomous Architecture Thinking Engine"
+readme          = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    # ── P1: Model Client ─────────────────────────────────────────────
+    "aiohttp>=3.9.0",
+
+    # ── P2: Memory Manager ───────────────────────────────────────────
+    "redis>=5.0.0",
+    "duckdb>=0.10.0",
+    "chromadb>=0.5.0",
+    "aiosqlite>=0.20.0",
+    "sentence-transformers>=3.0.0",
+
+    # ── P3: Tool Layer ───────────────────────────────────────────────
+    "httpx>=0.27.0",
+    "trafilatura>=1.12.0",
+    "playwright>=1.44.0",
+    "anyio>=4.4.0",
+    "graphviz>=0.20.3",
+
+    # ── P4: Agent Prompts ────────────────────────────────────────────
+    # (no extra deps — pure Python)
+
+    # ── P5: Task Engine ──────────────────────────────────────────────
+    # (pure Python / stdlib)
+
+    # ── P6: Context Assembler ────────────────────────────────────────
+    # (pure Python)
+
+    # ── P7: Orchestrator ─────────────────────────────────────────────
+    # (pure Python)
+
+    # ── P8: Architecture State Manager ───────────────────────────────
+    "pydantic>=2.0.0",      # used by ArchitectureState.model_validate_json
+
+    # ── P9: Anti-Stagnation ──────────────────────────────────────────
+    # (depends on p2 embeddings — already listed above)
+
+    # ── P10: Dashboard ───────────────────────────────────────────────
+    "textual>=0.52.0",
+    "rich>=13.7.0",
+    "loguru>=0.7.0",
+
+    # ── Root-level ───────────────────────────────────────────────────
+    "python-dotenv>=1.0.0",     # for .env loading in main.py
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "fakeredis[aioredis]>=2.23.0",
+    "textual-dev>=0.52.0",
+]
+
+[project.scripts]
+tinker       = "main:main"
+tinker-dash  = "p10_observability_dashboard.__main__:main"
+
+[tool.setuptools.packages.find]
+where   = ["."]
+include = [
+    "p1_model_client_n_ollama*",
+    "p2_memory_manager*",
+    "p3_tool_layer*",
+    "p4_agent_prompts*",
+    "p5_task_engine*",
+    "p6_context_assembler*",
+    "p7_orchestrator*",
+    "p8_architecture_state_manager*",
+    "p9_anti_stagnation_manager*",
+    "p10_observability_dashboard*",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths    = [
+    "p1_model_client_n_ollama",
+    "p2_memory_manager",
+    "p3_tool_layer",
+    "p4_agent_prompts",
+    "p5_task_engine",
+    "p6_context_assembler",
+    "p7_orchestrator",
+    "p8_architecture_state_manager",
+    "p9_anti_stagnation_manager",
+]

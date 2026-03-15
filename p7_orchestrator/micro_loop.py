@@ -210,19 +210,30 @@ async def _store_artifact(
     orch: "Orchestrator", task: dict, architect_result: dict, critic_result: dict
 ) -> str:
     try:
-        artifact = {
-            "task_id": task["id"],
+        # Build a human-readable content string from the architect + critic outputs
+        content = (
+            f"## Task: {task.get('description', task['id'])}\n"
+            f"Subsystem: {task.get('subsystem', 'unknown')}\n\n"
+            f"## Architect Output\n{architect_result.get('content', '')}\n\n"
+            f"## Critic Output\n{critic_result.get('content', '')}\n"
+            f"Critic Score: {critic_result.get('score', 'N/A')}"
+        )
+        metadata = {
             "subsystem": task.get("subsystem", "unknown"),
-            "architect_output": architect_result.get("content", ""),
-            "critic_output": critic_result.get("content", ""),
             "critic_score": critic_result.get("score"),
             "tags": task.get("tags", []),
         }
-        artifact_id = await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.memory_manager.store_artifact)(artifact),
+        # store_artifact returns an Artifact object; extract its .id
+        artifact = await asyncio.wait_for(
+            asyncio.coroutine_if_needed(orch.memory_manager.store_artifact)(
+                content=content,
+                task_id=task["id"],
+                metadata=metadata,
+            ),
             timeout=15.0,
         )
-        return artifact_id
+        # Support both Artifact objects (real MM) and plain string IDs (stub MM)
+        return artifact.id if hasattr(artifact, "id") else str(artifact)
     except Exception as exc:
         raise MicroLoopError(f"memory_manager.store_artifact failed: {exc}") from exc
 
@@ -235,6 +246,17 @@ async def _complete_task(orch: "Orchestrator", task: dict, artifact_id: str) -> 
             ),
             timeout=10.0,
         )
+    except TypeError:
+        # Fallback: some task engine implementations use (task_id, outputs=[...])
+        try:
+            await asyncio.wait_for(
+                asyncio.coroutine_if_needed(orch.task_engine.complete_task)(
+                    task_id=task["id"], outputs=[artifact_id]
+                ),
+                timeout=10.0,
+            )
+        except Exception as exc2:
+            logger.warning("task_engine.complete_task failed (non-fatal): %s", exc2)
     except Exception as exc:
         # Non-fatal: artifact is stored, just couldn't mark task done.
         logger.warning("task_engine.complete_task failed (non-fatal): %s", exc)
