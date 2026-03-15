@@ -11,7 +11,8 @@ from typing import Any
 from .base import BaseTool, ToolSchema
 
 
-SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8080")
+# Honour both the Tinker-prefixed name (canonical) and the bare name (legacy)
+SEARXNG_URL = os.getenv("TINKER_SEARXNG_URL") or os.getenv("SEARXNG_URL", "http://localhost:8080")
 
 
 class WebSearchTool(BaseTool):

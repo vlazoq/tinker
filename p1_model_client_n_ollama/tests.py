@@ -42,13 +42,13 @@ logging.basicConfig(
 logger = logging.getLogger("tinker.tests")
 
 # ── local imports ─────────────────────────────────────────────────────────────
-from tinker.model_client import (
+from p1_model_client_n_ollama import (
     AgentRole, Machine, MachineConfig, Message,
     ModelRequest, ModelResponse, ModelRouter, RetryConfig,
     ROLE_MACHINE_MAP, extract_json, build_json_instruction,
 )
-from tinker.model_client.context import count_tokens, enforce_context_limit
-from tinker.model_client.client import (
+from p1_model_client_n_ollama.context import count_tokens, enforce_context_limit
+from p1_model_client_n_ollama.client import (
     OllamaClient, ConnectionError as MCConnectionError,
     ServerError, TimeoutError as MCTimeoutError,
 )

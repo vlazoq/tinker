@@ -26,7 +26,7 @@ from typing import List
 # ── allow running from repo root without install ──────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../.."))
 
-from tinker.anti_stagnation import (
+from p9_anti_stagnation_manager import (
     FallbackTFIDFBackend,
     InterventionType,
     MicroLoopContext,
@@ -34,7 +34,7 @@ from tinker.anti_stagnation import (
     StagnationMonitorConfig,
     StagnationType,
 )
-from tinker.anti_stagnation.config import (
+from p9_anti_stagnation_manager.config import (
     CritiqueCollapseConfig,
     ResearchSaturationConfig,
     SemanticLoopConfig,
