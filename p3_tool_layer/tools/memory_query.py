@@ -17,7 +17,13 @@ from .base import BaseTool, ToolSchema
 
 @runtime_checkable
 class MemoryManagerProtocol(Protocol):
-    """Minimal interface the MemoryManager must implement."""
+    """
+    Minimal interface the MemoryManager must implement.
+
+    The real MemoryManager (p2) exposes `search_research()` with slightly
+    different parameters; the `search()` adapter shim added to manager.py
+    satisfies this protocol.
+    """
 
     async def search(
         self,

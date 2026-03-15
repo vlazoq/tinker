@@ -427,3 +427,55 @@ class ContextAssembler:
         divider = "=" * 60
         title   = name.replace("_", " ").upper()
         return f"{divider}\n{title}\n{divider}\n{content}"
+
+    # ------------------------------------------------------------------
+    # Orchestrator-facing adapter
+    # ------------------------------------------------------------------
+
+    async def build(self, task: dict, max_artifacts: int = 10) -> dict:
+        """
+        Simplified adapter used by the Orchestrator's micro loop.
+
+        Converts the plain dict *task* into a context dict the Architect
+        agent can use.  Delegates to `assemble()` internally for full
+        token-budgeted assembly, or falls back to a lightweight dict if
+        `assemble()` fails (e.g. memory backend not yet connected).
+
+        Returns a dict:  {"task": task, "prompt": str, "prior_artifacts": [...], ...}
+        """
+        # Build an internal Task object from the dict
+        internal_task = Task(
+            id=task.get("id", "unknown"),
+            description=task.get("description", ""),
+            goal=task.get("title", task.get("description", "architecture design task")),
+            constraints=task.get("constraints", []),
+            metadata={k: v for k, v in task.items()
+                      if k not in ("id", "description", "title", "constraints")},
+        )
+
+        try:
+            assembled = await self.assemble(
+                task=internal_task,
+                role=AgentRole.ARCHITECT,
+                loop_level=0,
+            )
+            return {
+                "task": task,
+                "prompt": assembled.prompt,
+                "tokens_used": assembled.tokens_used,
+                "sections_included": assembled.sections_included,
+                "sections_dropped": assembled.sections_dropped,
+                "warnings": assembled.warnings,
+                "prior_artifacts": [],
+                "max_artifacts_requested": max_artifacts,
+            }
+        except Exception as exc:
+            # Graceful fallback: return a minimal context dict so the
+            # orchestrator can continue even if context assembly fails.
+            return {
+                "task": task,
+                "prompt": internal_task.to_text(),
+                "prior_artifacts": [],
+                "max_artifacts_requested": max_artifacts,
+                "context_assembly_error": str(exc),
+            }

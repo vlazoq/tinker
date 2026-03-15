@@ -165,6 +165,15 @@ class StubSynthesizerAgent:
 
 # ── Memory Manager ────────────────────────────────────────────────────────────
 
+class StubArtifact:
+    """Minimal Artifact-like object returned by StubMemoryManager.store_artifact."""
+    def __init__(self, artifact_id: str) -> None:
+        self.id = artifact_id
+
+    def __str__(self) -> str:
+        return self.id
+
+
 class StubMemoryManager:
     """In-process dict-based store.  Real impl uses a vector DB + metadata store."""
 
@@ -172,10 +181,34 @@ class StubMemoryManager:
         self._artifacts: dict[str, dict] = {}
         self._documents: dict[str, dict] = {}
 
-    async def store_artifact(self, artifact: dict) -> str:
+    async def store_artifact(
+        self,
+        artifact: dict | None = None,
+        content: str | None = None,
+        artifact_type=None,
+        task_id: str | None = None,
+        metadata: dict | None = None,
+        **kwargs,
+    ) -> "StubArtifact":
+        """
+        Accept both the old dict-based call and the new keyword-arg call that
+        matches the real MemoryManager signature.
+        Returns a stub object with an .id attribute so callers can do artifact.id.
+        """
         artifact_id = str(uuid.uuid4())
-        self._artifacts[artifact_id] = {**artifact, "id": artifact_id, "stored_at": time.time()}
-        return artifact_id
+        record: dict = {"id": artifact_id, "stored_at": time.time()}
+        if artifact is not None:
+            # Old dict-based call: store_artifact({"task_id": ..., "subsystem": ...})
+            record.update(artifact)
+        else:
+            # New keyword-arg call: store_artifact(content=..., task_id=..., metadata=...)
+            record["content"]  = content or ""
+            record["task_id"]  = task_id
+            record["metadata"] = metadata or {}
+            if artifact_type is not None:
+                record["artifact_type"] = getattr(artifact_type, "value", str(artifact_type))
+        self._artifacts[artifact_id] = record
+        return StubArtifact(artifact_id)
 
     async def get_artifacts(self, subsystem: str, limit: int = 10) -> list[dict]:
         matching = [

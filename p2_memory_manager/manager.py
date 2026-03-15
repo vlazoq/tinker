@@ -389,6 +389,120 @@ class MemoryManager:
         return [Task.from_dict(r) for r in rows]
 
     # ------------------------------------------------------------------
+    # Orchestrator-facing convenience methods
+    # (adapt the richer internal API to the flat dict interface the
+    #  orchestrator and its loops expect)
+    # ------------------------------------------------------------------
+
+    async def get_artifacts(
+        self,
+        subsystem: str,
+        limit: int = 10,
+        session_id: Optional[str] = None,
+    ) -> list[dict]:
+        """
+        Return up to *limit* recent artifacts for a given subsystem as plain dicts.
+        Used by the meso loop to collect work done on a subsystem.
+        """
+        sid = session_id or self.session_id
+        rows = await self._duckdb.get_recent(sid, artifact_type=None, limit=limit * 5)
+        result = []
+        for row in rows:
+            if isinstance(row.get("metadata"), str):
+                import json
+                row["metadata"] = json.loads(row["metadata"])
+            meta = row.get("metadata", {})
+            if meta.get("subsystem", "") == subsystem or not subsystem:
+                result.append({
+                    "id": row["id"],
+                    "content": row["content"],
+                    "subsystem": meta.get("subsystem", subsystem),
+                    "artifact_type": row.get("artifact_type", "raw"),
+                    "task_id": row.get("task_id"),
+                    "created_at": row.get("created_at", ""),
+                    "metadata": meta,
+                })
+            if len(result) >= limit:
+                break
+        return result
+
+    async def store_document(self, document: dict) -> str:
+        """
+        Store a meso/macro synthesis document (plain dict) and return its ID.
+        Internally stored as a SUMMARY artifact with metadata.
+        """
+        content = document.get("synthesis") or document.get("content", str(document))
+        metadata = {k: v for k, v in document.items() if k not in ("synthesis", "content")}
+        artifact = await self.store_artifact(
+            content=content,
+            artifact_type=ArtifactType.SUMMARY,
+            task_id=document.get("task_id"),
+            metadata=metadata,
+        )
+        return artifact.id
+
+    async def get_all_documents(self, session_id: Optional[str] = None) -> list[dict]:
+        """
+        Return all stored SUMMARY documents (meso/macro synthesis results).
+        Used by the macro loop to compile a full architectural snapshot.
+        """
+        sid = session_id or self.session_id
+        rows = await self._duckdb.get_recent(
+            sid,
+            artifact_type=ArtifactType.SUMMARY.value,
+            limit=500,
+            include_archived=True,
+        )
+        result = []
+        for row in rows:
+            if isinstance(row.get("metadata"), str):
+                import json
+                row["metadata"] = json.loads(row["metadata"])
+            result.append({
+                "id": row["id"],
+                "content": row["content"],
+                "artifact_type": row.get("artifact_type", "summary"),
+                "task_id": row.get("task_id"),
+                "created_at": row.get("created_at", ""),
+                "metadata": row.get("metadata", {}),
+            })
+        return result
+
+    async def search(
+        self,
+        query: str,
+        top_k: int = 10,
+        filters: Optional[dict] = None,
+    ) -> list[dict]:
+        """
+        Semantic search adapter for the MemoryQueryTool protocol.
+        Delegates to search_research() and normalises results to plain dicts.
+        """
+        filter_topic   = (filters or {}).get("artifact_type")
+        filter_session = (filters or {}).get("session_id")
+        notes = await self.search_research(
+            query=query,
+            n_results=top_k,
+            filter_topic=filter_topic,
+            filter_session=filter_session,
+        )
+        return [
+            {
+                "id": n.id,
+                "memory_id": n.id,
+                "score": 1.0,          # ChromaDB distance not exposed here
+                "title": n.topic,
+                "artifact_type": "research_note",
+                "task_id": n.task_id or "",
+                "created_at": n.created_at.isoformat(),
+                "tags": n.tags,
+                "snippet": n.content[:300],
+                "text": n.content,
+            }
+            for n in notes
+        ]
+
+    # ------------------------------------------------------------------
     # Compression
     # ------------------------------------------------------------------
 

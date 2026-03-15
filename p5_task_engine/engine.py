@@ -1,0 +1,148 @@
+"""
+engine.py — TaskEngine façade
+──────────────────────────────
+Wraps TaskRegistry, TaskQueue, and TaskGenerator behind the simple interface
+the Orchestrator (and its micro/meso/macro loops) expects:
+
+    engine = TaskEngine(problem_statement="Design a distributed job queue")
+    task_dict = await engine.select_task()         # dict or None
+    await engine.complete_task(task_id, artifact_id)
+    new_tasks = await engine.generate_tasks(parent_task, architect_result, critic_result)
+
+All methods are async so the Orchestrator can await them uniformly, even
+though the underlying registry is synchronous SQLite.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any, Optional
+
+from .schema import Task, TaskStatus, TaskType, Subsystem
+from .registry import TaskRegistry
+from .queue import TaskQueue
+from .generator import TaskGenerator
+from .scorer import PriorityScorer
+
+log = logging.getLogger(__name__)
+
+
+class TaskEngine:
+    """
+    Thin async façade over the Task Engine's internal components.
+
+    Parameters
+    ----------
+    problem_statement : str
+        The top-level design problem Tinker is working on.
+        Used to seed an initial task if the registry is empty.
+    db_path : str
+        Path to the SQLite file for persistent task storage.
+        Defaults to ":memory:" for ephemeral runs.
+    """
+
+    def __init__(
+        self,
+        problem_statement: str = "Design a robust software architecture",
+        db_path: str = ":memory:",
+    ) -> None:
+        self._problem = problem_statement
+        self.registry = TaskRegistry(db_path=db_path)
+        self.scorer   = PriorityScorer()
+        self.queue    = TaskQueue(registry=self.registry, scorer=self.scorer)
+        self.generator = TaskGenerator()
+
+        # Seed with an initial task so the orchestrator always has work
+        self._seed_initial_task()
+
+    # ── Public async API ──────────────────────────────────────────────────
+
+    async def select_task(self) -> Optional[dict]:
+        """
+        Return the highest-priority PENDING task as a plain dict, marking it
+        ACTIVE in the registry.  Returns None if there are no tasks.
+        """
+        task = await asyncio.get_running_loop().run_in_executor(
+            None, self.queue.get_next
+        )
+        if task is None:
+            return None
+        return self._task_to_orchestrator_dict(task)
+
+    async def complete_task(
+        self,
+        task_id: str,
+        artifact_id: Optional[str] = None,
+        outputs: Optional[list[str]] = None,
+    ) -> None:
+        """
+        Mark a task as COMPLETE.
+
+        Accepts *artifact_id* (the micro loop's convention) OR *outputs*
+        (the TaskQueue's native convention).  Either form works.
+        """
+        out = outputs or ([artifact_id] if artifact_id else [])
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.queue.complete_task, task_id, out
+        )
+
+    async def generate_tasks(
+        self,
+        parent_task: dict,
+        architect_result: dict,
+        critic_result: dict,
+    ) -> list[dict]:
+        """
+        Parse the Architect's JSON output and enqueue new child tasks.
+        Returns the new tasks as plain dicts.
+        """
+        parent_id = parent_task.get("id")
+
+        def _generate() -> list[Task]:
+            new_tasks = self.generator.from_architect_output(
+                architect_result, parent_task_id=parent_id
+            )
+            for t in new_tasks:
+                self.registry.save(t)
+            return new_tasks
+
+        new_tasks = await asyncio.get_running_loop().run_in_executor(None, _generate)
+        return [self._task_to_orchestrator_dict(t) for t in new_tasks]
+
+    # ── Helpers ───────────────────────────────────────────────────────────
+
+    def _seed_initial_task(self) -> None:
+        """Insert a root design task if the registry is empty."""
+        existing = self.registry.by_status(TaskStatus.PENDING)
+        if existing:
+            return
+        root = Task(
+            title="Initial architecture design",
+            description=self._problem,
+            type=TaskType.DESIGN,
+            subsystem=Subsystem.CROSS_CUTTING,
+            status=TaskStatus.PENDING,
+            confidence_gap=0.9,
+        )
+        self.registry.save(root)
+        log.info("TaskEngine seeded with initial task '%s'", root.title)
+
+    @staticmethod
+    def _task_to_orchestrator_dict(task: Task) -> dict:
+        """
+        Convert a Task dataclass to the flat dict the Orchestrator uses
+        (task["id"], task.get("subsystem"), task.get("tags", []), …).
+        """
+        d = task.to_dict()
+        # Ensure the most-used keys are always present at the top level
+        d.setdefault("subsystem", Subsystem.CROSS_CUTTING.value)
+        d.setdefault("tags", [])
+        d.setdefault("description", "")
+        return d
+
+    @property
+    def queue_depth(self) -> int:
+        return self.queue.depth()
+
+    def stats(self) -> dict[str, Any]:
+        return self.queue.stats()
