@@ -4,6 +4,7 @@ Defaults are sane for a long-running production run; override in tests.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 
 
@@ -47,4 +48,9 @@ class OrchestratorConfig:
     context_max_artifacts: int = 10
 
     # ── Dashboard state path ────────────────────────────────────────────────
-    state_snapshot_path: str = "/tmp/tinker_orchestrator_state.json"
+    # Override with TINKER_STATE_PATH env-var for non-/tmp deployments.
+    state_snapshot_path: str = field(
+        default_factory=lambda: os.getenv(
+            "TINKER_STATE_PATH", "/tmp/tinker_orchestrator_state.json"
+        )
+    )
