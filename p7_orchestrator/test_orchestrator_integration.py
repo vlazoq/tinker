@@ -19,11 +19,12 @@ from pathlib import Path
 from typing import Any
 
 # ── allow running from repo root ──────────────────────────────────────────────
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tinker.orchestrator import Orchestrator, OrchestratorConfig
-from tinker.orchestrator.state import LoopStatus
-from tinker.orchestrator.stubs import build_stub_components, StubMemoryManager, StubArchStateManager
+from p7_orchestrator.orchestrator import Orchestrator
+from p7_orchestrator.config import OrchestratorConfig
+from p7_orchestrator.state import LoopStatus
+from p7_orchestrator.stubs import build_stub_components, StubMemoryManager, StubArchStateManager
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -132,7 +133,7 @@ async def test_meso_escalation():
     logger.info("=" * 60)
 
     # Force all tasks to the same subsystem so the counter accumulates
-    from tinker.orchestrator.stubs import StubTaskEngine
+    from p7_orchestrator.stubs import StubTaskEngine
     import uuid, time as _time
 
     class SingleSubsystemTaskEngine(StubTaskEngine):
@@ -170,8 +171,8 @@ async def test_meso_escalation():
     import types
 
     async def _patched(self_: Orchestrator) -> bool:
-        from tinker.orchestrator.micro_loop import run_micro_loop, MicroLoopError
-        from tinker.orchestrator.state import LoopStatus
+        from p7_orchestrator.micro_loop import run_micro_loop, MicroLoopError
+        from p7_orchestrator.state import LoopStatus
         try:
             record = await run_micro_loop(self_)
             self_.state.total_micro_loops += 1
@@ -284,8 +285,8 @@ async def test_failure_recovery():
 
     # Shutdown after 1 successful micro loop (failures don't count)
     import types
-    from tinker.orchestrator.micro_loop import run_micro_loop, MicroLoopError
-    from tinker.orchestrator.state import LoopStatus
+    from p7_orchestrator.micro_loop import run_micro_loop, MicroLoopError
+    from p7_orchestrator.state import LoopStatus
 
     async def _patched(self_: Orchestrator) -> bool:
         try:

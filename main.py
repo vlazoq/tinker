@@ -5,10 +5,10 @@ main.py — Tinker entrypoint.
 Usage:
     python main.py --problem "Design a distributed job queue system"
     python main.py --problem "..." --stubs          # use in-process stubs (no Ollama needed)
-    python main.py --problem "..." --no-dashboard   # suppress dashboard state writes
+    python main.py --problem "..." --dashboard      # launch TUI dashboard in-process
 
 Tinker will run indefinitely (Ctrl-C to stop).
-In a second terminal, run:
+Alternatively, run the dashboard in a separate terminal:
     python -m p10_observability_dashboard
 """
 from __future__ import annotations
@@ -209,7 +209,46 @@ def _build_stub_components(problem: str) -> dict:
 # Main async entrypoint
 # ---------------------------------------------------------------------------
 
-async def _async_main(problem: str, use_stubs: bool) -> None:
+def _make_dashboard_patch(orch_state_dict: dict) -> dict:
+    """
+    Translate an OrchestratorState.to_dict() snapshot into the patch format
+    that the dashboard's _deserialise_patch() understands.
+    """
+    totals = orch_state_dict.get("totals", {})
+    patch = {
+        "connected": True,
+        "loop_level": orch_state_dict.get("current_level", "micro"),
+        "micro_count": totals.get("micro", 0),
+        "meso_count":  totals.get("meso", 0),
+        "macro_count": totals.get("macro", 0),
+    }
+
+    # Build a minimal active_task entry from micro history if available
+    micro_history = orch_state_dict.get("micro_history", [])
+    task_id = orch_state_dict.get("current_task_id")
+    subsystem = orch_state_dict.get("current_subsystem", "")
+    if task_id:
+        patch["active_task"] = {
+            "id": task_id,
+            "type": "design",
+            "subsystem": subsystem or "",
+            "description": f"Task {task_id[:8]}… (subsystem: {subsystem or 'unknown'})",
+            "status": "active",
+        }
+
+    # Queue stats from subsystem counts
+    subsystem_counts = orch_state_dict.get("subsystem_micro_counts", {})
+    if subsystem_counts:
+        patch["queue_stats"] = {
+            "total_depth": sum(subsystem_counts.values()),
+            "by_status": {},
+            "by_type": subsystem_counts,
+        }
+
+    return patch
+
+
+async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     from p7_orchestrator.orchestrator import Orchestrator
     from p7_orchestrator.config import OrchestratorConfig
 
@@ -258,15 +297,52 @@ async def _async_main(problem: str, use_stubs: bool) -> None:
     logger.info("TINKER starting")
     logger.info("Problem: %s", problem)
     logger.info("Mode   : %s", "STUBS" if use_stubs else "REAL")
+    logger.info("Dashboard: %s", "in-process TUI" if dashboard else "separate terminal (python -m p10_observability_dashboard)")
     logger.info("=" * 60)
 
-    try:
-        await orchestrator.run()
-    finally:
-        if router is not None:
-            await router.shutdown()
-        if memory_manager is not None and hasattr(memory_manager, "close"):
-            await memory_manager.close()
+    # Patch the orchestrator's snapshot hook to also feed the dashboard queue
+    from p10_observability_dashboard.subscriber import publish_state as _publish_state
+
+    _orig_try_write = orchestrator._try_write_snapshot
+
+    def _hooked_write_snapshot() -> None:
+        _orig_try_write()
+        try:
+            _publish_state(_make_dashboard_patch(orchestrator.state.to_dict()))
+        except Exception as _exc:
+            logger.debug("Dashboard publish_state failed: %s", _exc)
+
+    orchestrator._try_write_snapshot = _hooked_write_snapshot
+
+    async def _run_orchestrator() -> None:
+        try:
+            await orchestrator.run()
+        finally:
+            if router is not None:
+                await router.shutdown()
+            if memory_manager is not None and hasattr(memory_manager, "close"):
+                await memory_manager.close()
+
+    if dashboard:
+        from p10_observability_dashboard.app import TinkerDashboard
+        from p10_observability_dashboard.subscriber import QueueSubscriber
+
+        sub = QueueSubscriber()
+        app = TinkerDashboard(subscriber=sub)
+
+        # Run orchestrator as background task; dashboard runs in foreground.
+        # When user quits the dashboard (q / Ctrl-C), we ask orchestrator to stop.
+        orch_task = asyncio.create_task(_run_orchestrator())
+        try:
+            await app.run_async()
+        finally:
+            orchestrator.request_shutdown()
+            try:
+                await asyncio.wait_for(orch_task, timeout=5.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                orch_task.cancel()
+    else:
+        await _run_orchestrator()
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +357,7 @@ def main() -> None:
 Examples:
   python main.py --problem "Design a distributed job queue system"
   python main.py --problem "Design a real-time analytics pipeline" --stubs
-  python main.py --problem "..." --stubs  # smoke-test without Ollama
+  python main.py --problem "..." --stubs --dashboard   # stubs + TUI dashboard
 
 Press Ctrl-C to stop.  Run the dashboard in a separate terminal:
   python -m p10_observability_dashboard
@@ -299,6 +375,16 @@ Press Ctrl-C to stop.  Run the dashboard in a separate terminal:
         help="Use in-process stubs instead of real Ollama models (no external services needed).",
     )
     parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        default=False,
+        help=(
+            "Launch the Textual TUI dashboard in-process, fed by the live orchestrator. "
+            "Requires `textual` to be installed. "
+            "Alternatively run `python -m p10_observability_dashboard` in a second terminal."
+        ),
+    )
+    parser.add_argument(
         "--log-level",
         default=os.getenv("TINKER_LOG_LEVEL", "INFO"),
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -308,7 +394,11 @@ Press Ctrl-C to stop.  Run the dashboard in a separate terminal:
     logging.getLogger().setLevel(args.log_level)
 
     try:
-        asyncio.run(_async_main(problem=args.problem, use_stubs=args.stubs))
+        asyncio.run(_async_main(
+            problem=args.problem,
+            use_stubs=args.stubs,
+            dashboard=args.dashboard,
+        ))
     except KeyboardInterrupt:
         logger.info("Tinker stopped by user (Ctrl-C).")
 

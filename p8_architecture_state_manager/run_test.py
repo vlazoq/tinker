@@ -9,9 +9,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tinker.architecture_state import ArchitectureStateManager
+from p8_architecture_state_manager.manager import ArchitectureStateManager
 
 # ──────────────────────────────────────────────
 # Update payloads
