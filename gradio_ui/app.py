@@ -27,7 +27,7 @@ from webui.core import (
     FLAG_DEFAULTS, FLAG_DESCRIPTIONS, FLAG_GROUPS,
     TASK_TYPES, SUBSYSTEMS,
     AUDIT_DB, BACKUP_DIR, DLQ_DB, FLAGS_FILE, TASKS_DB,
-    _db_query_sync as dbq, _db_execute_sync as dbe,
+    db_query_sync as dbq, db_execute_sync as dbe,
     list_backups, load_config, load_flags, load_state,
     new_id, now_iso, save_config, save_flags,
 )
@@ -38,15 +38,22 @@ def _health_md() -> str:
     state = load_state()
     if not state:
         return "⚠️ **Orchestrator offline** — `tinker_state.json` not found."
+    totals = state.get("totals", {})
+    micro_hist = state.get("micro_history", [])
+    last_critic = micro_hist[-1].get("critic_score") if micro_hist else "—"
     lines = [
         f"| Metric | Value |",
         f"|--------|-------|",
-        f"| Micro loops | **{state.get('micro_loops','—')}** |",
-        f"| Meso loops  | **{state.get('meso_loops','—')}** |",
-        f"| Macro loops | **{state.get('macro_loops','—')}** |",
-        f"| Stagnation events | {state.get('stagnation_events','—')} |",
-        f"| Current task | `{state.get('current_task','—')}` |",
-        f"| Last critic score | {state.get('last_critic_score','—')} |",
+        f"| Status | **{state.get('status','—')}** |",
+        f"| Current level | {state.get('current_level','—')} |",
+        f"| Micro loops | **{totals.get('micro','—')}** |",
+        f"| Meso loops  | **{totals.get('meso','—')}** |",
+        f"| Macro loops | **{totals.get('macro','—')}** |",
+        f"| Consecutive failures | {totals.get('consecutive_failures','—')} |",
+        f"| Current task | `{state.get('current_task_id','—')}` |",
+        f"| Current subsystem | {state.get('current_subsystem','—')} |",
+        f"| Last critic score | {last_critic} |",
+        f"| Uptime | {round(state.get('uptime_seconds',0)/60, 1)} min |",
     ]
     return "\n".join(lines)
 

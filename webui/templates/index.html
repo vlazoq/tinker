@@ -18,8 +18,14 @@ const { useState, useEffect, useRef, useCallback } = React;
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 const api = {
-  get:  (url)       => fetch(url).then(r => r.json()),
-  post: (url, body) => fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json()),
+  get: (url) =>
+    fetch(url)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .catch(err => { console.warn(`GET ${url}:`, err.message); return {}; }),
+  post: (url, body) =>
+    fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .catch(err => { console.warn(`POST ${url}:`, err.message); return { ok: false, error: err.message }; }),
 };
 
 // ── Shared components ─────────────────────────────────────────────────────────
@@ -726,13 +732,25 @@ const LogViewer = () => {
 
         <div className="log-viewer" ref={logRef}>
           {logs.length === 0 && <span className="muted">Press "Start Stream" to begin…</span>}
-          {logs.map((entry, i) => (
-            <div key={i} className={`log-entry log-${entry.level}`}>
-              <span className="log-time">{entry.time?.slice(11,19)} </span>
-              <span style={{color:'var(--accent)'}}>[{entry.level}] </span>
-              {entry.msg || `micro=${entry.micro_loops} meso=${entry.meso_loops} macro=${entry.macro_loops}${entry.current_task ? ` task=${entry.current_task.slice(0,8)}` : ''}${entry.critic_score != null ? ` critic=${entry.critic_score.toFixed(2)}` : ''}`}
-            </div>
-          ))}
+          {logs.map((entry, i) => {
+            const parts = [
+              `micro=${entry.micro_loops ?? '?'}`,
+              `meso=${entry.meso_loops ?? '?'}`,
+              `macro=${entry.macro_loops ?? '?'}`,
+              entry.current_level   ? `level=${entry.current_level}`  : null,
+              entry.current_subsystem ? `sub=${entry.current_subsystem}` : null,
+              entry.current_task    ? `task=${String(entry.current_task).slice(0,8)}` : null,
+              entry.critic_score != null ? `critic=${Number(entry.critic_score).toFixed(2)}` : null,
+              entry.consecutive_failures ? `fails=${entry.consecutive_failures}` : null,
+            ].filter(Boolean).join('  ');
+            return (
+              <div key={i} className={`log-entry log-${entry.level || 'INFO'}`}>
+                <span className="log-time">{entry.time?.slice(11,19)} </span>
+                <span style={{color:'var(--accent)'}}>STATE </span>
+                {entry.msg || parts}
+              </div>
+            );
+          })}
         </div>
         <p className="muted mt-8" style={{fontSize:11}}>Showing last 500 events. Stream polls tinker_state.json every 2s.</p>
       </div>

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 if __name__ == "__main__":
-    port = os.getenv("TINKER_STREAMLIT_PORT", "8501")
+    port = str(int(os.getenv("TINKER_STREAMLIT_PORT", "8501")))
     app  = Path(__file__).parent / "app.py"
     subprocess.run([
         sys.executable, "-m", "streamlit", "run", str(app),
