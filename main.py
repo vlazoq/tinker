@@ -238,32 +238,28 @@ def _build_real_components(problem: str) -> dict:
                 return []
 
         async def get_prior_critique(self, task_id: str):
-            """Retrieve any previous Critic output for this task."""
-            return []  # Not implemented yet; returns empty list
+            """Retrieve previous Architect+Critic artifacts stored under this task."""
+            from context.assembler import MemoryItem
+            try:
+                artifacts = await self._mm.get_artifacts_by_task(task_id, limit=3)
+                return [
+                    MemoryItem(
+                        id=a.id,
+                        content=a.content[:800],
+                        score=1.0,
+                        source="critique",
+                    )
+                    for a in artifacts
+                ]
+            except Exception:
+                return []
 
-    class _NullPromptBuilder:
-        """
-        A minimal stub for the PromptBuilder interface that ContextAssembler requires.
-
-        ContextAssembler was designed to work with a full PromptBuilder (prompts/builder.py)
-        that generates elaborate system prompts from templates. In practice, our agents
-        (agents.py) build their own prompts directly and don't need the full PromptBuilder.
-
-        This stub satisfies the interface with simple, functional defaults.
-        """
-        def build_system_identity(self, role) -> str:
-            return f"You are a {role.value} agent in Tinker."
-
-        def build_output_format(self, role, loop_level: int) -> str:
-            return "Respond with a JSON object."
-
-        def render_template(self, template_name: str, **kwargs) -> str:
-            return ""  # Templates not used in the current agent implementation
+    from context.stubs import StubPromptBuilder
 
     # Create the ContextAssembler with our adapted memory interface
     context_assembler = ContextAssembler(
         memory_manager = _MemoryAdaptor(memory_manager),
-        prompt_builder = _NullPromptBuilder(),
+        prompt_builder = StubPromptBuilder(),
     )
 
     # ── Agents ────────────────────────────────────────────────────────────────
@@ -382,6 +378,63 @@ def _make_dashboard_patch(orch_state_dict: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Startup health check
+# ---------------------------------------------------------------------------
+
+async def _health_check() -> None:
+    """
+    Verify that required external services are reachable.
+
+    Called once at startup before any AI loops begin.  Logs a clear WARNING
+    for each service that is down so the user knows what to fix, rather than
+    seeing a cryptic timeout error during the first Architect call.
+
+    Services checked:
+      - Ollama (primary model server)
+      - Redis (working memory)
+    """
+    import asyncio
+
+    server_url = os.getenv("TINKER_SERVER_URL", "http://localhost:11434")
+    redis_url  = os.getenv("TINKER_REDIS_URL",  "redis://localhost:6379")
+
+    # --- Ollama ---
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{server_url.rstrip('/')}/api/tags", timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status == 200:
+                    logger.info("Health check OK: Ollama reachable at %s", server_url)
+                else:
+                    logger.warning(
+                        "Health check WARN: Ollama at %s returned HTTP %d — "
+                        "model calls will likely fail", server_url, resp.status
+                    )
+    except Exception as exc:
+        logger.warning(
+            "Health check WARN: Ollama NOT reachable at %s (%s) — "
+            "start Ollama before running Tinker", server_url, exc
+        )
+
+    # --- Redis ---
+    try:
+        import aioredis  # type: ignore
+        client = aioredis.from_url(redis_url, socket_connect_timeout=3)
+        await client.ping()
+        await client.aclose()
+        logger.info("Health check OK: Redis reachable at %s", redis_url)
+    except ImportError:
+        pass  # aioredis not installed; skip check (connection will fail later)
+    except Exception as exc:
+        logger.warning(
+            "Health check WARN: Redis NOT reachable at %s (%s) — "
+            "working memory will be unavailable", redis_url, exc
+        )
+
+
+# ---------------------------------------------------------------------------
 # Main async function
 # ---------------------------------------------------------------------------
 
@@ -421,6 +474,13 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         logger.info("Building real components (Ollama required at %s)",
                     os.getenv("TINKER_SERVER_URL", "http://localhost:11434"))
         components = _build_real_components(problem)
+
+    # ── Pre-flight health check ───────────────────────────────────────────────
+    # Verify that required external services are reachable before we start.
+    # We warn (not crash) so the user gets a clear message instead of a
+    # cryptic failure ten seconds into the first Architect loop.
+    if not use_stubs:
+        await _health_check()
 
     # Start the HTTP session inside the ModelRouter.
     # The router opens a connection pool to Ollama here. We pop() it from

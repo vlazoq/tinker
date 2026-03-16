@@ -229,6 +229,22 @@ class DuckDBAdapter:
 
         return await self._run(_count)
 
+    async def get_by_task_id(
+        self,
+        task_id: str,
+        limit: int = 5,
+    ) -> list[dict]:
+        """Return artifacts associated with a specific task, newest first."""
+        def _query():
+            rows = self._conn.execute(
+                "SELECT * FROM artifacts WHERE task_id = ? ORDER BY created_at DESC LIMIT ?",
+                [task_id, limit],
+            ).fetchall()
+            cols = [d[0] for d in self._conn.description]
+            return [dict(zip(cols, r)) for r in rows]
+
+        return await self._run(_query)
+
     async def get_old_artifacts(
         self, session_id: str, older_than: datetime, limit: int = 100
     ) -> list[dict]:
