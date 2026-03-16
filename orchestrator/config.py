@@ -153,6 +153,6 @@ class OrchestratorConfig:
     # e.g. ``export TINKER_STATE_PATH=/var/run/tinker/state.json``
     state_snapshot_path: str = field(
         default_factory=lambda: os.getenv(
-            "TINKER_STATE_PATH", "/tmp/tinker_orchestrator_state.json"
+            "TINKER_STATE_PATH", "./tinker_state.json"
         )
     )

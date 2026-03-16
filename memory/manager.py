@@ -244,6 +244,21 @@ class MemoryManager:
             result.append(Artifact.from_dict(row))
         return result
 
+    async def get_artifacts_by_task(
+        self,
+        task_id: str,
+        limit: int = 5,
+    ) -> list[Artifact]:
+        """Return artifacts stored under a specific task_id, newest first."""
+        rows = await self._duckdb.get_by_task_id(task_id, limit=limit)
+        result = []
+        for row in rows:
+            if isinstance(row.get("metadata"), str):
+                import json
+                row["metadata"] = json.loads(row["metadata"])
+            result.append(Artifact.from_dict(row))
+        return result
+
     async def count_artifacts(
         self, session_id: Optional[str] = None, include_archived: bool = False
     ) -> int:

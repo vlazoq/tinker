@@ -169,10 +169,12 @@ def make_embedding_backend(
     if force_fallback:
         return FallbackTFIDFBackend()
     try:
-        import requests  # type: ignore
-        r = requests.get(f"{ollama_url}/api/tags", timeout=3)
-        if r.status_code == 200:
-            return OllamaEmbeddingBackend(model=model, base_url=ollama_url)
+        import urllib.request
+        with urllib.request.urlopen(
+            f"{ollama_url}/api/tags", timeout=3
+        ) as resp:
+            if resp.status == 200:
+                return OllamaEmbeddingBackend(model=model, base_url=ollama_url)
     except Exception:
         pass
     return FallbackTFIDFBackend()
