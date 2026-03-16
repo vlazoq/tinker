@@ -43,10 +43,68 @@ How the three loops use this config
 """
 from __future__ import annotations
 
+import logging
 import os
 # ``dataclass`` is the decorator; ``field`` lets us define fields whose
 # default values are computed at runtime (e.g. reading an env variable).
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+
+def _positive_float(value: float, name: str, min_val: float = 0.0) -> float:
+    """
+    Validate a float configuration value is above a minimum.
+
+    Raises ValueError with a clear message if the constraint is violated.
+    This is called during OrchestratorConfig construction so invalid configs
+    are caught at startup rather than causing mysterious failures later.
+
+    Parameters
+    ----------
+    value   : The value to validate.
+    name    : Field name (for error messages).
+    min_val : Minimum allowed value (inclusive).
+
+    Returns
+    -------
+    float : The validated value.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Config field '{name}' must be a number, got {value!r}") from exc
+    if v < min_val:
+        raise ValueError(
+            f"Config field '{name}' must be >= {min_val}, got {v}. "
+            f"Hint: check your environment variables for TINKER_* settings."
+        )
+    return v
+
+
+def _positive_int(value: int, name: str, min_val: int = 1) -> int:
+    """
+    Validate an integer configuration value is above a minimum.
+
+    Parameters
+    ----------
+    value   : The value to validate.
+    name    : Field name (for error messages).
+    min_val : Minimum allowed value (inclusive).
+
+    Returns
+    -------
+    int : The validated value.
+    """
+    try:
+        v = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Config field '{name}' must be an integer, got {value!r}") from exc
+    if v < min_val:
+        raise ValueError(
+            f"Config field '{name}' must be >= {min_val}, got {v}."
+        )
+    return v
 
 
 @dataclass
@@ -156,3 +214,46 @@ class OrchestratorConfig:
             "TINKER_STATE_PATH", "./tinker_state.json"
         )
     )
+
+    def __post_init__(self) -> None:
+        """
+        Validate all configuration values after dataclass construction.
+
+        Called automatically by Python's dataclass machinery whenever an
+        OrchestratorConfig is instantiated (e.g. ``OrchestratorConfig(...)``
+        or ``OrchestratorConfig()``).
+
+        Raises ValueError with a clear diagnostic message if any field has
+        an invalid value, preventing silent misconfiguration.
+
+        Why validate here rather than in setters?
+        ------------------------------------------
+        Dataclasses don't have property setters, so we validate once in
+        ``__post_init__``.  This is called at construction time, before any
+        loops start, so the operator sees the error immediately at startup
+        rather than 2 hours in when the macro loop tries to run.
+        """
+        # Timeout values must be positive — zero or negative would cause
+        # every AI call to immediately time out
+        self.architect_timeout = _positive_float(self.architect_timeout,   "architect_timeout",   min_val=1.0)
+        self.critic_timeout    = _positive_float(self.critic_timeout,      "critic_timeout",      min_val=1.0)
+        self.synthesizer_timeout = _positive_float(self.synthesizer_timeout, "synthesizer_timeout", min_val=1.0)
+        self.tool_timeout      = _positive_float(self.tool_timeout,        "tool_timeout",        min_val=1.0)
+
+        # Intervals must be non-negative
+        self.macro_interval_seconds  = _positive_float(self.macro_interval_seconds,  "macro_interval_seconds",  min_val=1.0)
+        self.failure_backoff_seconds = _positive_float(self.failure_backoff_seconds, "failure_backoff_seconds", min_val=0.0)
+        self.micro_loop_idle_seconds = _positive_float(self.micro_loop_idle_seconds, "micro_loop_idle_seconds", min_val=0.0)
+
+        # Count thresholds must be positive integers
+        self.meso_trigger_count          = _positive_int(self.meso_trigger_count,          "meso_trigger_count",          min_val=1)
+        self.max_consecutive_failures    = _positive_int(self.max_consecutive_failures,    "max_consecutive_failures",    min_val=1)
+        self.meso_min_artifacts          = _positive_int(self.meso_min_artifacts,          "meso_min_artifacts",          min_val=1)
+        self.max_researcher_calls_per_loop = _positive_int(self.max_researcher_calls_per_loop, "max_researcher_calls_per_loop", min_val=0)
+        self.context_max_artifacts       = _positive_int(self.context_max_artifacts,       "context_max_artifacts",       min_val=1)
+
+        logger.debug(
+            "OrchestratorConfig validated: meso_trigger=%d, architect_timeout=%.1fs, "
+            "macro_interval=%.0fs",
+            self.meso_trigger_count, self.architect_timeout, self.macro_interval_seconds,
+        )

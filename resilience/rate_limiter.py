@@ -1,0 +1,292 @@
+"""
+resilience/rate_limiter.py
+===========================
+
+Token-bucket rate limiter for Tinker's AI and tool calls.
+
+Why rate limiting?
+------------------
+Without rate limits, a runaway Tinker loop could:
+  - Make thousands of requests to Ollama per hour (monopolising the GPU)
+  - Exhaust SearXNG's search quota with unbounded tool calls
+  - Generate surprising bills if connected to a paid LLM API ($1000+/day)
+  - Trigger Ollama's own rate limiting, causing cascading failures
+
+The token bucket algorithm
+--------------------------
+Each limiter has a "bucket" of tokens.  Tokens refill at a constant rate
+(``rate`` tokens per second).  Each API call consumes one or more tokens.
+If there are not enough tokens, the call waits until refilled.
+
+Example: ``rate=2, burst=10`` means you can fire 10 calls instantly (burst),
+then at most 2 calls/second after that.
+
+This is the same algorithm used by AWS, GCP, and most production rate limiters.
+
+Usage
+------
+::
+
+    # Create a limiter: max 2 Architect calls/second, burst of 5
+    architect_limiter = TokenBucketRateLimiter(name="architect", rate=2.0, burst=5)
+
+    # Wrap an AI call:
+    await architect_limiter.acquire()   # blocks if rate exceeded
+    result = await architect_agent.call(task, context)
+
+    # Track costs:
+    architect_limiter.record_tokens(result.total_tokens)
+
+    # Check spend:
+    print(architect_limiter.total_tokens_used)
+
+    # Or as a context manager:
+    async with architect_limiter:
+        result = await architect_agent.call(...)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+class TokenBucketRateLimiter:
+    """
+    Async token bucket rate limiter for a single resource (e.g. one AI model).
+
+    Parameters
+    ----------
+    name  : Human-readable identifier for logging.
+    rate  : Tokens added to the bucket per second (steady-state throughput).
+    burst : Maximum bucket capacity (allows short bursts above the steady rate).
+    cost  : Default token cost per ``acquire()`` call.  Override per-call with
+            the ``cost`` parameter of ``acquire()``.
+
+    Example
+    -------
+    ::
+
+        # Allow 1 architect call every 3 seconds, burst up to 3:
+        limiter = TokenBucketRateLimiter("architect", rate=0.33, burst=3)
+
+        await limiter.acquire()
+        result = await architect.call(task, ctx)
+        limiter.record_tokens(result.total_tokens)
+    """
+
+    def __init__(
+        self,
+        name: str,
+        rate: float = 1.0,
+        burst: float = 10.0,
+        cost: float = 1.0,
+    ) -> None:
+        self.name = name
+        self._rate = rate     # tokens per second
+        self._burst = burst   # max bucket size
+        self._cost = cost     # default cost per call
+        self._tokens: float = burst   # start full
+        self._last_refill: float = time.monotonic()
+        self._lock = asyncio.Lock()
+
+        # Statistics
+        self._total_calls: int = 0
+        self._total_wait_seconds: float = 0.0
+        self._total_tokens_used: int = 0
+        self._calls_throttled: int = 0
+
+    @property
+    def total_tokens_used(self) -> int:
+        """Total LLM tokens recorded via ``record_tokens()``."""
+        return self._total_tokens_used
+
+    @property
+    def total_calls(self) -> int:
+        """Total number of calls that passed through this limiter."""
+        return self._total_calls
+
+    @property
+    def calls_throttled(self) -> int:
+        """Number of calls that had to wait due to rate limiting."""
+        return self._calls_throttled
+
+    async def acquire(self, cost: Optional[float] = None) -> None:
+        """
+        Acquire permission to make one call.
+
+        If the bucket has enough tokens, returns immediately (no wait).
+        Otherwise, sleeps until enough tokens have refilled.
+
+        Parameters
+        ----------
+        cost : How many tokens this call consumes (default: self._cost = 1.0).
+
+        This method is safe to call concurrently from multiple coroutines.
+        """
+        effective_cost = cost if cost is not None else self._cost
+        t0 = time.monotonic()
+
+        async with self._lock:
+            self._refill()
+            wait_time = 0.0
+
+            if self._tokens < effective_cost:
+                # Calculate how long until we have enough tokens
+                deficit = effective_cost - self._tokens
+                wait_time = deficit / self._rate
+
+            if wait_time > 0:
+                self._calls_throttled += 1
+                logger.debug(
+                    "RateLimiter '%s': throttling %.2fs (tokens=%.2f, need=%.2f)",
+                    self.name, wait_time, self._tokens, effective_cost,
+                )
+
+        if wait_time > 0:
+            await asyncio.sleep(wait_time)
+            async with self._lock:
+                self._refill()
+
+        async with self._lock:
+            self._tokens -= effective_cost
+            self._tokens = max(0.0, self._tokens)
+            self._total_calls += 1
+            elapsed = time.monotonic() - t0
+            self._total_wait_seconds += elapsed
+
+    def record_tokens(self, token_count: int) -> None:
+        """
+        Record LLM tokens consumed by a call (for cost tracking).
+
+        This is separate from ``acquire()`` because we don't know the token
+        count until after the AI responds.
+
+        Parameters
+        ----------
+        token_count : Number of LLM tokens used (prompt + completion).
+        """
+        self._total_tokens_used += token_count
+
+    def stats(self) -> dict:
+        """Return current rate limiter statistics for monitoring/alerting."""
+        return {
+            "name": self.name,
+            "rate_per_second": self._rate,
+            "burst_capacity": self._burst,
+            "current_tokens": round(self._tokens, 2),
+            "total_calls": self._total_calls,
+            "calls_throttled": self._calls_throttled,
+            "total_wait_seconds": round(self._total_wait_seconds, 2),
+            "total_llm_tokens": self._total_tokens_used,
+        }
+
+    async def __aenter__(self):
+        await self.acquire()
+        return self
+
+    async def __aexit__(self, *_):
+        pass
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _refill(self) -> None:
+        """Add tokens based on elapsed time since last refill."""
+        now = time.monotonic()
+        elapsed = now - self._last_refill
+        self._tokens = min(self._burst, self._tokens + elapsed * self._rate)
+        self._last_refill = now
+
+
+class RateLimiterRegistry:
+    """
+    Registry of rate limiters for all Tinker AI and tool calls.
+
+    Provides a single place to define, retrieve, and inspect all rate limits.
+
+    Usage
+    -----
+    ::
+
+        registry = RateLimiterRegistry()
+        registry.register("architect",  rate=0.5, burst=3)
+        registry.register("critic",     rate=1.0, burst=5)
+        registry.register("searxng",    rate=0.2, burst=2)
+
+        # In the micro loop:
+        await registry.get("architect").acquire()
+        result = await architect.call(...)
+        registry.get("architect").record_tokens(result.total_tokens)
+    """
+
+    def __init__(self) -> None:
+        self._limiters: dict[str, TokenBucketRateLimiter] = {}
+
+    def register(
+        self,
+        name: str,
+        rate: float = 1.0,
+        burst: float = 10.0,
+        cost: float = 1.0,
+    ) -> TokenBucketRateLimiter:
+        """Create and register a rate limiter."""
+        limiter = TokenBucketRateLimiter(name=name, rate=rate, burst=burst, cost=cost)
+        self._limiters[name] = limiter
+        logger.info(
+            "Registered rate limiter '%s' (rate=%.2f/s, burst=%.0f)",
+            name, rate, burst,
+        )
+        return limiter
+
+    def get(self, name: str) -> Optional[TokenBucketRateLimiter]:
+        """Return a registered limiter, or None if not found."""
+        return self._limiters.get(name)
+
+    def all_stats(self) -> dict[str, dict]:
+        """Snapshot of all rate limiter stats — for metrics/dashboards."""
+        return {name: lim.stats() for name, lim in self._limiters.items()}
+
+    def total_llm_tokens(self) -> int:
+        """Total LLM tokens consumed across all limiters (cost tracking)."""
+        return sum(lim.total_tokens_used for lim in self._limiters.values())
+
+
+def build_default_rate_limiters() -> RateLimiterRegistry:
+    """
+    Create the default Tinker rate limiter registry with sensible limits.
+
+    Limits are conservative defaults that prevent runaway costs while
+    allowing normal throughput.  Override via environment variables or
+    by adjusting the OrchestratorConfig.
+
+    Rate summary:
+      - architect  : 1 call/3s steady, burst 3  (slow, expensive reasoning)
+      - critic     : 1 call/2s steady, burst 5  (lighter than architect)
+      - synthesizer: 1 call/5s steady, burst 2  (rare but expensive)
+      - researcher : 1 call/2s steady, burst 3  (web searches)
+
+    Returns
+    -------
+    RateLimiterRegistry configured for all standard Tinker components.
+    """
+    registry = RateLimiterRegistry()
+
+    # Architect: slowest, most expensive — limit to 1 call every 3 seconds
+    registry.register("architect",   rate=0.33, burst=3)
+
+    # Critic: lighter than architect, higher throughput
+    registry.register("critic",      rate=0.5,  burst=5)
+
+    # Synthesizer: called rarely (meso/macro), but expensive
+    registry.register("synthesizer", rate=0.2,  burst=2)
+
+    # Researcher (web search): limit to avoid hammering SearXNG
+    registry.register("researcher",  rate=0.5,  burst=3)
+
+    return registry

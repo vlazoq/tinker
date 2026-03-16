@@ -67,6 +67,16 @@ from .types import MachineConfig, Message, RetryConfig
 
 logger = logging.getLogger(__name__)
 
+# CircuitBreaker is an optional enterprise dependency — import it lazily so
+# the LLM client works even when the resilience package is not installed.
+try:
+    from resilience.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+    _CIRCUIT_BREAKER_AVAILABLE = True
+except ImportError:
+    CircuitBreaker = None  # type: ignore[assignment,misc]
+    CircuitBreakerOpenError = None  # type: ignore[assignment,misc]
+    _CIRCUIT_BREAKER_AVAILABLE = False
+
 
 # ---------------------------------------------------------------------------
 # Exceptions — a tidy hierarchy of errors
@@ -160,21 +170,38 @@ class OllamaClient:
         self,
         config: MachineConfig,
         retry: RetryConfig | None = None,
+        circuit_breaker: "CircuitBreaker | None" = None,
     ) -> None:
         """
         Create an OllamaClient.
 
         Parameters
         ----------
-        config : MachineConfig
+        config          : MachineConfig
             Connection settings (URL, model, timeouts).
-        retry  : RetryConfig, optional
+        retry           : RetryConfig, optional
             How many times to retry and how long to wait.  Defaults to
             RetryConfig() which gives 3 attempts with exponential back-off.
+        circuit_breaker : CircuitBreaker, optional
+            An optional circuit breaker to protect all calls to this Ollama
+            machine.  When the breaker is OPEN, ``chat()`` raises
+            ``CircuitBreakerOpenError`` immediately (fast fail) instead of
+            hammering an unavailable server.  Pass ``None`` to disable circuit
+            breaking (the default, for backward compatibility).
+
+            Example::
+
+                registry = build_default_registry()
+                client = OllamaClient(
+                    config,
+                    circuit_breaker=registry.get("ollama_server"),
+                )
         """
         self.config  = config
         # Use provided retry config, or fall back to sensible defaults
         self.retry   = retry or RetryConfig()
+        # Optional circuit breaker — None means "no protection" (legacy mode)
+        self._circuit_breaker = circuit_breaker
         # The aiohttp session is created lazily on first use (see _get_session)
         self._session: aiohttp.ClientSession | None = None
 
@@ -304,6 +331,41 @@ class OllamaClient:
             "stream":      stream,
         }
 
+        # ── Circuit breaker fast-fail ────────────────────────────────────────
+        # If a circuit breaker is wired in, check it before doing any work.
+        # When the breaker is OPEN, this raises CircuitBreakerOpenError
+        # immediately and we never touch the network.  Callers should catch
+        # this and apply graceful degradation (e.g., skip this call, use a
+        # cached response, or report a transient error to the orchestrator).
+        if self._circuit_breaker is not None:
+            # ``circuit_breaker.call`` wraps the entire retry loop so the
+            # breaker counts the whole logical operation as one failure, not
+            # each individual retry attempt.  This avoids nuking the breaker
+            # on expected transient errors that the retry logic handles fine.
+            return await self._circuit_breaker.call(
+                self._chat_inner, url, payload
+            )
+
+        return await self._chat_inner(url, payload)
+
+    async def _chat_inner(self, url: str, payload: dict) -> dict[str, Any]:
+        """
+        Internal retry loop, separated from ``chat()`` so the circuit breaker
+        can wrap the entire operation as a single logical call.
+
+        Parameters
+        ----------
+        url     : The full endpoint URL.
+        payload : The pre-built request body dict.
+
+        Returns
+        -------
+        dict : Parsed JSON response from Ollama.
+
+        Raises
+        ------
+        ModelClientError (or subclass) : If all retries fail.
+        """
         # ``last_exc`` stores the most recent exception so we can re-raise it
         # after all retries are exhausted.
         last_exc: Exception = RuntimeError("No attempts made")
