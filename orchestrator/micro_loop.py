@@ -65,6 +65,34 @@ from .state import MicroLoopRecord, LoopStatus
 if TYPE_CHECKING:
     from .orchestrator import Orchestrator
 
+# ── Enterprise component helpers ─────────────────────────────────────────────
+# These are imported lazily (try/except) so the micro loop works in minimal
+# deployments where the resilience/observability packages aren't installed.
+
+try:
+    from resilience.idempotency import IdempotencyCache, idempotency_key
+    _IDEMPOTENCY_AVAILABLE = True
+except ImportError:
+    _IDEMPOTENCY_AVAILABLE = False
+
+try:
+    from resilience.rate_limiter import RateLimiterRegistry
+    _RATE_LIMITER_AVAILABLE = True
+except ImportError:
+    _RATE_LIMITER_AVAILABLE = False
+
+try:
+    from observability.tracing import default_tracer
+    _TRACING_AVAILABLE = True
+except ImportError:
+    _TRACING_AVAILABLE = False
+
+try:
+    from lineage.tracker import LineageTracker
+    _LINEAGE_AVAILABLE = True
+except ImportError:
+    _LINEAGE_AVAILABLE = False
+
 # This logger's name "tinker.orchestrator.micro" means log messages from this
 # module appear under a sub-category of the main orchestrator logger.
 # You can set the log level separately for "tinker.orchestrator.micro" if
@@ -107,6 +135,16 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
     # this function returns, so right now it still reflects the previous count.
     iteration = state.total_micro_loops + 1
 
+    # Retrieve enterprise components attached to the orchestrator (if any).
+    # The ``enterprise`` dict is populated by ``_build_enterprise_stack()`` in
+    # main.py.  When running without enterprise wiring (e.g. in unit tests),
+    # it defaults to an empty dict and all enterprise features are no-ops.
+    enterprise: dict = getattr(orch, "enterprise", {})
+    rate_limiters: Optional[object] = enterprise.get("rate_limiters")
+    idempotency_cache: Optional[object] = enterprise.get("idempotency_cache")
+    lineage_tracker: Optional[object] = enterprise.get("lineage_tracker")
+    audit_log: Optional[object] = enterprise.get("audit_log")
+
     # ── 1. Task Selection ────────────────────────────────────────────────────
     # Ask the task engine for the next task to work on.  If there's nothing
     # in the queue, the task engine is expected to create one.
@@ -114,6 +152,39 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
     if task is None:
         # No task available at all — this is unusual.  Raise immediately.
         raise MicroLoopError("No tasks available — task engine returned None")
+
+    # ── Idempotency check ────────────────────────────────────────────────────
+    # Before doing any expensive AI work, check if we've already successfully
+    # processed this exact task in this session.  This protects against
+    # duplicate work when the orchestrator is restarted mid-run or when the
+    # same task is re-queued by the task engine.
+    #
+    # The idempotency key is a SHA-256 hash of the operation + task ID, so
+    # two calls with the same task produce the same key deterministically.
+    # If the key exists in the cache, we know this task has already been
+    # processed and we can skip it safely.
+    if _IDEMPOTENCY_AVAILABLE and idempotency_cache is not None:
+        idem_key = idempotency_key("micro_loop", task_id=task["id"])
+        try:
+            if await idempotency_cache.exists(idem_key):
+                logger.info(
+                    "micro[%d] SKIP task=%s (idempotency hit — already processed)",
+                    iteration, task["id"],
+                )
+                # Build a minimal SUCCESS record so the orchestrator's
+                # counters increment correctly without doing redundant work.
+                skip_record = MicroLoopRecord(
+                    iteration=iteration,
+                    task_id=task["id"],
+                    subsystem=task.get("subsystem", "unknown"),
+                    started_at=time.monotonic(),
+                )
+                skip_record.status = LoopStatus.SUCCESS
+                skip_record.finished_at = time.monotonic()
+                return skip_record
+        except Exception as exc:
+            # Idempotency cache errors are non-fatal — just proceed normally.
+            logger.debug("Idempotency cache lookup failed (non-fatal): %s", exc)
 
     # Create the record object now that we know which task we're working on.
     # It starts with status=RUNNING and gets updated as steps complete.
@@ -136,9 +207,30 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # The Architect AI reads the task and context and proposes an
         # architectural design.  This is typically the slowest and most
         # expensive step (the AI is doing real reasoning here).
+        #
+        # Rate limiting: acquire a token from the architect rate limiter before
+        # calling.  If the rate is exceeded, this waits until a token is
+        # available.  This prevents runaway cost when the loop runs very fast.
+        if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
+            try:
+                arch_limiter = rate_limiters.get("architect")
+                if arch_limiter is not None:
+                    await arch_limiter.acquire()
+            except Exception as exc:
+                logger.debug("Rate limiter acquire failed (non-fatal): %s", exc)
+
         architect_result = await _call_architect(orch, task, context, cfg.architect_timeout)
         # Record how many tokens the Architect used — useful for cost tracking.
         record.architect_tokens = architect_result.get("tokens_used", 0)
+
+        # Track token cost in the rate limiter for usage reporting.
+        if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
+            try:
+                arch_limiter = rate_limiters.get("architect")
+                if arch_limiter is not None:
+                    arch_limiter.record_tokens(record.architect_tokens)
+            except Exception:
+                pass  # non-fatal
 
         # ── 4. Researcher Routing (optional) ─────────────────────────────────
         # The Architect may say "I'm not sure about X — I have a knowledge gap."
@@ -162,8 +254,24 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # ── 5. Critic Call ───────────────────────────────────────────────────
         # The Critic AI reads the Architect's proposal and gives it a score
         # along with strengths, weaknesses, and recommendations.
+        if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
+            try:
+                critic_limiter = rate_limiters.get("critic")
+                if critic_limiter is not None:
+                    await critic_limiter.acquire()
+            except Exception as exc:
+                logger.debug("Critic rate limiter acquire failed (non-fatal): %s", exc)
+
         critic_result = await _call_critic(orch, task, architect_result, cfg.critic_timeout)
         record.critic_tokens = critic_result.get("tokens_used", 0)
+
+        if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
+            try:
+                critic_limiter = rate_limiters.get("critic")
+                if critic_limiter is not None:
+                    critic_limiter.record_tokens(record.critic_tokens)
+            except Exception:
+                pass
         # Store the raw score on the record so the orchestrator can forward it
         # to the StagnationMonitor (Critique Collapse detector) after the loop.
         record.critic_score = critic_result.get("score")
@@ -175,6 +283,25 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # for the next meso synthesis.
         artifact_id = await _store_artifact(orch, task, architect_result, critic_result)
         record.artifact_id = artifact_id
+
+        # ── Lineage tracking ─────────────────────────────────────────────────
+        # Record the derivation relationship: this artifact was derived from
+        # the task.  This builds a directed graph of provenance that can be
+        # queried to trace where any artifact came from.
+        if _LINEAGE_AVAILABLE and lineage_tracker is not None:
+            try:
+                await lineage_tracker.record_derivation(
+                    parent_id=task["id"],
+                    child_id=artifact_id,
+                    operation="micro_loop",
+                    metadata={
+                        "subsystem": task.get("subsystem", "unknown"),
+                        "critic_score": critic_result.get("score"),
+                        "iteration": iteration,
+                    },
+                )
+            except Exception as exc:
+                logger.debug("Lineage tracking failed (non-fatal): %s", exc)
 
         # ── 7. Task Completion ───────────────────────────────────────────────
         # Tell the task engine that this task has been worked on and link it
@@ -188,6 +315,17 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # tasks based on what we just learned.
         new_count = await _generate_tasks(orch, task, architect_result, critic_result)
         record.new_tasks_generated = new_count
+
+        # ── Mark idempotency ─────────────────────────────────────────────────
+        # Now that the task has been fully processed, record its idempotency
+        # key so future runs know this task has already been done.  We do this
+        # *after* all steps succeed — we never cache a partially-processed task.
+        if _IDEMPOTENCY_AVAILABLE and idempotency_cache is not None:
+            try:
+                idem_key = idempotency_key("micro_loop", task_id=task["id"])
+                await idempotency_cache.set(idem_key, artifact_id, ttl=3600)
+            except Exception as exc:
+                logger.debug("Idempotency cache set failed (non-fatal): %s", exc)
 
         # All steps succeeded — mark the record as a success.
         record.status = LoopStatus.SUCCESS

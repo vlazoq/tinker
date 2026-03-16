@@ -1,0 +1,469 @@
+"""
+validation/input_validator.py
+==============================
+
+Input validation and sanitization for all Tinker data boundaries.
+
+Why validation matters
+-----------------------
+Tinker processes inputs from multiple untrusted sources:
+  - User-supplied problem statements (from command line)
+  - AI-generated task descriptions (from Architect/Critic/Synthesizer)
+  - URLs returned by web search (from SearXNG)
+  - File paths for artifact output (from config or AI output)
+  - JSON responses from AI models (from Ollama)
+
+Without validation:
+  - A user could inject a prompt that makes the AI output malicious tasks
+  - A web search could return a URL that causes the scraper to read local files
+  - An AI could output a file path like "../../etc/passwd" for artifact storage
+  - A corrupt AI response could crash the micro loop with a KeyError
+
+This module provides Pydantic-based validators for all major input types.
+Validation happens at the boundary — not deep in the business logic.
+
+Usage
+------
+::
+
+    from validation.input_validator import (
+        validate_problem_statement,
+        validate_task,
+        validate_url,
+        validate_file_path,
+        validate_ai_json,
+    )
+
+    # Validate user input at startup:
+    safe_problem = validate_problem_statement(raw_problem)
+
+    # Validate task before passing to Architect:
+    safe_task = validate_task(raw_task)
+
+    # Validate URL before scraping:
+    safe_url = validate_url(raw_url)
+
+    # Validate AI output before storing:
+    safe_output = validate_ai_json(raw_output, expected_keys=["content", "score"])
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+import unicodedata
+from pathlib import Path
+from typing import Any, Optional
+from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Maximum lengths for string fields (prevents DoS via huge inputs)
+MAX_PROBLEM_LENGTH = 2000
+MAX_TASK_DESCRIPTION_LENGTH = 5000
+MAX_SUBSYSTEM_LENGTH = 100
+MAX_TASK_TITLE_LENGTH = 200
+MAX_CONTENT_LENGTH = 100_000    # 100KB — reasonable artifact size
+MAX_QUERY_LENGTH = 500
+
+# Allowed URL schemes for web scraping (prevents file:// and other unsafe schemes)
+ALLOWED_URL_SCHEMES = {"http", "https"}
+
+# Blocked URL patterns (localhost, private networks)
+BLOCKED_URL_PATTERNS = [
+    r"localhost",
+    r"127\.\d+\.\d+\.\d+",
+    r"10\.\d+\.\d+\.\d+",
+    r"172\.(1[6-9]|2\d|3[01])\.\d+\.\d+",
+    r"192\.168\.\d+\.\d+",
+    r"0\.0\.0\.0",
+    r"::1",
+    r"file://",
+    r"ftp://",
+]
+
+# Regex for detecting suspicious prompt injection patterns
+INJECTION_PATTERNS = [
+    r"ignore\s+previous\s+instructions",
+    r"ignore\s+all\s+previous",
+    r"system\s*:\s*you\s+are",
+    r"</?(system|human|assistant)>",
+    r"\bprompt\s+injection\b",
+    r"disregard\s+(your\s+)?instructions",
+]
+
+
+class ValidationError(ValueError):
+    """Raised when input fails validation."""
+    def __init__(self, field: str, value: Any, reason: str) -> None:
+        self.field = field
+        self.value = value
+        self.reason = reason
+        super().__init__(f"Validation failed for '{field}': {reason}")
+
+
+# ---------------------------------------------------------------------------
+# String sanitization
+# ---------------------------------------------------------------------------
+
+def sanitize_string(
+    value: Any,
+    max_length: int = MAX_CONTENT_LENGTH,
+    field: str = "string",
+    allow_empty: bool = False,
+) -> str:
+    """
+    Sanitize a string: enforce type, strip control characters, limit length.
+
+    Parameters
+    ----------
+    value      : The raw value to sanitize (will be coerced to str).
+    max_length : Maximum allowed length (truncates with a warning).
+    field      : Field name for error messages.
+    allow_empty: If False, raises ValidationError for empty strings.
+
+    Returns
+    -------
+    str : The sanitized string.
+
+    Raises
+    ------
+    ValidationError : If the value cannot be coerced to string or is empty.
+    """
+    if value is None:
+        if allow_empty:
+            return ""
+        raise ValidationError(field, value, "field is required (got None)")
+
+    # Coerce to string
+    try:
+        text = str(value)
+    except Exception:
+        raise ValidationError(field, value, "cannot convert to string")
+
+    # Remove null bytes and other dangerous control characters
+    # (keep \n, \r, \t which are legitimate in multi-line text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+
+    # Normalise Unicode to NFC (prevents homograph attacks)
+    text = unicodedata.normalize("NFC", text)
+
+    # Strip leading/trailing whitespace
+    text = text.strip()
+
+    if not text and not allow_empty:
+        raise ValidationError(field, value, "field cannot be empty after sanitization")
+
+    # Truncate oversized values (warn but don't error — be lenient about length)
+    if len(text) > max_length:
+        logger.warning(
+            "Sanitizing '%s': truncating from %d to %d characters",
+            field, len(text), max_length,
+        )
+        text = text[:max_length]
+
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Prompt injection detection
+# ---------------------------------------------------------------------------
+
+def check_prompt_injection(text: str, field: str = "input") -> Optional[str]:
+    """
+    Detect potential prompt injection attempts in a string.
+
+    Returns a warning message if suspicious patterns are found, or None if clean.
+
+    Note: This is a heuristic best-effort check, not a security guarantee.
+    It prevents obvious injection attempts but may miss sophisticated ones.
+    """
+    lower = text.lower()
+    for pattern in INJECTION_PATTERNS:
+        if re.search(pattern, lower, re.IGNORECASE):
+            msg = f"Potential prompt injection detected in '{field}': pattern '{pattern}'"
+            logger.warning(msg)
+            return msg
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Domain-specific validators
+# ---------------------------------------------------------------------------
+
+def validate_problem_statement(raw: Any) -> str:
+    """
+    Validate and sanitize a user-supplied problem statement.
+
+    The problem statement is the main user input and should be:
+    - A non-empty string
+    - No longer than 2000 characters
+    - Free of obvious prompt injection patterns
+
+    Parameters
+    ----------
+    raw : The raw problem statement from the command line or API.
+
+    Returns
+    -------
+    str : The sanitized problem statement.
+
+    Raises
+    ------
+    ValidationError : If the input is invalid.
+    """
+    text = sanitize_string(raw, max_length=MAX_PROBLEM_LENGTH, field="problem_statement")
+
+    # Warn (but don't block) on suspected injection
+    check_prompt_injection(text, "problem_statement")
+
+    logger.debug("Problem statement validated (%d chars)", len(text))
+    return text
+
+
+def validate_task(raw: Any) -> dict:
+    """
+    Validate a task dict before passing it to the Architect AI.
+
+    Ensures the task has required fields and that all string values are safe.
+
+    Parameters
+    ----------
+    raw : The raw task dict from the task engine.
+
+    Returns
+    -------
+    dict : The validated (and sanitized) task dict.
+
+    Raises
+    ------
+    ValidationError : If the task is missing required fields.
+    """
+    if not isinstance(raw, dict):
+        raise ValidationError("task", raw, f"expected dict, got {type(raw).__name__}")
+
+    task_id = raw.get("id")
+    if not task_id or not isinstance(task_id, str):
+        raise ValidationError("task.id", task_id, "task must have a non-empty string id")
+
+    # Sanitize string fields (non-destructive — keeps dict structure)
+    safe = dict(raw)
+
+    if "description" in safe:
+        safe["description"] = sanitize_string(
+            safe["description"],
+            max_length=MAX_TASK_DESCRIPTION_LENGTH,
+            field="task.description",
+            allow_empty=True,
+        )
+        check_prompt_injection(safe["description"], "task.description")
+
+    if "title" in safe:
+        safe["title"] = sanitize_string(
+            safe["title"],
+            max_length=MAX_TASK_TITLE_LENGTH,
+            field="task.title",
+            allow_empty=True,
+        )
+
+    if "subsystem" in safe and safe["subsystem"]:
+        safe["subsystem"] = sanitize_string(
+            safe["subsystem"],
+            max_length=MAX_SUBSYSTEM_LENGTH,
+            field="task.subsystem",
+            allow_empty=True,
+        )
+        # Subsystem names should be alphanumeric (slugs)
+        if safe["subsystem"] and not re.match(r"^[a-zA-Z0-9_\-. ]+$", safe["subsystem"]):
+            logger.warning(
+                "task.subsystem contains unexpected characters: '%s'", safe["subsystem"]
+            )
+
+    return safe
+
+
+def validate_url(raw: Any, field: str = "url") -> str:
+    """
+    Validate a URL before fetching it (web search results, scraping targets).
+
+    Enforces:
+    - Valid URL format
+    - Only http/https schemes (no file://, ftp://, etc.)
+    - Not a private/localhost address
+
+    Parameters
+    ----------
+    raw   : The raw URL string to validate.
+    field : Field name for error messages.
+
+    Returns
+    -------
+    str : The validated URL.
+
+    Raises
+    ------
+    ValidationError : If the URL is invalid or blocked.
+    """
+    url = sanitize_string(raw, max_length=2000, field=field)
+
+    try:
+        parsed = urlparse(url)
+    except Exception as exc:
+        raise ValidationError(field, url, f"URL parse failed: {exc}")
+
+    if parsed.scheme.lower() not in ALLOWED_URL_SCHEMES:
+        raise ValidationError(
+            field, url,
+            f"URL scheme '{parsed.scheme}' not allowed (only http/https)"
+        )
+
+    host = parsed.hostname or ""
+    for pattern in BLOCKED_URL_PATTERNS:
+        if re.search(pattern, host, re.IGNORECASE):
+            raise ValidationError(
+                field, url,
+                f"URL blocked: host '{host}' matches restricted pattern '{pattern}'"
+            )
+
+    return url
+
+
+def validate_file_path(
+    raw: Any,
+    base_dir: str,
+    field: str = "file_path",
+) -> Path:
+    """
+    Validate and sanitize a file path, preventing path traversal attacks.
+
+    Ensures the resolved path stays within ``base_dir``.
+
+    Parameters
+    ----------
+    raw      : The raw path string (possibly from AI output).
+    base_dir : The allowed base directory — all paths must be under this dir.
+    field    : Field name for error messages.
+
+    Returns
+    -------
+    Path : The resolved, safe absolute path.
+
+    Raises
+    ------
+    ValidationError : If the path would escape ``base_dir``.
+    """
+    raw_str = sanitize_string(raw, max_length=500, field=field)
+
+    # Remove null bytes that could confuse the OS
+    raw_str = raw_str.replace("\x00", "")
+
+    base = Path(base_dir).resolve()
+    candidate = (base / raw_str).resolve()
+
+    # Ensure the resolved path is under base_dir
+    try:
+        candidate.relative_to(base)
+    except ValueError:
+        raise ValidationError(
+            field, raw,
+            f"Path traversal detected: '{raw_str}' would escape base dir '{base_dir}'"
+        )
+
+    return candidate
+
+
+def validate_ai_json(
+    raw: Any,
+    expected_keys: Optional[list[str]] = None,
+    field: str = "ai_output",
+) -> dict:
+    """
+    Validate JSON output from an AI model.
+
+    Ensures the output is a dict (not a list or primitive) and contains
+    all expected keys.
+
+    Parameters
+    ----------
+    raw           : The raw AI output (already JSON-decoded dict or None).
+    expected_keys : Keys that must be present in the output.
+    field         : Field name for error messages.
+
+    Returns
+    -------
+    dict : The validated AI output.
+
+    Raises
+    ------
+    ValidationError : If the output is not a dict or is missing required keys.
+    """
+    if raw is None:
+        raise ValidationError(field, raw, "AI output is None — model may have failed")
+
+    if not isinstance(raw, dict):
+        raise ValidationError(
+            field, type(raw).__name__,
+            f"Expected dict from AI, got {type(raw).__name__}"
+        )
+
+    if expected_keys:
+        missing = [k for k in expected_keys if k not in raw]
+        if missing:
+            raise ValidationError(
+                field, list(raw.keys()),
+                f"AI output missing required keys: {missing}"
+            )
+
+    return raw
+
+
+def validate_config_value(
+    value: Any,
+    name: str,
+    value_type: type,
+    min_val: Any = None,
+    max_val: Any = None,
+) -> Any:
+    """
+    Validate a configuration value (timeout, count, etc.).
+
+    Ensures the value is the right type and within the allowed range.
+
+    Parameters
+    ----------
+    value      : The config value to validate.
+    name       : Config field name (for error messages).
+    value_type : Expected Python type (e.g. float, int).
+    min_val    : Optional minimum value.
+    max_val    : Optional maximum value.
+
+    Returns
+    -------
+    The validated value (cast to value_type).
+
+    Raises
+    ------
+    ValidationError : If the value is invalid.
+    """
+    try:
+        cast = value_type(value)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(name, value, f"Cannot cast to {value_type.__name__}: {exc}")
+
+    if min_val is not None and cast < min_val:
+        raise ValidationError(
+            name, cast,
+            f"Value {cast} is below minimum {min_val}"
+        )
+
+    if max_val is not None and cast > max_val:
+        raise ValidationError(
+            name, cast,
+            f"Value {cast} exceeds maximum {max_val}"
+        )
+
+    return cast

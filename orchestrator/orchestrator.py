@@ -97,6 +97,30 @@ from .meso_loop import run_meso_loop
 # run_macro_loop produces and commits the full architectural snapshot.
 from .macro_loop import run_macro_loop
 
+# Backpressure is an optional enterprise dependency.  Import lazily so the
+# orchestrator works in minimal deployments without the resilience package.
+try:
+    from resilience.backpressure import BackpressureController, BackpressureAction
+    _BACKPRESSURE_AVAILABLE = True
+except ImportError:
+    BackpressureController = None  # type: ignore[assignment,misc]
+    BackpressureAction = None      # type: ignore[assignment,misc]
+    _BACKPRESSURE_AVAILABLE = False
+
+try:
+    from observability.audit_log import AuditEventType
+    _AUDIT_AVAILABLE = True
+except ImportError:
+    AuditEventType = None  # type: ignore[assignment,misc]
+    _AUDIT_AVAILABLE = False
+
+try:
+    from capacity.planner import CapacityPlanner
+    _CAPACITY_AVAILABLE = True
+except ImportError:
+    CapacityPlanner = None  # type: ignore[assignment,misc]
+    _CAPACITY_AVAILABLE = False
+
 # Logger specific to the orchestrator — messages will appear as
 # "tinker.orchestrator" in log output, making them easy to filter.
 logger = logging.getLogger("tinker.orchestrator")
@@ -195,6 +219,14 @@ class Orchestrator:
         # disabled if not wired in.
         self.stagnation_monitor = stagnation_monitor
         self.metrics = metrics
+
+        # Enterprise components dictionary — populated by ``_build_enterprise_stack()``
+        # in main.py after the Orchestrator is constructed.  Stores all optional
+        # enterprise features (circuit breakers, rate limiters, idempotency cache,
+        # backpressure controller, capacity planner, etc.) keyed by component name.
+        # Defaults to an empty dict so enterprise references in micro_loop.py and
+        # elsewhere are safe no-ops when running without the enterprise stack.
+        self.enterprise: dict = {}
 
         if stagnation_monitor is not None:
             logger.info("StagnationMonitor wired — anti-stagnation detection active")
@@ -323,6 +355,16 @@ class Orchestrator:
             if self._should_run_macro():
                 await self._run_macro()
 
+            # ── Backpressure check ────────────────────────────────────────────
+            # Before starting a micro loop, ask the backpressure controller
+            # whether the system is healthy enough to proceed.  If the queue
+            # is too deep or the failure streak is high, it may recommend
+            # slowing down or pausing task generation to let the system recover.
+            #
+            # This prevents runaway task accumulation and protects downstream
+            # services from being overwhelmed when Tinker is falling behind.
+            await self._apply_backpressure()
+
             # ── Micro loop ────────────────────────────────────────────────────
             # Tell the state object what level we're at so the Dashboard shows
             # "micro" as the current activity.
@@ -380,6 +422,142 @@ class Orchestrator:
         # _on_shutdown().
         self.state.current_level = LoopLevel.IDLE
 
+    # ── Backpressure ──────────────────────────────────────────────────────────
+
+    async def _apply_backpressure(self) -> None:
+        """
+        Evaluate system load and apply any recommended backpressure actions.
+
+        The BackpressureController examines three signals:
+          - ``queue_depth``     : How many tasks are waiting to be processed.
+          - ``failure_streak``  : How many consecutive micro loop failures.
+          - ``artifact_count``  : Total artifacts in memory (memory pressure).
+
+        Based on these, it may recommend:
+          - NONE               : All clear — proceed normally.
+          - WARN               : Log a warning but continue at full speed.
+          - SLOW_DOWN          : Insert a short sleep before the next loop.
+          - PAUSE_GENERATION   : Stop the task engine from generating new tasks
+                                 until the queue drains to a healthy level.
+          - COMPRESS_MEMORY    : Signal the memory manager to archive or evict
+                                 old artifacts to free up space.
+
+        This is a no-op when:
+          - No backpressure controller is wired (enterprise dict is empty).
+          - The backpressure package is not installed.
+          - Any exception occurs inside the controller (non-fatal guard).
+
+        All sleeps use ``_interruptible_sleep`` so a shutdown request wakes
+        the orchestrator immediately rather than blocking for the full duration.
+        """
+        if not _BACKPRESSURE_AVAILABLE:
+            return
+
+        bp_controller = self.enterprise.get("backpressure")
+        if bp_controller is None:
+            return
+
+        try:
+            # Gather current system signals
+            queue_depth = getattr(self.task_engine, "queue_depth", 0) or 0
+            failure_streak = self.state.consecutive_failures
+            artifact_count = (
+                self.state.micro_history[-1].artifact_id is not None
+                if self.state.micro_history
+                else 0
+            )
+
+            recommendation = bp_controller.evaluate(
+                queue_depth=queue_depth,
+                failure_streak=failure_streak,
+                artifact_count=artifact_count,
+            )
+
+            action = recommendation.action
+
+            if action == BackpressureAction.NONE:
+                return  # All clear
+
+            if action == BackpressureAction.WARN:
+                logger.warning(
+                    "Backpressure WARN: %s (queue=%d, failures=%d)",
+                    recommendation.reason, queue_depth, failure_streak,
+                )
+                return
+
+            if action == BackpressureAction.SLOW_DOWN:
+                logger.warning(
+                    "Backpressure SLOW_DOWN: sleeping %.1fs — %s",
+                    recommendation.wait_seconds, recommendation.reason,
+                )
+                await self._interruptible_sleep(recommendation.wait_seconds)
+
+            elif action == BackpressureAction.PAUSE_GENERATION:
+                logger.warning(
+                    "Backpressure PAUSE_GENERATION: pausing task generation "
+                    "for %.1fs — %s",
+                    recommendation.wait_seconds, recommendation.reason,
+                )
+                # Tell the task engine to pause if it supports the flag.
+                if hasattr(self.task_engine, "pause_generation"):
+                    self.task_engine.pause_generation = True
+                await self._interruptible_sleep(recommendation.wait_seconds)
+                if hasattr(self.task_engine, "pause_generation"):
+                    self.task_engine.pause_generation = False
+
+            elif action == BackpressureAction.COMPRESS_MEMORY:
+                logger.warning(
+                    "Backpressure COMPRESS_MEMORY: requesting memory compression — %s",
+                    recommendation.reason,
+                )
+                if hasattr(self.memory_manager, "compress"):
+                    try:
+                        await self.memory_manager.compress()
+                    except Exception as exc:
+                        logger.warning("Memory compression failed: %s", exc)
+
+        except Exception as exc:
+            # Backpressure errors are never fatal — the orchestrator must
+            # keep running even if the backpressure controller misbehaves.
+            logger.warning("Backpressure evaluation failed (non-fatal): %s", exc)
+
+    # ── Capacity planner update ───────────────────────────────────────────────
+
+    async def _update_capacity_planner(self, record: Any) -> None:
+        """
+        Record resource usage for the just-completed micro loop.
+
+        Feeds token counts, artifact count, and disk usage into the
+        CapacityPlanner so it can track growth rates and project forward.
+        Called after every successful micro loop.
+
+        This is a no-op when no capacity planner is wired in.
+        """
+        if not _CAPACITY_AVAILABLE:
+            return
+
+        planner = self.enterprise.get("capacity_planner")
+        if planner is None:
+            return
+
+        try:
+            # Record LLM token consumption from this micro loop
+            planner.record_tokens(
+                micro_tokens=(
+                    (record.architect_tokens or 0) + (record.critic_tokens or 0)
+                )
+            )
+            # Record current artifact count from state
+            total_artifacts = self.state.total_micro_loops  # rough proxy
+            planner.record_artifact_count(total=total_artifacts)
+
+            # Check thresholds and log any alerts
+            alerts = planner.check_thresholds()
+            for alert in alerts:
+                logger.warning("CapacityPlanner: %s", alert)
+        except Exception as exc:
+            logger.debug("Capacity planner update failed (non-fatal): %s", exc)
+
     # ── Micro ────────────────────────────────────────────────────────────────
 
     async def _run_micro(self) -> bool:
@@ -429,6 +607,10 @@ class Orchestrator:
                     directives = await self._check_stagnation(record)
                     if directives:
                         await self._apply_stagnation_directive(directives[0])
+
+                # ── Capacity planner update ─────────────────────────────────
+                # Record token/artifact usage for growth-rate projections.
+                await self._update_capacity_planner(record)
 
                 return True
 

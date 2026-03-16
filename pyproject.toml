@@ -57,6 +57,17 @@ dev = [
 tinker      = "main:main"
 tinker-dash = "dashboard.__main__:main"
 
+[project.optional-dependencies.enterprise]
+# Install with: pip install -e ".[enterprise]"
+# Enables all enterprise features: resilience, observability, health, security
+# Most of these are already in the base dependencies; this group makes the
+# intent explicit and adds any extras not in the core install.
+enterprise = [
+    "aiosqlite>=0.20.0",   # dead letter queue, audit log, lineage tracker
+    "aiohttp>=3.9.0",      # alert webhooks (Slack, custom)
+    "httpx>=0.27.0",       # backup manager HTTP operations
+]
+
 [tool.setuptools.packages.find]
 where   = ["."]
 include = [
@@ -70,6 +81,17 @@ include = [
     "architecture*",
     "stagnation*",
     "dashboard*",
+    # ── Enterprise packages (all four phases) ─────────────────────────────
+    "resilience*",       # circuit breakers, distributed lock, DLQ, rate limiting
+    "backup*",           # snapshot backup/restore
+    "validation*",       # input sanitisation and prompt injection detection
+    "observability*",    # structured logging, tracing, alerting, SLA, audit log
+    "health*",           # HTTP health endpoint server
+    "security*",         # secret manager (env/Vault/AWS)
+    "features*",         # feature flags
+    "lineage*",          # data lineage tracker
+    "experiments*",      # A/B testing framework
+    "capacity*",         # capacity planning and resource monitoring
 ]
 
 [tool.pytest.ini_options]
@@ -84,4 +106,15 @@ testpaths    = [
     "architecture",
     "stagnation",
     "dashboard",
+    # ── Enterprise test paths ──────────────────────────────────────────────
+    "resilience",
+    "backup",
+    "validation",
+    "observability",
+    "health",
+    "security",
+    "features",
+    "lineage",
+    "experiments",
+    "capacity",
 ]
