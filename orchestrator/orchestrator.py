@@ -137,6 +137,8 @@ class Orchestrator:
         memory_manager: Any,
         tool_layer: Any,
         arch_state_manager: Any,
+        stagnation_monitor: Any = None,
+        metrics: Any = None,
     ) -> None:
         """
         Initialise the orchestrator with all of its components.
@@ -166,6 +168,13 @@ class Orchestrator:
                              ``store_document()``, ``get_all_documents()``.
         tool_layer         : Must implement ``research(query)``.
         arch_state_manager : Must implement ``commit(payload)``.
+        stagnation_monitor : Optional StagnationMonitor instance.  If provided,
+                             it is called after every successful micro loop to
+                             detect reasoning loops and trigger interventions.
+                             Pass None to disable anti-stagnation monitoring.
+        metrics            : Optional TinkerMetrics instance (from metrics.py).
+                             If provided, counters and gauges are updated after
+                             each loop.  Pass None to disable metrics.
         """
         # If the caller didn't provide a config, use the production defaults.
         self.config = config or OrchestratorConfig()
@@ -181,6 +190,16 @@ class Orchestrator:
         self.memory_manager = memory_manager
         self.tool_layer = tool_layer
         self.arch_state_manager = arch_state_manager
+
+        # Optional components — both default to None, meaning the feature is
+        # disabled if not wired in.
+        self.stagnation_monitor = stagnation_monitor
+        self.metrics = metrics
+
+        if stagnation_monitor is not None:
+            logger.info("StagnationMonitor wired — anti-stagnation detection active")
+        if metrics is not None:
+            logger.info("Metrics wired — Prometheus counters active")
 
         # Create a fresh state object.  This is the single source of truth
         # for everything the orchestrator knows about itself.
@@ -395,6 +414,22 @@ class Orchestrator:
                 # Only count the subsystem for meso-trigger purposes if the
                 # loop truly succeeded end-to-end.
                 self.state.increment_subsystem(record.subsystem)
+
+                # ── Metrics ────────────────────────────────────────────────
+                # Update Prometheus counters / gauges if a metrics object was
+                # injected.  This is a no-op when metrics=None.
+                if self.metrics is not None:
+                    self.metrics.on_micro_loop(record)
+
+                # ── Anti-stagnation check ──────────────────────────────────
+                # Ask the StagnationMonitor whether the system is looping.
+                # If directives come back, apply the most severe one.
+                # This is opt-in: if no stagnation_monitor was injected, skip.
+                if self.stagnation_monitor is not None:
+                    directives = await self._check_stagnation(record)
+                    if directives:
+                        await self._apply_stagnation_directive(directives[0])
+
                 return True
 
             # The record exists but shows FAILED — still return False.
@@ -456,6 +491,8 @@ class Orchestrator:
             record = await run_meso_loop(self, subsystem, self.state.total_micro_loops)
             self.state.total_meso_loops += 1
             self.state.add_meso_record(record)
+            if self.metrics is not None:
+                self.metrics.on_meso_loop(record)
         except Exception as exc:
             # run_meso_loop is supposed to handle its own exceptions and never
             # raise.  If something *does* escape, log it and carry on.
@@ -509,12 +546,150 @@ class Orchestrator:
             record = await run_macro_loop(self, self.state.total_micro_loops)
             self.state.total_macro_loops += 1
             self.state.add_macro_record(record)
+            if self.metrics is not None:
+                self.metrics.on_macro_loop(record)
         except Exception as exc:
             # run_macro_loop is supposed to handle its own exceptions.
             # Log any that escape and continue.
             logger.exception("Macro loop raised unexpectedly: %s", exc)
         finally:
             self.state.current_level = prev_level
+
+    # ── Anti-stagnation ───────────────────────────────────────────────────────
+
+    async def _check_stagnation(self, record: Any) -> list:
+        """
+        Run the StagnationMonitor against the just-completed micro loop record.
+
+        Builds a ``MicroLoopContext`` from the record and runs all five
+        detectors (SemanticLoop, SubsystemFixation, CritiqueCollapse,
+        ResearchSaturation, TaskStarvation).  Returns a list of
+        ``InterventionDirective`` objects sorted by severity (highest first).
+        Returns an empty list if nothing is detected or if the monitor raises.
+
+        The monitor is synchronous (CPU-only computation, no I/O) but we run
+        it inside ``run_in_executor`` so any unexpectedly heavy computation
+        doesn't block the event loop.
+
+        Parameters
+        ----------
+        record : MicroLoopRecord from the just-completed micro loop.
+        """
+        from stagnation.models import MicroLoopContext
+        ctx = MicroLoopContext(
+            loop_index=record.iteration,
+            # Architect output is not stored on the record to keep it small.
+            # A future improvement would pass it through for semantic checks.
+            output_text=None,
+            subsystem_tag=record.subsystem,
+            # The critic score is now stored on the record (see state.py).
+            critic_score=record.critic_score,
+            # Queue depth from the task engine if it exposes it.
+            queue_depth=getattr(self.task_engine, "queue_depth", None),
+            tasks_generated=record.new_tasks_generated,
+            # Each micro loop consumes exactly one task.
+            tasks_consumed=1,
+        )
+        try:
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                None, self.stagnation_monitor.check, ctx
+            )
+        except Exception as exc:
+            logger.warning("StagnationMonitor.check() raised unexpectedly: %s", exc)
+            return []
+
+    async def _apply_stagnation_directive(self, directive: Any) -> None:
+        """
+        Act on the highest-severity stagnation directive.
+
+        Each ``InterventionType`` maps to a concrete action:
+
+        FORCE_BRANCH
+            Bump the stagnation-flagged subsystem's meso counter to the
+            trigger threshold.  This causes the orchestrator to run a meso
+            synthesis on that subsystem *before* the next micro loop, which
+            naturally transitions work to a different area of the design.
+
+        ALTERNATIVE_FORCING / INJECT_CONTRADICTION
+            Logged and recorded in state for now.  A future improvement
+            would inject a prompt hint into the next Architect or Critic call.
+
+        SPAWN_EXPLORATION
+            Enqueue a fresh exploration task with high confidence_gap so it
+            surfaces quickly in priority scoring.
+
+        ESCALATE_LOOP
+            Enqueue an exploration task (same as SPAWN_EXPLORATION) — the
+            intent is to break a starvation spiral by injecting new work.
+
+        NO_ACTION
+            Nothing to do; the directive is informational only.
+
+        Parameters
+        ----------
+        directive : An ``InterventionDirective`` from the StagnationMonitor.
+        """
+        from stagnation.models import InterventionType
+
+        if not directive.is_actionable():
+            return
+
+        # Increment the global stagnation event counter for the Dashboard and
+        # for Prometheus metrics.
+        self.state.stagnation_events_total += 1
+        if self.metrics is not None:
+            self.metrics.on_stagnation(directive)
+
+        logger.warning(
+            "[Stagnation] %s directive triggered (type=%s, severity=%.2f)",
+            directive.intervention_type.value,
+            directive.stagnation_type.value,
+            directive.severity,
+        )
+
+        itype = directive.intervention_type
+
+        if itype == InterventionType.FORCE_BRANCH:
+            # Identify which subsystem to pivot away from.
+            avoid = (
+                directive.metadata.get("avoid_subsystem")
+                or self.state.current_subsystem
+            )
+            if avoid:
+                # Bump the counter to the trigger so a meso synthesis fires
+                # before the next micro loop.  After synthesis, the counter
+                # resets to 0 and the system naturally gravitates toward
+                # other tasks that haven't been synthesised yet.
+                target = self.config.meso_trigger_count
+                self.state.subsystem_micro_counts[avoid] = target
+                logger.info(
+                    "[Stagnation] Forced early meso on subsystem=%s to pivot away", avoid
+                )
+
+        elif itype in (InterventionType.ALTERNATIVE_FORCING, InterventionType.INJECT_CONTRADICTION):
+            # Record the intent; prompt-level injection is a future improvement.
+            # The log entry alone is useful for post-run analysis.
+            logger.info(
+                "[Stagnation] %s noted — prompt injection not yet wired "
+                "(will be addressed in a future micro_loop.py update)",
+                itype.value,
+            )
+
+        elif itype in (InterventionType.SPAWN_EXPLORATION, InterventionType.ESCALATE_LOOP):
+            # Inject a fresh exploration task to break the saturation / starvation.
+            if hasattr(self.task_engine, "enqueue_exploration_task"):
+                await self.task_engine.enqueue_exploration_task(
+                    title="Stagnation-break: explore a new design direction",
+                    description=(
+                        f"The system detected {directive.stagnation_type.value} "
+                        f"(severity={directive.severity:.2f}).  Investigate a part of "
+                        "the architecture that has not been explored recently and "
+                        "propose a new line of inquiry."
+                    ),
+                )
+                logger.info("[Stagnation] Exploration task enqueued to break %s",
+                            directive.stagnation_type.value)
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
 

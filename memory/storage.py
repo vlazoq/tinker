@@ -245,6 +245,57 @@ class DuckDBAdapter:
 
         return await self._run(_query)
 
+    async def get_by_task_ids(
+        self,
+        task_ids: list,
+        limit_each: int = 2,
+    ) -> list[dict]:
+        """
+        Return up to ``limit_each`` artifacts per task_id for a list of IDs.
+
+        Uses a single SQL query with an IN clause and a window function rather
+        than issuing one query per task_id, which is dramatically faster when
+        fetching the artifact batch for a meso synthesis.
+
+        Parameters
+        ----------
+        task_ids   : Task UUID strings to look up.
+        limit_each : Max artifacts returned per task_id.  Default 2 keeps
+                     the total payload manageable for the Synthesizer context.
+        """
+        if not task_ids:
+            return []
+
+        def _query():
+            placeholders = ",".join("?" * len(task_ids))
+            # ROW_NUMBER() partitioned by task_id lets us get the N most
+            # recent artifacts per task without a Python-side groupby.
+            rows = self._conn.execute(
+                f"""
+                SELECT *
+                FROM (
+                    SELECT *,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY task_id
+                               ORDER BY created_at DESC
+                           ) AS _rn
+                    FROM artifacts
+                    WHERE task_id IN ({placeholders})
+                )
+                WHERE _rn <= ?
+                ORDER BY created_at DESC
+                """,
+                task_ids + [limit_each],
+            ).fetchall()
+            # Strip the synthetic _rn column; return same shape as other queries.
+            all_cols = [d[0] for d in self._conn.description]
+            return [
+                {col: row[i] for i, col in enumerate(all_cols) if col != "_rn"}
+                for row in rows
+            ]
+
+        return await self._run(_query)
+
     async def get_old_artifacts(
         self, session_id: str, older_than: datetime, limit: int = 100
     ) -> list[dict]:

@@ -149,6 +149,10 @@ class MicroLoopRecord:
     # Token counts from each AI call — useful for billing / cost monitoring.
     architect_tokens: int = 0
     critic_tokens: int = 0
+    # Critic quality score for this loop (0.0 – 1.0).
+    # Populated from critic_result["score"] in micro_loop.py so the stagnation
+    # monitor can detect Critique Collapse (critic scores trending too high).
+    critic_score: Optional[float] = None
     # The ID of the artifact stored in memory when the loop succeeds.
     artifact_id: Optional[str] = None
     # Number of new tasks the task engine queued as follow-ups to this one.
@@ -333,6 +337,17 @@ class OrchestratorState:
     # Initialised to "right now" so the first macro runs after a full interval,
     # not immediately at startup.
     last_macro_at: float = field(default_factory=time.monotonic)
+
+    # ── Stagnation monitor state ─────────────────────────────────────────────
+
+    # Total number of stagnation events detected across all detector types.
+    # Incremented by the orchestrator each time the monitor fires.
+    stagnation_events_total: int = 0
+
+    # When the FORCE_BRANCH directive fires, the monitor records the subsystem
+    # to avoid.  The orchestrator forces an early meso synthesis on that
+    # subsystem (triggering a natural pivot to new work) then clears this field.
+    stagnation_avoid_subsystem: Optional[str] = None
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
 

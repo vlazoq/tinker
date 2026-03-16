@@ -121,11 +121,10 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
     logger.info("meso START subsystem=%s", subsystem)
 
     try:
-        # ── 1. Collect artifacts for this subsystem ───────────────────────────
-        # Ask the memory manager for the most recent artifacts tagged with
-        # this subsystem.  ``context_max_artifacts`` caps the number fetched —
-        # the Synthesizer has a limited context window, so we don't want to
-        # dump hundreds of artifacts into it.
+        # ── 1a. Collect artifacts by subsystem tag ────────────────────────────
+        # Primary fetch: ask the memory manager for the most recent artifacts
+        # tagged with this subsystem.  ``context_max_artifacts`` caps the total
+        # because the Synthesizer has a finite context window.
         artifacts = await asyncio.wait_for(
             asyncio.coroutine_if_needed(orch.memory_manager.get_artifacts)(
                 subsystem=subsystem,
@@ -133,6 +132,53 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
             ),
             timeout=20.0,
         )
+
+        # ── 1b. Supplement with task-id–targeted fetch ────────────────────────
+        # Secondary fetch: pull artifacts by the specific task IDs from recent
+        # micro-loop records for this subsystem.  This catches artifacts that
+        # were stored without correct subsystem metadata (e.g. because the task
+        # dict had a missing or misspelled subsystem field) but whose task_id
+        # correctly links them to this batch of work.
+        #
+        # We scan the rolling micro_history (last 100 records) for task_ids
+        # that ran on this subsystem and succeeded.  We cap the list at 20 IDs
+        # to avoid a huge IN clause.
+        try:
+            from .state import LoopStatus
+            recent_task_ids = [
+                r.task_id
+                for r in orch.state.micro_history[-20:]
+                if (
+                    r.subsystem == subsystem
+                    and r.status == LoopStatus.SUCCESS
+                    and r.task_id is not None
+                )
+            ]
+            if recent_task_ids and hasattr(orch.memory_manager, "get_artifacts_by_task_ids"):
+                extra_rows = await asyncio.wait_for(
+                    asyncio.coroutine_if_needed(
+                        orch.memory_manager.get_artifacts_by_task_ids
+                    )(task_ids=recent_task_ids, limit_each=2),
+                    timeout=10.0,
+                )
+                # Merge: skip any row whose artifact id is already in the
+                # primary result so we don't duplicate content for the
+                # Synthesizer.
+                existing_ids = {a.get("id") for a in artifacts}
+                for row in extra_rows:
+                    if row.get("id") not in existing_ids:
+                        artifacts.append(row)
+                        existing_ids.add(row.get("id"))
+                if extra_rows:
+                    logger.debug(
+                        "meso subsystem=%s: added %d task-id–targeted artifact(s)",
+                        subsystem,
+                        len(extra_rows),
+                    )
+        except Exception as exc:
+            # The secondary fetch is a best-effort enhancement; never let it
+            # break a meso synthesis.
+            logger.debug("meso task-id supplemental fetch failed (non-fatal): %s", exc)
 
         # ── 2. Guard: do we have enough to synthesise? ────────────────────────
         # A synthesis built from fewer than ``meso_min_artifacts`` artifacts

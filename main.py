@@ -285,24 +285,35 @@ def _build_real_components(problem: str) -> dict:
         auto_git    = os.getenv("TINKER_AUTO_GIT", "true").lower() == "true",
     )
 
-    # ── Anti-Stagnation Manager (wired optionally) ────────────────────────────
-    # The anti-stagnation manager monitors for repetitive loops and intervenes.
-    # It's not directly called by the Orchestrator — it would be checked separately
-    # at the start of each micro loop in a more complete integration.
-    # Currently it's not wired in here; the Orchestrator handles basic backoff itself.
+    # ── Anti-Stagnation Manager ───────────────────────────────────────────────
+    # The StagnationMonitor runs five detectors after every micro loop:
+    #   SemanticLoop       — detects circular reasoning via embedding similarity
+    #   SubsystemFixation  — detects over-focus on one design area
+    #   CritiqueCollapse   — detects a Critic that's become too agreeable
+    #   ResearchSaturation — detects repeated fetching of the same sources
+    #   TaskStarvation     — detects an empty or stagnant task queue
+    #
+    # When a detector fires, the Orchestrator applies the corresponding
+    # intervention (force early meso, spawn exploration task, etc.).
+    #
+    # The monitor is optional: pass stagnation_monitor=None to disable it.
+    from stagnation.monitor import StagnationMonitor
+    from stagnation.config import StagnationMonitorConfig
+    stagnation_monitor = StagnationMonitor(config=StagnationMonitorConfig())
 
     # Return all components as a flat dict.
     # The Orchestrator receives these via keyword arguments.
     return {
-        "router":            router,
-        "memory_manager":    memory_manager,
-        "task_engine":       task_engine,
-        "context_assembler": context_assembler,
-        "architect_agent":   architect_agent,
-        "critic_agent":      critic_agent,
-        "synthesizer_agent": synthesizer_agent,
-        "tool_layer":        tool_layer,
-        "arch_state_manager": arch_state_manager,
+        "router":               router,
+        "memory_manager":       memory_manager,
+        "task_engine":          task_engine,
+        "context_assembler":    context_assembler,
+        "architect_agent":      architect_agent,
+        "critic_agent":         critic_agent,
+        "synthesizer_agent":    synthesizer_agent,
+        "tool_layer":           tool_layer,
+        "arch_state_manager":   arch_state_manager,
+        "stagnation_monitor":   stagnation_monitor,
     }
 
 
@@ -501,6 +512,13 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         except Exception as exc:
             logger.warning("MemoryManager connect failed (%s) — some features may be limited", exc)
 
+    # ── Metrics ───────────────────────────────────────────────────────────────
+    # TinkerMetrics exposes Prometheus counters/gauges on a scrape endpoint.
+    # If prometheus-client is not installed, every call silently no-ops.
+    # Set TINKER_METRICS_ENABLED=false to disable even when the library exists.
+    from metrics import TinkerMetrics
+    metrics = TinkerMetrics()
+
     # Create the Orchestrator with all the wired-up components.
     # Note: the Orchestrator receives components by keyword argument and never
     # imports them directly. This is "dependency injection" — the Orchestrator
@@ -515,6 +533,8 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         memory_manager      = components["memory_manager"],
         tool_layer          = components["tool_layer"],
         arch_state_manager  = components["arch_state_manager"],
+        stagnation_monitor  = components.get("stagnation_monitor"),
+        metrics             = metrics,
     )
 
     logger.info("=" * 60)

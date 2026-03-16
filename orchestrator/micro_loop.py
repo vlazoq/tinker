@@ -164,6 +164,9 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # along with strengths, weaknesses, and recommendations.
         critic_result = await _call_critic(orch, task, architect_result, cfg.critic_timeout)
         record.critic_tokens = critic_result.get("tokens_used", 0)
+        # Store the raw score on the record so the orchestrator can forward it
+        # to the StagnationMonitor (Critique Collapse detector) after the loop.
+        record.critic_score = critic_result.get("score")
 
         # ── 6. Artifact Storage ──────────────────────────────────────────────
         # Combine the Architect's proposal and the Critic's review into a

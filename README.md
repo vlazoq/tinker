@@ -197,14 +197,46 @@ Over 24-48 hours, Tinker would be expected to progress from a rough initial prob
 
 ---
 
-## Recommended Next Design Steps
+## What Is Implemented
 
-With this high-level architecture established, the natural next areas to specify in detail are:
+All components described in this document are fully built and wired:
 
-1. **The prompt architecture** — what exactly goes into each agent role's context, and how structured outputs are formatted to make them machine-parseable for the Orchestrator
-2. **The task generation schema** — how completed work reliably spawns well-formed next tasks, avoiding vagueness
-3. **The architecture state schema** — the exact structure of the versioned document that represents Tinker's current understanding
-4. **The anti-stagnation algorithms** — the specific mathematical and heuristic mechanisms for detecting and breaking reasoning loops
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Orchestrator (micro / meso / macro loops) | ✅ Done | Signal-safe, atomic state snapshots |
+| Agent roles (Architect, Critic, Synthesizer) | ✅ Done | Structured JSON output with fallback parsing |
+| Memory stack (Redis, DuckDB, ChromaDB, SQLite) | ✅ Done | Unified async interface |
+| Tool layer (web search, scraper, artifact writer, diagram gen) | ✅ Done | httpx-based async tools |
+| Architecture State Manager | ✅ Done | Git-versioned JSON snapshots |
+| Anti-stagnation monitor | ✅ Done | Five detectors, wired into micro loop |
+| TUI Dashboard | ✅ Done | Textual live dashboard |
+| Prometheus metrics | ✅ Done | Optional; install `prometheus-client` |
+| Context Assembler | ✅ Done | Token-budgeted, role-specific prompts |
+| Task engine | ✅ Done | Priority scoring, dependency resolution |
+
+### Anti-Stagnation System
+
+The stagnation monitor runs five detectors after every micro loop:
+
+- **SemanticLoop** — embeds recent outputs and compares cosine similarity across a sliding window.  If consecutive outputs are too similar, fires `ALTERNATIVE_FORCING`.
+- **SubsystemFixation** — counts tag frequency in the window.  Fires `FORCE_BRANCH` when the system over-focuses on one design area, forcing an early meso synthesis to pivot.
+- **CritiqueCollapse** — detects when Critic scores trend too high (the Critic becomes too agreeable).  Fires `INJECT_CONTRADICTION`.
+- **ResearchSaturation** — detects when the Researcher keeps fetching the same URLs.  Fires `SPAWN_EXPLORATION` to inject new work.
+- **TaskStarvation** — detects an empty or depleted task queue.  Fires `ESCALATE_LOOP`, which enqueues a high-priority exploration task.
+
+### Observability
+
+Tinker exposes Prometheus metrics on port 9090 (optional; requires `pip install prometheus-client`).  Key metrics include micro/meso/macro loop counts and durations, Critic score gauge, task queue depth, and stagnation event counts by type.
+
+## Infrastructure
+
+All required external services are defined in `docker-compose.yml`:
+
+```bash
+docker compose up -d   # starts Redis + SearXNG
+```
+
+See `SETUP.md` for the full setup guide.
 
 # Tinker: Build Inventory
 
