@@ -922,8 +922,9 @@ class Orchestrator:
 
         Compatibility note:
         ``add_signal_handler`` is only available on Unix (Linux, macOS).
-        On Windows, signals work differently and this method is skipped — the
-        shutdown event must be set programmatically instead.
+        On Windows the ProactorEventLoop raises NotImplementedError, so we fall
+        back to ``signal.signal()`` for SIGINT (Ctrl-C).  SIGTERM doesn't exist
+        as a real signal on Windows, so it is skipped in the fallback.
         """
         try:
             loop = asyncio.get_running_loop()
@@ -932,10 +933,37 @@ class Orchestrator:
                 loop.add_signal_handler(sig, self._handle_signal, sig)
             logger.debug("Signal handlers installed for SIGINT and SIGTERM")
         except (NotImplementedError, AttributeError):
-            # On Windows or in environments without proper signal support,
-            # add_signal_handler raises NotImplementedError.  That's okay —
-            # the orchestrator can still be stopped via request_shutdown().
-            logger.warning("Signal handlers not supported in this environment")
+            # Windows: ProactorEventLoop does not support add_signal_handler.
+            # Use signal.signal() as a fallback for SIGINT only.
+            # signal.signal() callbacks run in the main OS thread between
+            # Python bytecode instructions, so calling request_shutdown()
+            # (which sets a threading.Event) is safe — it won't corrupt the
+            # event loop the way a raw signal.signal() callback might on Unix.
+            import sys
+            if sys.platform == "win32":
+                try:
+                    signal.signal(
+                        signal.SIGINT,
+                        lambda _sig, _frame: self.request_shutdown(),
+                    )
+                    logger.debug(
+                        "Windows SIGINT handler installed via signal.signal() — "
+                        "press Ctrl-C to shut down gracefully"
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Could not install Windows SIGINT handler (%s) — "
+                        "Ctrl-C will still stop the process via KeyboardInterrupt", exc
+                    )
+            else:
+                # Non-Windows environment with no signal support (e.g. a
+                # restricted container).  Ctrl-C raises KeyboardInterrupt which
+                # asyncio.run() converts to CancelledError; the run() try/finally
+                # block calls _on_shutdown() so the final snapshot is written.
+                logger.warning(
+                    "Signal handlers not supported in this environment — "
+                    "Ctrl-C will still shut down cleanly via KeyboardInterrupt"
+                )
 
     def _handle_signal(self, sig: signal.Signals) -> None:
         """

@@ -33,6 +33,11 @@ class RedisAdapter:
     Async Redis adapter for ephemeral per-task context.
 
     Keys are namespaced:  tinker:<session_id>:<key>
+
+    If Redis is unavailable (not installed, not running, wrong URL), all
+    operations silently no-op and ``available`` returns False.  This lets
+    the orchestrator run on Windows or in minimal environments without Redis,
+    at the cost of per-task working memory (context is lost between loops).
     """
 
     def __init__(self, url: str, default_ttl: int = 3600):
@@ -40,12 +45,31 @@ class RedisAdapter:
         self.default_ttl = default_ttl
         self._client = None
 
+    @property
+    def available(self) -> bool:
+        return self._client is not None
+
     async def connect(self) -> None:
-        import redis.asyncio as aioredis        # type: ignore
-        self._client = await aioredis.from_url(
-            self.url, encoding="utf-8", decode_responses=True
-        )
-        logger.info("Redis connected at %s", self.url)
+        try:
+            import redis.asyncio as aioredis        # type: ignore
+            client = await aioredis.from_url(
+                self.url, encoding="utf-8", decode_responses=True
+            )
+            await client.ping()          # verify reachability before accepting
+            self._client = client
+            logger.info("Redis connected at %s", self.url)
+        except ImportError:
+            logger.info(
+                "RedisAdapter: redis package not installed — "
+                "working memory disabled (run: pip install redis)"
+            )
+        except Exception as exc:
+            logger.warning(
+                "RedisAdapter: Redis not reachable at %s (%s) — "
+                "working memory disabled. "
+                "On Windows: start Redis with 'docker compose up -d'",
+                self.url, exc,
+            )
 
     async def close(self) -> None:
         if self._client:
@@ -61,6 +85,8 @@ class RedisAdapter:
         value: Any,
         ttl: Optional[int] = None,
     ) -> None:
+        if not self._client:
+            return
         payload = json.dumps(value)
         ttl = ttl if ttl is not None else self.default_ttl
         if ttl > 0:
@@ -69,26 +95,36 @@ class RedisAdapter:
             await self._client.set(self._key(session_id, key), payload)
 
     async def get(self, session_id: str, key: str) -> Optional[Any]:
+        if not self._client:
+            return None
         raw = await self._client.get(self._key(session_id, key))
         return json.loads(raw) if raw is not None else None
 
     async def delete(self, session_id: str, key: str) -> None:
+        if not self._client:
+            return
         await self._client.delete(self._key(session_id, key))
 
     async def keys(self, session_id: str) -> list[str]:
         """Return all keys for a session (strips the namespace prefix)."""
+        if not self._client:
+            return []
         prefix = f"tinker:{session_id}:"
         raw_keys = await self._client.keys(f"{prefix}*")
         return [k[len(prefix):] for k in raw_keys]
 
     async def flush_session(self, session_id: str) -> int:
         """Delete every key belonging to a session. Returns count deleted."""
+        if not self._client:
+            return 0
         ks = await self._client.keys(f"tinker:{session_id}:*")
         if ks:
             return await self._client.delete(*ks)
         return 0
 
     async def ping(self) -> bool:
+        if not self._client:
+            return False
         try:
             return await self._client.ping()
         except Exception:

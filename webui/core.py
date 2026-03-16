@@ -27,7 +27,7 @@ BACKUP_DIR = Path(os.getenv("TINKER_BACKUP_DIR",    BASE_DIR / "tinker_backups")
 FLAGS_FILE = Path(os.getenv("TINKER_FLAGS_FILE",     BASE_DIR / "tinker_flags.json"))
 CONFIG_FILE= Path(os.getenv("TINKER_WEBUI_CONFIG",   BASE_DIR / "tinker_webui_config.json"))
 STATE_FILE = Path(os.getenv("TINKER_STATE_PATH",     BASE_DIR / "tinker_state.json"))
-HEALTH_URL = os.getenv("TINKER_HEALTH_URL", "http://localhost:8080")
+HEALTH_URL = os.getenv("TINKER_HEALTH_URL", "http://localhost:8081")
 
 # ── Default flag values (mirrors features/flags.py) ──────────────────────────
 FLAG_DEFAULTS: dict[str, bool] = {

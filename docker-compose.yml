@@ -31,14 +31,17 @@
 # Port mapping summary
 # --------------------
 #   Redis   : localhost:6379
-#   SearXNG : localhost:8080  (set TINKER_SEARXNG_URL=http://localhost:8080)
+#   SearXNG : localhost:8888  (set TINKER_SEARXNG_URL=http://localhost:8888)
+#
+# Port 8888 is used for SearXNG to avoid conflict with the orchestrator's
+# health endpoint (default: 8081) and Ollama (default: 11434).
 #
 # Environment variable wiring
 # ---------------------------
 # Tinker reads these from .env (copy .env.example to .env first):
 #
 #   TINKER_REDIS_URL=redis://localhost:6379
-#   TINKER_SEARXNG_URL=http://localhost:8080
+#   TINKER_SEARXNG_URL=http://localhost:8888
 
 version: "3.9"
 
@@ -95,7 +98,8 @@ services:
     container_name: tinker-searxng
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8888:8080"   # host:container — SearXNG listens on 8080 inside Docker,
+                      # exposed as 8888 on the host to avoid port conflicts
     environment:
       # SEARXNG_SECRET is required; it signs session cookies.
       # Change this to any random string for your own deployment.
