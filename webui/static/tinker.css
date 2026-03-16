@@ -133,9 +133,14 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .badge-resolved { background: rgba(63,185,80,.2);   color: var(--success); }
 .badge-discarded{ background: rgba(139,148,158,.2); color: var(--muted); }
 .badge-critique { background: rgba(88,166,255,.2);  color: var(--accent); }
-.badge-design   { color: var(--accent); }
-.badge-research { color: #f0883e; }
+.badge-design      { color: var(--accent); }
+.badge-research    { color: #f0883e; }
 .badge-exploration { color: #bc8cff; }
+.badge-unknown     { background: rgba(139,148,158,.2); color: var(--muted); }
+.badge-ok          { background: rgba(63,185,80,.2);   color: var(--success); }
+.badge-degraded    { background: rgba(210,153,34,.2);  color: var(--warning); }
+.badge-running     { background: rgba(88,166,255,.12); color: var(--accent); }
+.badge-shutdown    { background: rgba(139,148,158,.2); color: var(--muted); }
 
 /* ── Forms ───────────────────────────────────────────────────────────────── */
 .form-group { margin-bottom: 14px; }

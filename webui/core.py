@@ -130,7 +130,7 @@ SUBSYSTEMS    = ["model_client", "memory_manager", "tool_layer", "agent_prompts"
 
 # ── SQLite helpers ────────────────────────────────────────────────────────────
 
-def _db_query_sync(db_path: Path, sql: str, params: tuple = ()) -> list[dict]:
+def db_query_sync(db_path: Path, sql: str, params: tuple = ()) -> list[dict]:
     if not db_path.exists():
         return []
     try:
@@ -142,7 +142,7 @@ def _db_query_sync(db_path: Path, sql: str, params: tuple = ()) -> list[dict]:
     except Exception:
         return []
 
-def _db_execute_sync(db_path: Path, sql: str, params: tuple = ()) -> bool:
+def db_execute_sync(db_path: Path, sql: str, params: tuple = ()) -> bool:
     if not db_path.exists():
         return False
     try:
@@ -155,10 +155,10 @@ def _db_execute_sync(db_path: Path, sql: str, params: tuple = ()) -> bool:
         return False
 
 async def db_query(db_path: Path, sql: str, params: tuple = ()) -> list[dict]:
-    return await asyncio.to_thread(_db_query_sync, db_path, sql, params)
+    return await asyncio.to_thread(db_query_sync, db_path, sql, params)
 
 async def db_execute(db_path: Path, sql: str, params: tuple = ()) -> bool:
-    return await asyncio.to_thread(_db_execute_sync, db_path, sql, params)
+    return await asyncio.to_thread(db_execute_sync, db_path, sql, params)
 
 # ── Config helpers ────────────────────────────────────────────────────────────
 
@@ -202,7 +202,72 @@ def load_state() -> dict:
             pass
     return {}
 
+def _dlq_stats_sync() -> dict:
+    """Read DLQ counts from SQLite — used as fallback when health server is offline."""
+    stats = {"pending": 0, "resolved": 0, "discarded": 0, "total": 0}
+    for row in db_query_sync(DLQ_DB, "SELECT status, COUNT(*) n FROM dlq_items GROUP BY status"):
+        stats[row["status"]] = row["n"]
+        stats["total"] += row["n"]
+    return stats
+
+
+def _state_to_health(state: dict) -> dict:
+    """
+    Transform tinker_state.json (OrchestratorState.to_dict() output) into the
+    same shape as the /health HTTP endpoint so the React dashboard always gets
+    a consistent structure regardless of whether the orchestrator is running.
+
+    State file keys:  uptime_seconds, status, current_level, current_task_id,
+                      totals.{micro,meso,macro,consecutive_failures},
+                      subsystem_micro_counts, micro_history, ...
+    Health endpoint:  loops.{micro,meso,macro,consecutive_failures,
+                              current_level,stagnation_events},
+                      dlq.{pending,resolved,discarded,total},
+                      circuit_breakers, memory, rate_limiters, sla
+    """
+    totals = state.get("totals", {})
+    # Derive last critic score from most recent micro history entry
+    micro_hist = state.get("micro_history", [])
+    last_critic = micro_hist[-1].get("critic_score") if micro_hist else None
+    # stagnation_events_total is not written to the state file; count from audit
+    stagnation = sum(
+        r["n"] for r in db_query_sync(
+            AUDIT_DB,
+            "SELECT COUNT(*) n FROM audit_events WHERE event_type='stagnation_detected'"
+        )
+    ) if AUDIT_DB.exists() else None
+
+    return {
+        "online": False,
+        "from_state_file": True,
+        "status": state.get("status", "unknown"),
+        "uptime_seconds": state.get("uptime_seconds"),
+        "loops": {
+            "micro":               totals.get("micro", 0),
+            "meso":                totals.get("meso", 0),
+            "macro":               totals.get("macro", 0),
+            "consecutive_failures":totals.get("consecutive_failures", 0),
+            "current_level":       state.get("current_level", "idle"),
+            "stagnation_events":   stagnation,
+        },
+        "current_task_id":      state.get("current_task_id"),
+        "current_subsystem":    state.get("current_subsystem"),
+        "last_critic_score":    last_critic,
+        "subsystem_micro_counts": state.get("subsystem_micro_counts", {}),
+        "dlq":             _dlq_stats_sync(),
+        "circuit_breakers": {},   # only available from live health endpoint
+        "memory":          {},
+        "rate_limiters":   {},
+        "sla":             {},
+    }
+
+
 async def fetch_health() -> dict:
+    """
+    Try the orchestrator's /health endpoint first (port 8080).
+    Falls back to reading tinker_state.json and reshaping it into the same
+    structure so callers never need to handle two different shapes.
+    """
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             resp = await client.get(f"{HEALTH_URL}/health")
@@ -211,7 +276,10 @@ async def fetch_health() -> dict:
     except Exception:
         pass
     state = load_state()
-    return {"online": False, "from_state_file": bool(state), **state}
+    if not state:
+        return {"online": False, "from_state_file": False,
+                "loops": {}, "dlq": {}, "circuit_breakers": {}, "memory": {}}
+    return _state_to_health(state)
 
 # ── Backup helpers ────────────────────────────────────────────────────────────
 

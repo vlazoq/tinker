@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -115,7 +116,10 @@ async def api_config_save(body: dict = None, request: Request = None):
                 continue
             try:
                 val = int(raw) if meta["type"] == "int" else float(raw)
-                stagnation_save[section_key][field_name] = val
+                if val < meta["min"]:
+                    errors.append(f"Stagnation {section_key}.{meta['label']} must be >= {meta['min']}")
+                else:
+                    stagnation_save[section_key][field_name] = val
             except (ValueError, TypeError):
                 errors.append(f"Stagnation {section_key}.{meta['label']}: invalid value '{raw}'")
 
@@ -230,9 +234,30 @@ async def api_backups():
 
 @app.post("/api/backups/trigger")
 async def api_backups_trigger():
-    trigger = BACKUP_DIR.parent / "tinker_backup_trigger"
-    trigger.write_text(now_iso())
-    return {"ok": True, "message": "Backup trigger written. BackupManager will pick it up shortly."}
+    """
+    Run the backup CLI as a subprocess.
+    Uses `python -m backup --backup` from the tinker root directory,
+    which is the same mechanism as `python -m backup --backup` in the terminal.
+    """
+    from .core import BASE_DIR
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "backup", "--backup",
+            cwd=str(BASE_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        if proc.returncode == 0:
+            msg = stdout.decode().strip() or "Backup created successfully."
+            return {"ok": True, "message": msg}
+        else:
+            err = stderr.decode().strip() or "Backup failed (no output)."
+            return JSONResponse({"ok": False, "error": err}, status_code=500)
+    except asyncio.TimeoutError:
+        return JSONResponse({"ok": False, "error": "Backup timed out after 120s."}, status_code=504)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
@@ -276,18 +301,24 @@ async def api_logs_stream(request: Request, level: str = "INFO"):
             if await request.is_disconnected():
                 break
             state = load_state()
-            micro = state.get("micro_loops", -1)
+            totals = state.get("totals", {})
+            micro = totals.get("micro", -1)
             if micro != last_micro:
                 last_micro = micro
+                # Derive last critic score from micro history (not a top-level key)
+                micro_hist = state.get("micro_history", [])
+                critic = micro_hist[-1].get("critic_score") if micro_hist else None
                 evt = json.dumps({
                     "time": now_iso(),
                     "level": "INFO",
-                    "micro_loops": micro,
-                    "meso_loops": state.get("meso_loops", 0),
-                    "macro_loops": state.get("macro_loops", 0),
-                    "current_task": state.get("current_task"),
-                    "critic_score": state.get("last_critic_score"),
-                    "stagnation_events": state.get("stagnation_events", 0),
+                    "micro_loops":  micro,
+                    "meso_loops":   totals.get("meso", 0),
+                    "macro_loops":  totals.get("macro", 0),
+                    "current_task": state.get("current_task_id"),   # correct key
+                    "critic_score": critic,
+                    "current_level":   state.get("current_level"),
+                    "current_subsystem": state.get("current_subsystem"),
+                    "consecutive_failures": totals.get("consecutive_failures", 0),
                 })
                 yield f"data: {evt}\n\n"
             await asyncio.sleep(2)

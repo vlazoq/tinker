@@ -24,7 +24,7 @@ from webui.core import (
     FLAG_DEFAULTS, FLAG_DESCRIPTIONS, FLAG_GROUPS,
     TASK_TYPES, SUBSYSTEMS,
     AUDIT_DB, BACKUP_DIR, DLQ_DB, FLAGS_FILE, TASKS_DB,
-    _db_query_sync as dbq, _db_execute_sync as dbe,
+    db_query_sync as dbq, db_execute_sync as dbe,
     list_backups, load_config, load_flags, load_state,
     new_id, now_iso, save_config, save_flags,
 )
@@ -58,25 +58,34 @@ with tabs[0]:
     if not state:
         st.warning("Orchestrator offline — `tinker_state.json` not found.")
     else:
+        totals = state.get("totals", {})
+        micro_hist = state.get("micro_history", [])
+        last_critic = micro_hist[-1].get("critic_score") if micro_hist else None
+
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Micro Loops",      state.get("micro_loops","—"))
-        c2.metric("Meso Loops",       state.get("meso_loops","—"))
-        c3.metric("Macro Loops",      state.get("macro_loops","—"))
-        c4.metric("Stagnation Events",state.get("stagnation_events","—"))
+        c1.metric("Micro Loops",         totals.get("micro", "—"))
+        c2.metric("Meso Loops",          totals.get("meso",  "—"))
+        c3.metric("Macro Loops",         totals.get("macro", "—"))
+        c4.metric("Consecutive Failures",totals.get("consecutive_failures", 0))
 
         col_left, col_right = st.columns(2)
         with col_left:
             st.subheader("Loop Status")
             st.json({
-                "current_level":       state.get("current_level","—"),
-                "consecutive_failures":state.get("consecutive_failures","—"),
-                "current_task":        state.get("current_task","—"),
-                "last_critic_score":   state.get("last_critic_score","—"),
+                "status":              state.get("status", "—"),
+                "current_level":       state.get("current_level", "—"),
+                "current_task_id":     state.get("current_task_id", "—"),
+                "current_subsystem":   state.get("current_subsystem", "—"),
+                "last_critic_score":   last_critic,
+                "uptime_min":          round(state.get("uptime_seconds", 0) / 60, 1),
             })
 
         with col_right:
-            st.subheader("Raw State")
-            st.json(state)
+            st.subheader("Subsystem Micro Counts")
+            counts = state.get("subsystem_micro_counts", {})
+            if counts:
+                import pandas as pd
+                st.bar_chart(pd.Series(counts))
 
 # ── Config ────────────────────────────────────────────────────────────────────
 with tabs[1]:
