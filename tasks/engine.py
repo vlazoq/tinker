@@ -140,6 +140,52 @@ class TaskEngine:
         d.setdefault("description", "")
         return d
 
+    async def enqueue_exploration_task(
+        self,
+        title: str = "Explore an under-researched architectural area",
+        description: str = (
+            "The system has shown signs of research saturation or task starvation. "
+            "Identify a part of the design that has received little attention and "
+            "propose one or more concrete investigative questions to break the loop."
+        ),
+        subsystem: "Subsystem | None" = None,
+    ) -> dict:
+        """
+        Create and immediately enqueue an exploration task.
+
+        Called by the orchestrator when the StagnationMonitor fires a
+        SPAWN_EXPLORATION or ESCALATE_LOOP directive.  The exploration task
+        has a high confidence_gap (0.9) so the priority scorer will surface
+        it quickly, injecting fresh exploratory work into the queue.
+
+        Parameters
+        ----------
+        title       : Short human-readable title for the task.
+        description : What the exploration should focus on.
+        subsystem   : Optional subsystem to target; defaults to CROSS_CUTTING.
+
+        Returns
+        -------
+        dict : The newly queued task in orchestrator-dict format.
+        """
+        target_subsystem = subsystem if subsystem is not None else Subsystem.CROSS_CUTTING
+        task = self.generator.make_exploration_task(
+            title=title,
+            description=description,
+            subsystem=target_subsystem,
+        )
+
+        def _save() -> None:
+            self.registry.save(task)
+
+        await asyncio.get_running_loop().run_in_executor(None, _save)
+        log.info(
+            "TaskEngine enqueued exploration task '%s' (subsystem=%s)",
+            task.title,
+            task.subsystem.value,
+        )
+        return self._task_to_orchestrator_dict(task)
+
     @property
     def queue_depth(self) -> int:
         return self.queue.depth()

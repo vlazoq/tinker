@@ -57,31 +57,29 @@ curl http://localhost:11434/api/tags   # run on each machine
 
 ---
 
-## 3. Start Redis
+## 3. Start Infrastructure Services (Redis + SearXNG)
 
-Tinker uses Redis for working memory (short-lived context per task).
-
-```bash
-# Using Docker (recommended)
-docker run -d --name tinker-redis -p 6379:6379 redis:7-alpine
-
-# Or install natively (Ubuntu/Debian)
-sudo apt install redis-server
-sudo systemctl start redis
-```
-
----
-
-## 4. Start SearXNG (Web Search)
-
-Tinker uses SearXNG as a self-hosted meta-search engine for the Researcher agent.
+Tinker requires Redis (working memory) and SearXNG (web search).  A
+`docker-compose.yml` in the repo root starts both with a single command:
 
 ```bash
-cd p3_tool_layer
-docker compose -f docker-compose.searxng.yml up -d
+# Start Redis and SearXNG in the background
+docker compose up -d
+
+# Verify both are healthy
+docker compose ps
 ```
 
+Redis will be available at `redis://localhost:6379`.
 SearXNG will be available at `http://localhost:8080`.
+
+**Manual alternative** (if you prefer not to use Docker Compose):
+
+```bash
+# Redis only
+docker run -d --name tinker-redis -p 6379:6379 redis:7-alpine
+# Or natively: sudo apt install redis-server && sudo systemctl start redis
+```
 
 ---
 
@@ -131,7 +129,7 @@ Tinker runs indefinitely. Press **Ctrl-C** to stop gracefully.
 ## 8. Run the Dashboard (in a separate terminal)
 
 ```bash
-python -m p10_observability_dashboard
+python -m dashboard
 ```
 
 The Textual TUI dashboard shows:
@@ -140,6 +138,53 @@ The Textual TUI dashboard shows:
 - Architect / Critic token counts
 - Live log stream
 - Architecture state health
+
+---
+
+## 9. Prometheus Metrics (optional)
+
+Tinker can expose Prometheus-compatible metrics on port 9090.  Install the
+optional dependency to enable this:
+
+```bash
+pip install prometheus-client
+```
+
+Once installed, Tinker automatically starts a metrics HTTP server at startup:
+
+```
+http://localhost:9090/metrics
+```
+
+Add a scrape job to your `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: tinker
+    static_configs:
+      - targets: ['localhost:9090']
+```
+
+**Available metrics:**
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `tinker_micro_loops_total` | Counter | Micro loops by status |
+| `tinker_meso_loops_total` | Counter | Meso syntheses by status |
+| `tinker_macro_loops_total` | Counter | Macro snapshots by status |
+| `tinker_micro_loop_duration_seconds` | Histogram | Time per micro loop |
+| `tinker_meso_loop_duration_seconds` | Histogram | Time per meso synthesis |
+| `tinker_critic_score` | Gauge | Latest Critic quality score (0–1) |
+| `tinker_task_queue_depth` | Gauge | Pending task count |
+| `tinker_consecutive_failures` | Gauge | Current failure streak |
+| `tinker_stagnation_events_total` | Counter | Stagnation detections by type |
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TINKER_METRICS_PORT` | `9090` | Prometheus scrape port |
+| `TINKER_METRICS_ENABLED` | `true` | Set `false` to disable |
 
 ---
 
@@ -180,4 +225,4 @@ main.py
 | `No module named 'chromadb'` | Run `pip install -e .` from the repo root |
 | Web search returns no results | Start SearXNG: `docker compose -f p3_tool_layer/docker-compose.searxng.yml up -d` |
 | Import errors on startup | Run `pip install -e ".[dev]"` to install all dependencies |
-| Dashboard blank | Check `/tmp/tinker_orchestrator_state.json` exists after Tinker starts |
+| Dashboard blank | Check `./tinker_state.json` exists after Tinker starts (set `TINKER_STATE_PATH` if needed) |

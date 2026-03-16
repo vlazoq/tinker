@@ -244,6 +244,38 @@ class MemoryManager:
             result.append(Artifact.from_dict(row))
         return result
 
+    async def get_artifacts_by_task_ids(
+        self,
+        task_ids: list,
+        limit_each: int = 2,
+    ) -> list[dict]:
+        """
+        Return raw artifact dicts for a batch of task_ids in one DB round-trip.
+
+        Used by the meso loop to supplement the subsystem-tag search with
+        a targeted lookup of artifacts from known micro-loop task IDs.  This
+        catches any artifacts whose subsystem metadata was missing or mismatched
+        but whose task_id correctly identifies them as part of the batch.
+
+        Returns plain dicts (not Artifact objects) so the meso loop can merge
+        them directly with the dicts returned by ``get_artifacts()``.
+
+        Parameters
+        ----------
+        task_ids   : List of task UUID strings from recent MicroLoopRecords.
+        limit_each : Max artifacts per task_id (default 2).
+        """
+        if not task_ids:
+            return []
+        rows = await self._duckdb.get_by_task_ids(task_ids, limit_each=limit_each)
+        result = []
+        for row in rows:
+            if isinstance(row.get("metadata"), str):
+                import json
+                row["metadata"] = json.loads(row["metadata"])
+            result.append(row)
+        return result
+
     async def get_artifacts_by_task(
         self,
         task_id: str,

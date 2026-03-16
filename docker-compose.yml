@@ -1,0 +1,127 @@
+# docker-compose.yml — Tinker infrastructure services
+# =====================================================
+#
+# Starts all the external services Tinker needs:
+#
+#   redis     — Working memory (fast key-value store for per-task context).
+#   searxng   — Self-hosted meta-search engine for the Researcher agent.
+#               Queries Google/Bing/DuckDuckGo on your behalf without
+#               rate limits or API keys.
+#
+# Services NOT included here (managed separately):
+#   Ollama    — Run "ollama serve" natively on each machine (GPU access
+#               requires native install, not Docker).
+#   ChromaDB  — Embedded in-process; no standalone service needed.
+#   DuckDB    — File-based; no standalone service needed.
+#   SQLite    — File-based; no standalone service needed.
+#
+# Quick start
+# -----------
+#   docker compose up -d          # start all services in the background
+#   docker compose logs -f        # stream logs
+#   docker compose down           # stop and remove containers
+#   docker compose down -v        # stop and remove containers + data volumes
+#
+# Data persistence
+# ----------------
+# Redis data is written to a named volume (redis_data) so it survives
+# container restarts.  SearXNG configuration is read from ./searxng/ if
+# that directory exists; otherwise the defaults are used.
+#
+# Port mapping summary
+# --------------------
+#   Redis   : localhost:6379
+#   SearXNG : localhost:8080  (set TINKER_SEARXNG_URL=http://localhost:8080)
+#
+# Environment variable wiring
+# ---------------------------
+# Tinker reads these from .env (copy .env.example to .env first):
+#
+#   TINKER_REDIS_URL=redis://localhost:6379
+#   TINKER_SEARXNG_URL=http://localhost:8080
+
+version: "3.9"
+
+services:
+
+  # ── Redis — Working Memory ─────────────────────────────────────────────────
+  #
+  # Redis stores per-task ephemeral context: the most recent 3-5 AI outputs,
+  # assembled prompt fragments, and short-lived task metadata.  It is wiped
+  # at the start of each new task cycle (by design — it's a working scratchpad,
+  # not permanent storage).
+  #
+  # We use Redis 7 Alpine for a small image footprint.  appendonly persistence
+  # is disabled (default) because working memory is intentionally ephemeral.
+  redis:
+    image: redis:7-alpine
+    container_name: tinker-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      # Named volume so data survives container restarts.
+      # Wipe with: docker compose down -v
+      - redis_data:/data
+    # Tune max memory to avoid Redis eating RAM on resource-constrained machines.
+    # 256 MB is generous for Tinker's working-memory use case.
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── SearXNG — Self-hosted Web Search ──────────────────────────────────────
+  #
+  # SearXNG is an open-source meta-search engine.  It queries multiple search
+  # engines (Google, DuckDuckGo, Bing, etc.) on behalf of the Researcher agent
+  # and aggregates the results.  All traffic stays on your own infrastructure —
+  # no API keys, no rate limits, no search history sent to third parties.
+  #
+  # The JSON API endpoint (/search?format=json) is what Tinker's WebSearchTool
+  # calls.  The web UI (port 8080 in a browser) is for debugging.
+  #
+  # Configuration
+  # ~~~~~~~~~~~~~
+  # If you want to customise SearXNG (e.g. enable/disable specific search
+  # engines, change the default language), create a ./searxng/ directory and
+  # copy the settings file there.  SearXNG will pick it up automatically.
+  #
+  # To generate a fresh settings file:
+  #   docker run --rm searxng/searxng cat /etc/searxng/settings.yml > searxng/settings.yml
+  searxng:
+    image: searxng/searxng:latest
+    container_name: tinker-searxng
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # SEARXNG_SECRET is required; it signs session cookies.
+      # Change this to any random string for your own deployment.
+      - SEARXNG_SECRET=tinker-searxng-secret-change-me
+      # Allow the JSON API (disabled by default in newer SearXNG versions).
+      - SEARXNG_FORMATS=html,json
+    volumes:
+      # Optional: mount a local config directory if you have a settings.yml.
+      # Comment this out if you don't have a ./searxng/ directory yet.
+      - ./searxng:/etc/searxng:rw
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ── Named volumes ──────────────────────────────────────────────────────────────
+#
+# Named volumes are managed by Docker and persist across container restarts.
+# They are stored in /var/lib/docker/volumes/ on Linux.
+volumes:
+  redis_data:
+    driver: local

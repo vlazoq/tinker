@@ -40,11 +40,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Install with: pip install -e ".[metrics]"
+# Enables Prometheus metrics on http://localhost:9090/metrics
+metrics = [
+    "prometheus-client>=0.20.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "fakeredis[aioredis]>=2.23.0",
     "textual-dev>=0.52.0",
+    "prometheus-client>=0.20.0",
 ]
 
 [project.scripts]
