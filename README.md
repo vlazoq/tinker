@@ -203,9 +203,9 @@ All components described in this document are fully built and wired:
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Orchestrator (micro / meso / macro loops) | ✅ Done | Signal-safe, atomic state snapshots |
+| Orchestrator (micro / meso / macro loops) | ✅ Done | Signal-safe (Linux/macOS/Windows), atomic state snapshots |
 | Agent roles (Architect, Critic, Synthesizer) | ✅ Done | Structured JSON output with fallback parsing |
-| Memory stack (Redis, DuckDB, ChromaDB, SQLite) | ✅ Done | Unified async interface |
+| Memory stack (Redis, DuckDB, ChromaDB, SQLite) | ✅ Done | Redis optional (graceful no-op on Windows without Docker) |
 | Tool layer (web search, scraper, artifact writer, diagram gen) | ✅ Done | httpx-based async tools |
 | Architecture State Manager | ✅ Done | Git-versioned JSON snapshots |
 | Anti-stagnation monitor | ✅ Done | Five detectors, wired into micro loop |
@@ -233,10 +233,20 @@ Tinker exposes Prometheus metrics on port 9090 (optional; requires `pip install 
 All required external services are defined in `docker-compose.yml`:
 
 ```bash
-docker compose up -d   # starts Redis + SearXNG
+docker compose up -d   # starts Redis (6379) + SearXNG (8888)
 ```
 
-See `SETUP.md` for the full setup guide.
+| Service | Port | Purpose |
+|---------|------|---------|
+| Redis | 6379 | Working memory (ephemeral per-task context) |
+| SearXNG | **8888** | Self-hosted web search for the Researcher agent |
+| Health endpoint | **8081** | Orchestrator liveness / readiness probes |
+
+> **Windows:** Docker Desktop is required for Redis.  Without Redis, Tinker
+> runs in reduced-memory mode (working memory disabled, all durable stores
+> fully functional).  See `SETUP.md` for the Windows quickstart.
+
+See `SETUP.md` for the full per-OS setup guide (Linux, macOS, Windows).
 
 # Tinker: Build Inventory
 
@@ -277,13 +287,17 @@ Ollama is the practical choice to start. It exposes an OpenAI-compatible REST AP
 
 ### Orchestration Runtime
 ```
-Python 3.11+
-uv                      # fast Python package manager (replaces pip/venv)
+Python 3.11+            # Linux: apt install python3.11
+                        # macOS: brew install python@3.11
+                        # Windows: download installer from python.org (tick "Add to PATH")
+uv                      # optional fast package manager (replaces pip/venv)
 ```
 
 ### Memory & Storage
 ```
-Redis                   # working memory (apt install redis)
+Redis                   # working memory
+                        # Linux/macOS: docker compose up -d  OR  apt install redis
+                        # Windows:     docker compose up -d  (Docker Desktop required)
 SQLite                  # comes with Python, no install needed
 DuckDB                  # pip install duckdb (session memory, fast analytics)
 ChromaDB                # pip install chromadb (vector DB for research archive)
@@ -317,12 +331,15 @@ Rich                    # pip install rich (pretty terminal output)
 Textual                 # pip install textual (TUI dashboard, optional but very useful)
 ```
 
-### Docker (for SearXNG)
+### Docker (for SearXNG + Redis on Windows)
 ```
-Docker + Docker Compose # apt install docker.io
+Docker + Docker Compose # Linux:   apt install docker.io docker-compose-plugin
+                        # macOS:   Docker Desktop from docker.com
+                        # Windows: Docker Desktop from docker.com (requires WSL2)
 ```
 
-**SearXNG docker-compose** — one YAML file, gives you a private search engine Tinker can query freely without rate limits or API keys.
+**SearXNG** runs at `http://localhost:8888` — a private search engine Tinker can query freely without rate limits or API keys.
+**Redis** runs at `redis://localhost:6379` — required for full working-memory support (optional on Windows).
 
 ---
 
