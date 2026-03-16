@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tinker Web UI</title>
+<link rel="stylesheet" href="/static/tinker.css">
+<!-- React + Babel via CDN — no build step required -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+const api = {
+  get:  (url)       => fetch(url).then(r => r.json()),
+  post: (url, body) => fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }).then(r => r.json()),
+};
+
+// ── Shared components ─────────────────────────────────────────────────────────
+const Spinner = () => <span className="spinner" />;
+
+const Alert = ({ type = 'info', children }) => (
+  <div className={`alert alert-${type}`}>{children}</div>
+);
+
+const Badge = ({ status }) => (
+  <span className={`badge badge-${status}`}>{status}</span>
+);
+
+const StatBox = ({ value, label }) => (
+  <div className="stat-box">
+    <div className="value">{value ?? '—'}</div>
+    <div className="label">{label}</div>
+  </div>
+);
+
+// ── Status badge (header) ─────────────────────────────────────────────────────
+const StatusBadge = ({ online }) => (
+  <span className={`status-badge ${online ? 'online' : 'offline'}`}>
+    {online ? 'LIVE' : 'OFFLINE'}
+  </span>
+);
+
+// ── Dashboard tab ─────────────────────────────────────────────────────────────
+const Dashboard = () => {
+  const [health, setHealth] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(() => {
+    api.get('/api/health').then(d => { setHealth(d); setLoading(false); });
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 5000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  if (loading) return <div className="card"><Spinner /> Loading…</div>;
+
+  const loops  = health?.loops || {};
+  const memory = health?.memory || {};
+  const dlqStats = health?.dlq || {};
+  const cbs    = health?.circuit_breakers || {};
+
+  return (
+    <div>
+      {!health?.online && (
+        <Alert type="warn">
+          Orchestrator health server offline. Showing last known state{health?.from_state_file ? ' (from tinker_state.json)' : ''}.
+        </Alert>
+      )}
+
+      <div className="grid-4 mb-16">
+        <StatBox value={loops.micro ?? '—'} label="Micro Loops" />
+        <StatBox value={loops.meso  ?? '—'} label="Meso Loops" />
+        <StatBox value={loops.macro ?? '—'} label="Macro Loops" />
+        <StatBox value={loops.stagnation_events ?? '—'} label="Stagnation Events" />
+      </div>
+
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-title">Loop Status</div>
+          <table><tbody>
+            <tr><td className="muted">Current Level</td><td>{loops.current_level || '—'}</td></tr>
+            <tr><td className="muted">Consecutive Failures</td><td>{loops.consecutive_failures ?? '—'}</td></tr>
+            <tr><td className="muted">Uptime</td><td>{health?.uptime_seconds != null ? `${Math.floor(health.uptime_seconds / 60)}m` : '—'}</td></tr>
+            <tr><td className="muted">Health Status</td><td><Badge status={health?.status || 'unknown'} /></td></tr>
+          </tbody></table>
+        </div>
+
+        <div className="card">
+          <div className="card-title">Dead Letter Queue</div>
+          <table><tbody>
+            <tr><td className="muted">Pending</td><td style={{color:'var(--warning)'}}>{dlqStats.pending ?? '—'}</td></tr>
+            <tr><td className="muted">Resolved</td><td style={{color:'var(--success)'}}>{dlqStats.resolved ?? '—'}</td></tr>
+            <tr><td className="muted">Discarded</td><td className="muted">{dlqStats.discarded ?? '—'}</td></tr>
+            <tr><td className="muted">Total</td><td>{dlqStats.total ?? '—'}</td></tr>
+          </tbody></table>
+        </div>
+
+        <div className="card">
+          <div className="card-title">Circuit Breakers</div>
+          {Object.keys(cbs).length === 0
+            ? <p className="muted">No data</p>
+            : <table><tbody>
+                {Object.entries(cbs).map(([name, state]) => (
+                  <tr key={name}>
+                    <td className="muted mono">{name}</td>
+                    <td><Badge status={state === 'open' ? 'failed' : state === 'half_open' ? 'critique' : 'complete'} /></td>
+                  </tr>
+                ))}
+              </tbody></table>
+          }
+        </div>
+
+        <div className="card">
+          <div className="card-title">Memory / Storage</div>
+          {Object.keys(memory).length === 0
+            ? <p className="muted">No data</p>
+            : <table><tbody>
+                {Object.entries(memory).map(([name, status]) => (
+                  <tr key={name}>
+                    <td className="muted">{name}</td>
+                    <td style={{color: status === 'ok' ? 'var(--success)' : 'var(--danger)'}}>{status}</td>
+                  </tr>
+                ))}
+              </tbody></table>
+          }
+        </div>
+      </div>
+
+      <div style={{textAlign:'right', marginTop:8}}>
+        <button className="btn btn-ghost btn-sm" onClick={refresh}>↻ Refresh</button>
+      </div>
+    </div>
+  );
+};
+
+// ── Config tab ────────────────────────────────────────────────────────────────
+const Config = () => {
+  const [data, setData]       = useState(null);
+  const [values, setValues]   = useState({});
+  const [stag, setStag]       = useState({});
+  const [saving, setSaving]   = useState(false);
+  const [msg, setMsg]         = useState(null);
+
+  useEffect(() => {
+    api.get('/api/config').then(d => {
+      setData(d);
+      setValues(d.orchestrator || {});
+      setStag(d.stagnation || {});
+    });
+  }, []);
+
+  const setVal = (key, val) => setValues(v => ({...v, [key]: val}));
+  const setStagVal = (section, key, val) =>
+    setStag(s => ({...s, [section]: {...(s[section]||{}), [key]: val}}));
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    const res = await api.post('/api/config', { orchestrator: values, stagnation: stag });
+    setSaving(false);
+    setMsg(res.ok
+      ? { type:'success', text: res.message }
+      : { type:'error',   text: (res.errors || [res.error]).join('; ') });
+  };
+
+  if (!data) return <div className="card"><Spinner /> Loading…</div>;
+
+  const schema = data._schema || {};
+
+  const renderField = (fieldName, meta, val, onChange) => (
+    <div className="form-group" key={fieldName}>
+      <label>{meta.label}</label>
+      <input
+        type="number"
+        step={meta.type === 'float' ? '0.1' : '1'}
+        min={meta.min}
+        value={val ?? meta.default}
+        onChange={e => onChange(fieldName, meta.type === 'int' ? parseInt(e.target.value) : parseFloat(e.target.value))}
+      />
+      {meta.help && <div className="hint">{meta.help}</div>}
+    </div>
+  );
+
+  return (
+    <div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      {data._saved_at && <p className="muted mb-16" style={{fontSize:12}}>Last saved: {new Date(data._saved_at).toLocaleString()}</p>}
+
+      <div className="card">
+        <div className="card-title">Orchestrator Config</div>
+        <p className="muted mb-16" style={{fontSize:12}}>Changes are saved to <code>tinker_webui_config.json</code> and take effect on next orchestrator restart.</p>
+        {Object.entries(schema.orchestrator || {}).map(([sectionKey, section]) => (
+          <div key={sectionKey}>
+            <div className="section-header">{section.label}</div>
+            <div className="grid-2">
+              {Object.entries(section.fields || {}).map(([fieldName, meta]) =>
+                renderField(fieldName, meta, values[fieldName], setVal)
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card">
+        <div className="card-title">Anti-Stagnation Config</div>
+        {Object.entries(schema.stagnation || {}).map(([sectionKey, section]) => (
+          <div key={sectionKey}>
+            <div className="section-header">{section.label}</div>
+            <div className="grid-2">
+              {Object.entries(section.fields || {}).map(([fieldName, meta]) =>
+                renderField(fieldName, meta, stag[sectionKey]?.[fieldName],
+                  (k, v) => setStagVal(sectionKey, k, v))
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button className="btn btn-primary" onClick={save} disabled={saving}>
+        {saving ? <><Spinner /> Saving…</> : '💾 Save Config'}
+      </button>
+    </div>
+  );
+};
+
+// ── Feature Flags tab ─────────────────────────────────────────────────────────
+const FeatureFlags = () => {
+  const [data, setData]   = useState(null);
+  const [pending, setPending] = useState({});
+  const [msg, setMsg]     = useState(null);
+
+  useEffect(() => {
+    api.get('/api/flags').then(setData);
+  }, []);
+
+  const toggle = async (flag, currentVal) => {
+    const newVal = !currentVal;
+    setPending(p => ({...p, [flag]: true}));
+    const res = await api.post(`/api/flags/${flag}`, { enabled: newVal });
+    setPending(p => ({...p, [flag]: false}));
+    if (res.ok) {
+      setData(d => ({...d, flags: {...d.flags, [flag]: newVal}}));
+      setMsg({ type:'success', text: res.message });
+    } else {
+      setMsg({ type:'error', text: res.error });
+    }
+  };
+
+  if (!data) return <div className="card"><Spinner /> Loading…</div>;
+
+  return (
+    <div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+      <p className="muted mb-16" style={{fontSize:12}}>
+        Writing to <code>{data.flags_file}</code>. The orchestrator picks up changes within 30 seconds.
+        Environment variables (<code>TINKER_FLAG_*</code>) always take precedence.
+      </p>
+
+      {Object.entries(data.groups || {}).map(([groupName, flagNames]) => (
+        <div className="card" key={groupName}>
+          <div className="card-title">{groupName}</div>
+          {flagNames.map(flag => {
+            const enabled = data.flags?.[flag] ?? false;
+            const desc    = data.descriptions?.[flag] || '';
+            const busy    = pending[flag];
+            return (
+              <div className="toggle-row" key={flag}>
+                <div className="toggle-info">
+                  <div className="name">{flag}</div>
+                  <div className="desc">{desc}</div>
+                </div>
+                {busy
+                  ? <Spinner />
+                  : <label className="toggle">
+                      <input type="checkbox" checked={enabled} onChange={() => toggle(flag, enabled)} />
+                      <div className="toggle-track" />
+                      <div className="toggle-thumb" />
+                    </label>
+                }
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ── Task Queue tab ────────────────────────────────────────────────────────────
+const TaskQueue = () => {
+  const [data, setData]       = useState(null);
+  const [showInject, setShowInject] = useState(false);
+  const [form, setForm]       = useState({ title:'', description:'', type:'design', subsystem:'cross_cutting', confidence_gap:0.5, is_exploration:false });
+  const [injecting, setInjecting] = useState(false);
+  const [msg, setMsg]         = useState(null);
+
+  const load = useCallback(() => api.get('/api/tasks').then(setData), []);
+  useEffect(() => { load(); const id = setInterval(load, 5000); return () => clearInterval(id); }, [load]);
+
+  const inject = async () => {
+    if (!form.title.trim()) return;
+    setInjecting(true);
+    const res = await api.post('/api/tasks/inject', form);
+    setInjecting(false);
+    if (res.ok) {
+      setMsg({ type:'success', text: `Task injected (${res.id.slice(0,8)}…)` });
+      setShowInject(false);
+      setForm({ title:'', description:'', type:'design', subsystem:'cross_cutting', confidence_gap:0.5, is_exploration:false });
+      load();
+    } else {
+      setMsg({ type:'error', text: 'Injection failed' });
+    }
+  };
+
+  const STATUS_COLORS = { pending:'warning', active:'active', complete:'complete', failed:'failed', blocked:'blocked', critique:'critique', archived:'muted', skipped:'muted' };
+
+  if (!data) return <div className="card"><Spinner /> Loading…</div>;
+  const stats = data.stats || {};
+
+  return (
+    <div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+
+      <div className="grid-4 mb-16">
+        {['pending','active','complete','failed'].map(s => (
+          <StatBox key={s} value={stats[s] ?? 0} label={s.toUpperCase()} />
+        ))}
+      </div>
+
+      <div className="card">
+        <div className="flex justify-between items-center mb-16">
+          <div className="card-title" style={{marginBottom:0}}>Tasks ({data.tasks?.length})</div>
+          <div className="flex gap-8">
+            <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowInject(true)}>+ Inject Task</button>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Title</th><th>Type</th><th>Subsystem</th><th>Status</th>
+              <th>Priority</th><th>Attempts</th><th>Created</th>
+            </tr></thead>
+            <tbody>
+              {(data.tasks || []).map(t => (
+                <tr key={t.id}>
+                  <td className="truncate" title={t.title}>{t.title}</td>
+                  <td><span className={`badge badge-${t.type}`}>{t.type}</span></td>
+                  <td className="mono muted" style={{fontSize:11}}>{t.subsystem}</td>
+                  <td><Badge status={t.status} /></td>
+                  <td className="mono">{(t.priority_score||0).toFixed(2)}</td>
+                  <td>{t.attempt_count}</td>
+                  <td className="muted mono" style={{fontSize:11}}>{t.created_at?.slice(0,16)}</td>
+                </tr>
+              ))}
+              {!data.tasks?.length && <tr><td colSpan={7} className="muted" style={{textAlign:'center',padding:20}}>No tasks found</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showInject && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowInject(false)}>
+          <div className="modal">
+            <div className="modal-title">Inject Task</div>
+            <div className="form-group">
+              <label>Title *</label>
+              <input type="text" value={form.title} onChange={e => setForm(f => ({...f, title: e.target.value}))} placeholder="e.g. Research caching strategies" />
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} rows={3} />
+            </div>
+            <div className="grid-2">
+              <div className="form-group">
+                <label>Type</label>
+                <select value={form.type} onChange={e => setForm(f => ({...f, type: e.target.value}))}>
+                  {(data.task_types||[]).map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Subsystem</label>
+                <select value={form.subsystem} onChange={e => setForm(f => ({...f, subsystem: e.target.value}))}>
+                  {(data.subsystems||[]).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Confidence Gap (0–1)</label>
+                <input type="number" min="0" max="1" step="0.05" value={form.confidence_gap}
+                  onChange={e => setForm(f => ({...f, confidence_gap: parseFloat(e.target.value)}))} />
+              </div>
+              <div className="form-group">
+                <label>Exploration task?</label>
+                <label style={{display:'flex',alignItems:'center',gap:8,marginTop:4}}>
+                  <input type="checkbox" checked={form.is_exploration}
+                    onChange={e => setForm(f => ({...f, is_exploration: e.target.checked}))} />
+                  Yes (gets exploration scheduling slot)
+                </label>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowInject(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={inject} disabled={injecting || !form.title.trim()}>
+                {injecting ? <><Spinner /> Injecting…</> : 'Inject'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── DLQ tab ───────────────────────────────────────────────────────────────────
+const DLQ = () => {
+  const [data, setData]     = useState(null);
+  const [modal, setModal]   = useState(null); // {id, action}
+  const [notes, setNotes]   = useState('');
+  const [acting, setActing] = useState(false);
+  const [msg, setMsg]       = useState(null);
+
+  const load = useCallback(() => api.get('/api/dlq').then(setData), []);
+  useEffect(() => { load(); }, [load]);
+
+  const act = async () => {
+    if (!modal) return;
+    setActing(true);
+    const res = await api.post(`/api/dlq/${modal.id}/${modal.action}`, { notes });
+    setActing(false);
+    if (res.ok) {
+      setMsg({ type:'success', text: `Item ${modal.action}d` });
+      setModal(null); setNotes('');
+      load();
+    } else {
+      setMsg({ type:'error', text: 'Action failed' });
+    }
+  };
+
+  if (!data) return <div className="card"><Spinner /> Loading…</div>;
+  const stats = data.stats || {};
+
+  return (
+    <div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+
+      <div className="grid-3 mb-16">
+        <StatBox value={stats.pending  ?? 0} label="PENDING" />
+        <StatBox value={stats.resolved ?? 0} label="RESOLVED" />
+        <StatBox value={stats.discarded ?? 0} label="DISCARDED" />
+      </div>
+
+      <div className="card">
+        <div className="flex justify-between items-center mb-16">
+          <div className="card-title" style={{marginBottom:0}}>Dead Letter Queue ({data.items?.length})</div>
+          <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th>ID</th><th>Operation</th><th>Error</th><th>Status</th>
+              <th>Retries</th><th>Created</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+              {(data.items || []).map(item => (
+                <tr key={item.id}>
+                  <td className="mono" style={{fontSize:11}}>{item.id.slice(0,8)}…</td>
+                  <td className="mono">{item.operation}</td>
+                  <td className="truncate muted" title={item.error}>{item.error}</td>
+                  <td><Badge status={item.status} /></td>
+                  <td>{item.retry_count}</td>
+                  <td className="muted mono" style={{fontSize:11}}>{item.created_at?.slice(0,16)}</td>
+                  <td>
+                    {item.status === 'pending' && (
+                      <div className="flex gap-8">
+                        <button className="btn btn-success btn-sm" onClick={() => { setModal({id:item.id,action:'resolve'}); setNotes(''); }}>Resolve</button>
+                        <button className="btn btn-danger btn-sm"  onClick={() => { setModal({id:item.id,action:'discard'}); setNotes(''); }}>Discard</button>
+                      </div>
+                    )}
+                    {item.notes && <span className="muted" style={{fontSize:11}}>{item.notes}</span>}
+                  </td>
+                </tr>
+              ))}
+              {!data.items?.length && <tr><td colSpan={7} className="muted" style={{textAlign:'center',padding:20}}>Queue is empty</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {modal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setModal(null)}>
+          <div className="modal">
+            <div className="modal-title">{modal.action === 'resolve' ? 'Mark Resolved' : 'Discard Item'}</div>
+            <div className="form-group">
+              <label>Notes (optional)</label>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Reason or resolution notes…" rows={3} />
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
+              <button className={`btn ${modal.action==='resolve'?'btn-success':'btn-danger'}`} onClick={act} disabled={acting}>
+                {acting ? <Spinner /> : (modal.action === 'resolve' ? 'Mark Resolved' : 'Discard')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Backups tab ───────────────────────────────────────────────────────────────
+const Backups = () => {
+  const [data, setData]         = useState(null);
+  const [triggering, setTriggering] = useState(false);
+  const [msg, setMsg]           = useState(null);
+
+  const load = useCallback(() => api.get('/api/backups').then(setData), []);
+  useEffect(() => { load(); }, [load]);
+
+  const trigger = async () => {
+    setTriggering(true);
+    const res = await api.post('/api/backups/trigger', {});
+    setTriggering(false);
+    setMsg(res.ok
+      ? { type:'success', text: res.message }
+      : { type:'error',   text: 'Trigger failed' });
+    setTimeout(load, 2000);
+  };
+
+  if (!data) return <div className="card"><Spinner /> Loading…</div>;
+
+  return (
+    <div>
+      {msg && <Alert type={msg.type}>{msg.text}</Alert>}
+
+      <div className="card">
+        <div className="flex justify-between items-center mb-16">
+          <div>
+            <div className="card-title" style={{marginBottom:4}}>Backups</div>
+            <p className="muted" style={{fontSize:12}}>Stored in <code>{data.backup_dir}</code></p>
+          </div>
+          <div className="flex gap-8">
+            <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
+            <button className="btn btn-primary" onClick={trigger} disabled={triggering}>
+              {triggering ? <><Spinner /> Triggering…</> : '+ Create Backup'}
+            </button>
+          </div>
+        </div>
+
+        {!data.backups?.length
+          ? <p className="muted" style={{textAlign:'center',padding:20}}>No backups found</p>
+          : <div className="table-wrap">
+              <table>
+                <thead><tr><th>ID</th><th>Created At</th><th>Size</th><th>Files</th><th>Errors</th></tr></thead>
+                <tbody>
+                  {data.backups.map(b => (
+                    <tr key={b.id}>
+                      <td className="mono" style={{fontSize:12}}>{b.id}</td>
+                      <td className="muted mono" style={{fontSize:12}}>{b.created_at?.slice(0,19)}</td>
+                      <td>{b.size_mb} MB</td>
+                      <td className="muted">{b.file_count}</td>
+                      <td>{b.errors?.length ? <span style={{color:'var(--danger)'}}>{b.errors.length} error(s)</span> : <span style={{color:'var(--success)'}}>✓ Clean</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+        }
+      </div>
+
+      <div className="card">
+        <div className="card-title">About Backups</div>
+        <p style={{fontSize:13,lineHeight:1.7,color:'var(--muted)'}}>
+          Tinker backs up three stores: <strong>DuckDB</strong> (session artifacts),
+          <strong> SQLite</strong> (task registry), and <strong>ChromaDB</strong> (vector embeddings).
+          Redis is not backed up (ephemeral). The "Create Backup" button writes a trigger file;
+          the BackupManager process picks it up and performs the snapshot.
+          Configure <code>auto_backup</code> in Feature Flags to enable automatic backups.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// ── Audit Log tab ─────────────────────────────────────────────────────────────
+const AuditLog = () => {
+  const [data, setData]       = useState(null);
+  const [filters, setFilters] = useState({ event_type:'', actor:'', trace_id:'', page:1 });
+  const [expanded, setExpanded] = useState(null);
+
+  const load = useCallback(() => {
+    const q = new URLSearchParams({...filters, limit:50}).toString();
+    api.get(`/api/audit?${q}`).then(setData);
+  }, [filters]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const setF = (k, v) => setFilters(f => ({...f, [k]: v, page: 1}));
+
+  if (!data) return <div className="card"><Spinner /> Loading…</div>;
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">Filters</div>
+        <div className="grid-3">
+          <div className="form-group">
+            <label>Event Type</label>
+            <select value={filters.event_type} onChange={e => setF('event_type', e.target.value)}>
+              <option value="">All</option>
+              {(data.event_types||[]).map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Actor</label>
+            <input type="text" value={filters.actor} onChange={e => setF('actor', e.target.value)} placeholder="e.g. micro_loop" />
+          </div>
+          <div className="form-group">
+            <label>Trace ID</label>
+            <input type="text" value={filters.trace_id} onChange={e => setF('trace_id', e.target.value)} placeholder="Trace ID" />
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="flex justify-between items-center mb-16">
+          <div className="card-title" style={{marginBottom:0}}>Audit Events</div>
+          <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Event Type</th><th>Actor</th><th>Resource</th><th>Outcome</th><th>Trace</th></tr></thead>
+            <tbody>
+              {(data.items||[]).map(item => (
+                <React.Fragment key={item.id}>
+                  <tr onClick={() => setExpanded(expanded === item.id ? null : item.id)}
+                      style={{cursor:'pointer'}}>
+                    <td className="mono" style={{fontSize:11}}>{item.created_at?.slice(0,19)}</td>
+                    <td><span className="badge badge-active" style={{fontSize:10}}>{item.event_type}</span></td>
+                    <td className="muted">{item.actor}</td>
+                    <td className="truncate muted" title={item.resource}>{item.resource}</td>
+                    <td style={{color: item.outcome==='success'?'var(--success)':item.outcome==='failure'?'var(--danger)':'var(--text)'}}>{item.outcome}</td>
+                    <td className="mono muted" style={{fontSize:11}}>{item.trace_id?.slice(0,8)}</td>
+                  </tr>
+                  {expanded === item.id && item.details && (
+                    <tr>
+                      <td colSpan={6} style={{background:'var(--bg)',padding:12}}>
+                        <pre className="mono" style={{fontSize:11,whiteSpace:'pre-wrap',overflowX:'auto'}}>
+                          {JSON.stringify(JSON.parse(item.details||'{}'), null, 2)}
+                        </pre>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+              {!data.items?.length && <tr><td colSpan={6} className="muted" style={{textAlign:'center',padding:20}}>No events found</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex gap-8 mt-8" style={{justifyContent:'flex-end'}}>
+          <button className="btn btn-ghost btn-sm" disabled={filters.page <= 1}
+            onClick={() => setFilters(f => ({...f, page: f.page-1}))}>← Prev</button>
+          <span className="muted" style={{lineHeight:'30px',fontSize:13}}>Page {filters.page}</span>
+          <button className="btn btn-ghost btn-sm" disabled={!data.has_next}
+            onClick={() => setFilters(f => ({...f, page: f.page+1}))}>Next →</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Log Viewer tab ────────────────────────────────────────────────────────────
+const LogViewer = () => {
+  const [logs, setLogs]   = useState([]);
+  const [level, setLevel] = useState('INFO');
+  const [active, setActive] = useState(false);
+  const logRef = useRef(null);
+  const esRef  = useRef(null);
+
+  const connect = useCallback(() => {
+    if (esRef.current) esRef.current.close();
+    const es = new EventSource(`/api/logs/stream?level=${level}`);
+    es.onmessage = e => {
+      try {
+        const d = JSON.parse(e.data);
+        setLogs(prev => [...prev.slice(-500), d]);
+        if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+      } catch {}
+    };
+    es.onerror = () => setActive(false);
+    es.onopen  = () => setActive(true);
+    esRef.current = es;
+  }, [level]);
+
+  const disconnect = () => {
+    if (esRef.current) { esRef.current.close(); esRef.current = null; }
+    setActive(false);
+  };
+
+  useEffect(() => () => disconnect(), []);
+
+  return (
+    <div>
+      <div className="card">
+        <div className="flex gap-8 items-center mb-16">
+          <select value={level} onChange={e => setLevel(e.target.value)} style={{width:120}}>
+            {['DEBUG','INFO','WARNING','ERROR'].map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+          {!active
+            ? <button className="btn btn-primary" onClick={connect}>▶ Start Stream</button>
+            : <button className="btn btn-danger"  onClick={disconnect}>■ Stop</button>
+          }
+          <button className="btn btn-ghost" onClick={() => setLogs([])}>Clear</button>
+          <span className={`status-badge ${active ? 'online' : 'offline'}`} style={{marginLeft:'auto'}}>
+            {active ? 'STREAMING' : 'STOPPED'}
+          </span>
+        </div>
+
+        <div className="log-viewer" ref={logRef}>
+          {logs.length === 0 && <span className="muted">Press "Start Stream" to begin…</span>}
+          {logs.map((entry, i) => (
+            <div key={i} className={`log-entry log-${entry.level}`}>
+              <span className="log-time">{entry.time?.slice(11,19)} </span>
+              <span style={{color:'var(--accent)'}}>[{entry.level}] </span>
+              {entry.msg || `micro=${entry.micro_loops} meso=${entry.meso_loops} macro=${entry.macro_loops}${entry.current_task ? ` task=${entry.current_task.slice(0,8)}` : ''}${entry.critic_score != null ? ` critic=${entry.critic_score.toFixed(2)}` : ''}`}
+            </div>
+          ))}
+        </div>
+        <p className="muted mt-8" style={{fontSize:11}}>Showing last 500 events. Stream polls tinker_state.json every 2s.</p>
+      </div>
+    </div>
+  );
+};
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+const TABS = [
+  { id: 'dashboard', label: '📊 Dashboard',     Component: Dashboard },
+  { id: 'config',    label: '⚙️ Config',         Component: Config },
+  { id: 'flags',     label: '🚩 Feature Flags',  Component: FeatureFlags },
+  { id: 'tasks',     label: '📋 Task Queue',     Component: TaskQueue },
+  { id: 'dlq',       label: '💀 DLQ',            Component: DLQ },
+  { id: 'backups',   label: '💾 Backups',         Component: Backups },
+  { id: 'audit',     label: '📜 Audit Log',       Component: AuditLog },
+  { id: 'logs',      label: '📡 Logs',            Component: LogViewer },
+];
+
+const App = () => {
+  const [tab, setTab]     = useState('dashboard');
+  const [online, setOnline] = useState(null);
+
+  useEffect(() => {
+    const check = () => api.get('/api/health').then(d => setOnline(d.online));
+    check();
+    const id = setInterval(check, 10000);
+    return () => clearInterval(id);
+  }, []);
+
+  const ActiveTab = TABS.find(t => t.id === tab);
+
+  return (
+    <div id="root">
+      <header className="app-header">
+        <h1>TINKER</h1>
+        <span className="version">Web UI</span>
+        {online !== null && <StatusBadge online={online} />}
+      </header>
+
+      <nav className="tab-bar">
+        {TABS.map(t => (
+          <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="content">
+        {ActiveTab && <ActiveTab.Component />}
+      </div>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

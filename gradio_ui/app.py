@@ -1,0 +1,335 @@
+"""
+gradio_ui/app.py
+────────────────
+Gradio UI for Tinker. Run with:  python -m tinker.gradio_ui
+
+Tabs: Dashboard · Config · Feature Flags · Task Queue · DLQ · Backups · Audit Log
+
+NOTE: Gradio re-runs the entire block on each interaction, so all reads
+are done inside event handlers (not at module import time).
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+# Make tinker root importable
+ROOT = Path(__file__).parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import gradio as gr
+
+from webui.core import (
+    ORCH_CONFIG_SCHEMA, STAGNATION_CONFIG_SCHEMA,
+    FLAG_DEFAULTS, FLAG_DESCRIPTIONS, FLAG_GROUPS,
+    TASK_TYPES, SUBSYSTEMS,
+    AUDIT_DB, BACKUP_DIR, DLQ_DB, FLAGS_FILE, TASKS_DB,
+    _db_query_sync as dbq, _db_execute_sync as dbe,
+    list_backups, load_config, load_flags, load_state,
+    new_id, now_iso, save_config, save_flags,
+)
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _health_md() -> str:
+    state = load_state()
+    if not state:
+        return "⚠️ **Orchestrator offline** — `tinker_state.json` not found."
+    lines = [
+        f"| Metric | Value |",
+        f"|--------|-------|",
+        f"| Micro loops | **{state.get('micro_loops','—')}** |",
+        f"| Meso loops  | **{state.get('meso_loops','—')}** |",
+        f"| Macro loops | **{state.get('macro_loops','—')}** |",
+        f"| Stagnation events | {state.get('stagnation_events','—')} |",
+        f"| Current task | `{state.get('current_task','—')}` |",
+        f"| Last critic score | {state.get('last_critic_score','—')} |",
+    ]
+    return "\n".join(lines)
+
+
+def _tasks_df():
+    import pandas as pd
+    rows = dbq(TASKS_DB,
+        "SELECT id, title, type, subsystem, status, priority_score, attempt_count, created_at "
+        "FROM tasks ORDER BY priority_score DESC LIMIT 200")
+    if not rows:
+        return pd.DataFrame(columns=["id","title","type","subsystem","status","priority","attempts","created_at"])
+    df = pd.DataFrame(rows)
+    df["id"] = df["id"].str[:8] + "…"
+    df["priority_score"] = df["priority_score"].round(3)
+    return df
+
+
+def _tasks_stats() -> str:
+    rows = dbq(TASKS_DB, "SELECT status, COUNT(*) as n FROM tasks GROUP BY status")
+    if not rows:
+        return "No tasks found."
+    return "  ".join(f"**{r['status']}**: {r['n']}" for r in rows)
+
+
+def _dlq_df():
+    import pandas as pd
+    rows = dbq(DLQ_DB,
+        "SELECT id, operation, error, status, retry_count, created_at, notes "
+        "FROM dlq_items ORDER BY created_at DESC LIMIT 100")
+    if not rows:
+        return pd.DataFrame(columns=["id","operation","error","status","retry_count","created_at","notes"])
+    df = pd.DataFrame(rows)
+    df["id"] = df["id"].str[:8] + "…"
+    df["error"] = df["error"].str[:80]
+    return df
+
+
+def _audit_df(event_type="", actor="", limit=50):
+    import pandas as pd
+    conds, params = [], []
+    if event_type:
+        conds.append("event_type = ?"); params.append(event_type)
+    if actor:
+        conds.append("actor = ?"); params.append(actor)
+    where = ("WHERE " + " AND ".join(conds)) if conds else ""
+    rows = dbq(AUDIT_DB,
+        f"SELECT event_type, actor, resource, outcome, trace_id, created_at "
+        f"FROM audit_events {where} ORDER BY created_at DESC LIMIT ?",
+        tuple(params) + (limit,))
+    if not rows:
+        return pd.DataFrame(columns=["event_type","actor","resource","outcome","trace_id","created_at"])
+    return pd.DataFrame(rows)
+
+
+def _backup_df():
+    import pandas as pd
+    bs = list_backups()
+    if not bs:
+        return pd.DataFrame(columns=["id","created_at","size_mb","file_count","errors"])
+    return pd.DataFrame(bs)
+
+
+# ── App builder ───────────────────────────────────────────────────────────────
+
+def build_app() -> gr.Blocks:
+    with gr.Blocks(
+        title="Tinker Web UI",
+        theme=gr.themes.Base(
+            primary_hue="blue",
+            neutral_hue="slate",
+        ),
+        css="""
+        .gradio-container { max-width: 1200px !important; }
+        footer { display: none !important; }
+        """,
+    ) as demo:
+        gr.Markdown("# 🔧 TINKER  —  Web Control Panel")
+
+        with gr.Tabs():
+
+            # ── Dashboard ────────────────────────────────────────────────────
+            with gr.Tab("📊 Dashboard"):
+                dash_md  = gr.Markdown(_health_md())
+                dash_btn = gr.Button("↻ Refresh", variant="secondary", size="sm")
+                dash_btn.click(fn=_health_md, outputs=dash_md)
+
+            # ── Config ───────────────────────────────────────────────────────
+            with gr.Tab("⚙️ Config"):
+                gr.Markdown("Changes are saved to `tinker_webui_config.json`. Restart the orchestrator to apply.")
+                saved = load_config()
+
+                orch_inputs: dict[str, gr.Number] = {}
+                with gr.Group():
+                    gr.Markdown("### Orchestrator Config")
+                    for section_key, section in ORCH_CONFIG_SCHEMA.items():
+                        gr.Markdown(f"**{section['label']}**")
+                        with gr.Row():
+                            for field_name, meta in section["fields"].items():
+                                orch_inputs[field_name] = gr.Number(
+                                    label=meta["label"],
+                                    value=saved.get(field_name, meta["default"]),
+                                    info=meta.get("help",""),
+                                    precision=0 if meta["type"]=="int" else 2,
+                                )
+
+                stag_inputs: dict[str, dict[str, gr.Number]] = {}
+                with gr.Group():
+                    gr.Markdown("### Anti-Stagnation Config")
+                    for section_key, section in STAGNATION_CONFIG_SCHEMA.items():
+                        gr.Markdown(f"**{section['label']}**")
+                        stag_inputs[section_key] = {}
+                        stag_saved = saved.get("stagnation", {}).get(section_key, {})
+                        with gr.Row():
+                            for field_name, meta in section["fields"].items():
+                                stag_inputs[section_key][field_name] = gr.Number(
+                                    label=meta["label"],
+                                    value=stag_saved.get(field_name, meta["default"]),
+                                    precision=0 if meta["type"]=="int" else 2,
+                                )
+
+                cfg_save_btn = gr.Button("💾 Save Config", variant="primary")
+                cfg_msg      = gr.Markdown("")
+
+                def save_all_config(*args):
+                    """Collect all Number widget values and save."""
+                    # args order: orch fields (in schema order), then stagnation fields
+                    orch_field_order = [fn for s in ORCH_CONFIG_SCHEMA.values() for fn in s["fields"]]
+                    stag_field_order = [(sk, fn) for sk, s in STAGNATION_CONFIG_SCHEMA.items() for fn in s["fields"]]
+
+                    idx = 0
+                    data: dict = {}
+                    for fn in orch_field_order:
+                        meta = next(m for s in ORCH_CONFIG_SCHEMA.values() for k,m in s["fields"].items() if k==fn)
+                        val = args[idx]; idx += 1
+                        data[fn] = int(val) if meta["type"]=="int" else float(val)
+
+                    stag_data: dict = {}
+                    for sk, fn in stag_field_order:
+                        meta = STAGNATION_CONFIG_SCHEMA[sk]["fields"][fn]
+                        val = args[idx]; idx += 1
+                        stag_data.setdefault(sk, {})[fn] = int(val) if meta["type"]=="int" else float(val)
+
+                    data["stagnation"] = stag_data
+                    save_config(data)
+                    return "✅ **Config saved.** Restart the orchestrator to apply changes."
+
+                all_inputs = (
+                    list(orch_inputs.values()) +
+                    [w for s in stag_inputs.values() for w in s.values()]
+                )
+                cfg_save_btn.click(fn=save_all_config, inputs=all_inputs, outputs=cfg_msg)
+
+            # ── Feature Flags ─────────────────────────────────────────────────
+            with gr.Tab("🚩 Feature Flags"):
+                gr.Markdown(f"Writes to `{FLAGS_FILE}`. Orchestrator picks up changes within **30 seconds**.")
+                flags_msg = gr.Markdown("")
+
+                flag_widgets: dict[str, gr.Checkbox] = {}
+                current_flags = load_flags()
+
+                for group_name, flag_names in FLAG_GROUPS.items():
+                    with gr.Group():
+                        gr.Markdown(f"**{group_name}**")
+                        with gr.Row():
+                            for flag in flag_names:
+                                flag_widgets[flag] = gr.Checkbox(
+                                    label=f"{flag}",
+                                    value=current_flags.get(flag, FLAG_DEFAULTS.get(flag, False)),
+                                    info=FLAG_DESCRIPTIONS.get(flag, ""),
+                                )
+
+                flags_save_btn = gr.Button("💾 Save Flags", variant="primary")
+
+                def save_all_flags(*args):
+                    flag_names_ordered = [f for g in FLAG_GROUPS.values() for f in g]
+                    flags = {fn: bool(args[i]) for i, fn in enumerate(flag_names_ordered)}
+                    save_flags(flags)
+                    return "✅ **Flags saved.** Orchestrator will pick up changes within 30 seconds."
+
+                all_flag_widgets = [flag_widgets[f] for g in FLAG_GROUPS.values() for f in g]
+                flags_save_btn.click(fn=save_all_flags, inputs=all_flag_widgets, outputs=flags_msg)
+
+            # ── Task Queue ────────────────────────────────────────────────────
+            with gr.Tab("📋 Task Queue"):
+                tasks_stats_md = gr.Markdown(_tasks_stats())
+                tasks_df_out   = gr.DataFrame(_tasks_df(), label="Tasks (top 200 by priority)", interactive=False)
+
+                with gr.Row():
+                    tasks_refresh_btn = gr.Button("↻ Refresh", size="sm")
+
+                with gr.Accordion("➕ Inject New Task", open=False):
+                    inj_title    = gr.Textbox(label="Title *", placeholder="e.g. Research caching strategies")
+                    inj_desc     = gr.Textbox(label="Description", lines=3)
+                    inj_type     = gr.Dropdown(TASK_TYPES,   value="design",        label="Type")
+                    inj_sub      = gr.Dropdown(SUBSYSTEMS,   value="cross_cutting", label="Subsystem")
+                    inj_gap      = gr.Slider(0, 1, value=0.5, step=0.05, label="Confidence Gap")
+                    inj_explore  = gr.Checkbox(label="Exploration task", value=False)
+                    inj_btn      = gr.Button("Inject", variant="primary")
+                    inj_msg      = gr.Markdown("")
+
+                def inject_task(title, desc, typ, sub, gap, explore):
+                    if not title.strip():
+                        return "❌ Title is required.", _tasks_df(), _tasks_stats()
+                    tid  = new_id()
+                    ts   = now_iso()
+                    ok   = dbe(TASKS_DB,
+                        "INSERT INTO tasks "
+                        "(id,title,description,type,subsystem,status,confidence_gap,"
+                        "is_exploration,created_at,updated_at,priority_score,"
+                        "staleness_hours,dependency_depth,last_subsystem_work_hours,"
+                        "attempt_count,dependencies,outputs,tags,metadata) "
+                        "VALUES (?,?,?,?,?,'pending',?,?,?,?,0.5,0.0,0,0.0,0,'[]','[]','[]','{}')",
+                        (tid,title.strip(),desc,typ,sub,gap,1 if explore else 0,ts,ts))
+                    msg  = f"✅ Task `{tid[:8]}…` injected." if ok else "❌ Injection failed (DB not found)."
+                    return msg, _tasks_df(), _tasks_stats()
+
+                inj_btn.click(inject_task,
+                    inputs=[inj_title,inj_desc,inj_type,inj_sub,inj_gap,inj_explore],
+                    outputs=[inj_msg, tasks_df_out, tasks_stats_md])
+
+                tasks_refresh_btn.click(fn=lambda: (_tasks_df(), _tasks_stats()),
+                    outputs=[tasks_df_out, tasks_stats_md])
+
+            # ── DLQ ──────────────────────────────────────────────────────────
+            with gr.Tab("💀 Dead Letter Queue"):
+                dlq_df_out    = gr.DataFrame(_dlq_df(), label="DLQ Items (pending first)", interactive=False)
+                dlq_refresh   = gr.Button("↻ Refresh", size="sm")
+                dlq_msg       = gr.Markdown("")
+
+                with gr.Row():
+                    dlq_item_id = gr.Textbox(label="Item ID (full UUID)", placeholder="Paste full item ID")
+                    dlq_notes   = gr.Textbox(label="Notes", placeholder="Resolution reason…")
+                with gr.Row():
+                    dlq_resolve  = gr.Button("✅ Mark Resolved",  variant="primary")
+                    dlq_discard  = gr.Button("🗑 Mark Discarded", variant="stop")
+
+                def dlq_action(action, item_id, notes):
+                    if not item_id.strip():
+                        return "❌ Paste the full item ID first.", _dlq_df()
+                    ts = now_iso()
+                    ok = dbe(DLQ_DB,
+                        f"UPDATE dlq_items SET status='{action}', resolved_at=?, updated_at=?, notes=? WHERE id=?",
+                        (ts, ts, notes or f"{action.title()} via Gradio UI", item_id.strip()))
+                    msg = f"✅ Item `{item_id[:8]}…` marked **{action}**." if ok else "❌ Update failed."
+                    return msg, _dlq_df()
+
+                dlq_resolve.click(lambda id,n: dlq_action("resolved", id, n),
+                    inputs=[dlq_item_id, dlq_notes], outputs=[dlq_msg, dlq_df_out])
+                dlq_discard.click(lambda id,n: dlq_action("discarded", id, n),
+                    inputs=[dlq_item_id, dlq_notes], outputs=[dlq_msg, dlq_df_out])
+                dlq_refresh.click(fn=_dlq_df, outputs=dlq_df_out)
+
+            # ── Backups ───────────────────────────────────────────────────────
+            with gr.Tab("💾 Backups"):
+                backup_df_out  = gr.DataFrame(_backup_df(), label="Available Backups", interactive=False)
+                backup_refresh = gr.Button("↻ Refresh", size="sm")
+                backup_trigger = gr.Button("➕ Trigger Backup", variant="primary")
+                backup_msg     = gr.Markdown("")
+
+                def trigger_backup():
+                    trigger = BACKUP_DIR.parent / "tinker_backup_trigger"
+                    trigger.write_text(now_iso())
+                    return "✅ **Backup trigger written.** BackupManager will pick it up shortly.", _backup_df()
+
+                backup_trigger.click(fn=trigger_backup, outputs=[backup_msg, backup_df_out])
+                backup_refresh.click(fn=_backup_df, outputs=backup_df_out)
+
+            # ── Audit Log ─────────────────────────────────────────────────────
+            with gr.Tab("📜 Audit Log"):
+                audit_event_types = [r["event_type"] for r in dbq(AUDIT_DB,
+                    "SELECT DISTINCT event_type FROM audit_events ORDER BY event_type") or []]
+
+                with gr.Row():
+                    audit_evt_filter = gr.Dropdown([""] + audit_event_types, value="", label="Event Type")
+                    audit_actor_filter = gr.Textbox(label="Actor", placeholder="e.g. micro_loop")
+                    audit_limit      = gr.Slider(10, 200, value=50, step=10, label="Limit")
+                audit_search_btn = gr.Button("🔍 Search", variant="primary")
+                audit_df_out     = gr.DataFrame(_audit_df(), label="Audit Events", interactive=False)
+
+                audit_search_btn.click(
+                    fn=_audit_df,
+                    inputs=[audit_evt_filter, audit_actor_filter, audit_limit],
+                    outputs=audit_df_out,
+                )
+
+    return demo
