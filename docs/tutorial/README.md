@@ -50,6 +50,9 @@ Build the chapters in order. Each one depends on the previous.
 | [12](./12-web-ui.md) | The Web UI | FastAPI backend, React dashboard, Gradio, Streamlit |
 | [13](./13-integration.md) | Full Integration | `main.py`, wiring everything together, first run |
 | [14](./14-code-review.md) | Code Review Walkthrough | Real bugs we found and fixed, and how to find them |
+| [15](./15-grub-overview.md) | Grub — The Implementation Agent | Phase 2 overview, Minions, Skills, execution modes A/B/C |
+| [16](./16-grub-minions.md) | Minions in Detail | Each Minion's role, contracts, retry loop, how to add new ones |
+| [17](./17-grub-integration.md) | Grub + Tinker Integration | Full loop: design → implement → review → redesign |
 
 ---
 
