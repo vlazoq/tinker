@@ -191,7 +191,13 @@ class TinkerBridge:
 
             # 2. Always create a follow-up review task for Tinker so it knows
             #    what Grub produced and can decide whether to redesign.
-            new_id = str(uuid.uuid4())
+            #
+            # Use a DETERMINISTIC id derived from the original tinker_task_id so
+            # that INSERT OR IGNORE deduplicates correctly on crash-recovery.
+            # If report_result is called twice for the same task (e.g. after a
+            # crash), the second INSERT is silently ignored and no duplicate task
+            # is created.
+            new_id = f"review-{tinker_task_id}"
             feedback_title = f"Review Grub implementation: {result.summary[:80]}"
             notes = result.feedback_for_tinker or "(no additional notes)"
             feedback_desc = (

@@ -121,13 +121,13 @@ class TestTinkerBridge:
         ok = bridge.report_result(result, tinker_task_id="task-001")
         assert ok is True
 
-        # Verify original task is marked completed
+        # Verify original task is marked "complete" (matches TaskStatus.COMPLETE = "complete")
         import sqlite3 as _sq
         db_path = Path(bridge._tasks_db)
         con = _sq.connect(str(db_path))
         row = con.execute("SELECT status FROM tasks WHERE id='task-001'").fetchone()
         con.close()
-        assert row[0] == "completed"
+        assert row[0] == "complete"   # TaskStatus.COMPLETE value, NOT "completed"
 
     def test_report_result_creates_review_task(self, bridge):
         result = MinionResult(
