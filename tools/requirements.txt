@@ -1,18 +1,32 @@
-# Tinker Tool Layer — Python dependencies
+# tools/requirements.txt
+# ---------------------------------------------------------------------------
+# Direct dependencies for the Tool Layer (web search, scraping, diagrams).
+#
+# These loose ranges are the CANONICAL source for this sub-package.
+# They are merged into requirements/base.in at the project level.
+#
+# For exact pinned installs, use:
+#   pip install -r ../requirements/base.txt          (production)
+#   pip install -r ../requirements/dev.txt           (development)
+#
+# Note: after installing playwright, run once:
+#   playwright install chromium
+# ---------------------------------------------------------------------------
 
-# HTTP clients
-httpx>=0.27.0
+# ── HTTP clients ─────────────────────────────────────────────────────────────
+httpx>=0.27.0               # sync + async HTTP; used by backup/tool layers
 
-# Web scraping
-trafilatura>=1.12.0
-playwright>=1.44.0          # Run: playwright install chromium
+# ── Web scraping ─────────────────────────────────────────────────────────────
+trafilatura>=1.12.0         # web content extraction (boilerplate removal)
+playwright>=1.44.0          # browser automation for JS-heavy pages
 
-# Async
-anyio>=4.4.0
+# ── Async ────────────────────────────────────────────────────────────────────
+anyio>=4.4.0                # async compatibility shim (asyncio / trio)
 
-# Graphviz rendering (Python bindings)
-graphviz>=0.20.3            # For optional Python-level .dot manipulation
+# ── Diagram rendering ────────────────────────────────────────────────────────
+graphviz>=0.20.3            # Python bindings for .dot graph rendering
 
-# Testing
-pytest>=8.2.0
-pytest-asyncio>=0.23.7
+# ── Test dependencies ─────────────────────────────────────────────────────────
+# These are included in requirements/dev.txt at the project level.
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

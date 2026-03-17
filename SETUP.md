@@ -206,7 +206,18 @@ python main.py --stubs
 
 ## Step 5 — Clone the Repository and Install Dependencies
 
-### Linux / macOS
+Tinker uses a **two-layer dependency system**:
+
+| File | Purpose |
+|------|---------|
+| `pyproject.toml` | Loose version ranges (`>=`) — source of truth for what Tinker needs |
+| `requirements/base.txt` | Exact pinned versions for every transitive dep — use in production & CI |
+| `requirements/dev.txt` | Exact pinned versions for dev tools + test suite |
+
+For a fully reproducible install (recommended for any shared environment), use
+the lock files.  For quick local experiments, `pip install -e ".[dev]"` also works.
+
+### Linux / macOS — reproducible install (recommended)
 
 ```bash
 git clone <your-repo-url> tinker
@@ -215,13 +226,22 @@ cd tinker
 python3.11 -m venv .venv
 source .venv/bin/activate
 
-pip install -e ".[dev]"
+# Install exact pinned versions — guarantees the same environment as CI
+pip install -r requirements/dev.txt
+pip install -e . --no-deps
 
 # Install Playwright browser (used by the web scraper tool):
 playwright install chromium
 ```
 
-### Windows
+### Linux / macOS — quick install (development only)
+
+```bash
+pip install -e ".[dev]"
+playwright install chromium
+```
+
+### Windows — reproducible install (recommended)
 
 ```cmd
 git clone <your-repo-url> tinker
@@ -230,13 +250,32 @@ cd tinker
 python -m venv .venv
 .venv\Scripts\activate
 
-pip install -e ".[dev]"
+pip install -r requirements\dev.txt
+pip install -e . --no-deps
 
 playwright install chromium
 ```
 
-> **Tip:** If `pip install -e ".[dev]"` fails with a build error for a package,
-> try upgrading pip first: `python -m pip install --upgrade pip setuptools wheel`
+### Windows — quick install (development only)
+
+```cmd
+pip install -e ".[dev]"
+playwright install chromium
+```
+
+> **Tip:** If installation fails with a build error, upgrade the build toolchain first:
+> `python -m pip install --upgrade pip setuptools wheel`
+
+### Updating the lock files after changing dependencies
+
+After editing `requirements/base.in` or `requirements/dev.in`, regenerate the
+lock files and commit the result:
+
+```bash
+make deps-all
+git add requirements/
+git commit -m "chore: update dependency lock files"
+```
 
 ---
 

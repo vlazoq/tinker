@@ -1,0 +1,10 @@
+# requirements/metrics.in
+# ---------------------------------------------------------------------------
+# Tinker — optional Prometheus metrics endpoint.
+#
+# Install with:  pip install -e ".[metrics]"
+# Or pin via:    pip-compile requirements/metrics.in -o requirements/metrics.txt
+# ---------------------------------------------------------------------------
+
+-r base.in
+prometheus-client>=0.20.0

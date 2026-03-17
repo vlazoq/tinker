@@ -1,0 +1,26 @@
+# requirements/dev.in
+# ---------------------------------------------------------------------------
+# Tinker — dev + test dependencies.
+#
+# Inherits all production deps via -r base.in, then adds tooling needed
+# only in development and CI environments.
+#
+# Regenerate with:
+#   make deps-dev      # or: pip-compile requirements/dev.in -o requirements/dev.txt
+# ---------------------------------------------------------------------------
+
+-r base.in
+
+# ── Testing ──────────────────────────────────────────────────────────────────
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+fakeredis[aioredis]>=2.23.0
+
+# ── TUI dev tools ─────────────────────────────────────────────────────────────
+textual-dev>=0.52.0
+
+# ── Observability (optional metrics endpoint) ─────────────────────────────────
+prometheus-client>=0.20.0
+
+# ── Dependency management ─────────────────────────────────────────────────────
+pip-tools>=7.0.0
