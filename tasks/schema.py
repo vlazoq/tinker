@@ -70,12 +70,15 @@ class TaskType(str, Enum):
     VALIDATION  : Verify a claim or assumption with evidence.
                   Example: "Confirm that Kafka supports exactly-once delivery."
     """
-    DESIGN       = "design"
-    RESEARCH     = "research"
-    CRITIQUE     = "critique"
-    SYNTHESIS    = "synthesis"
-    EXPLORATION  = "exploration"
-    VALIDATION   = "validation"
+    DESIGN          = "design"
+    RESEARCH        = "research"
+    CRITIQUE        = "critique"
+    SYNTHESIS       = "synthesis"
+    EXPLORATION     = "exploration"
+    VALIDATION      = "validation"
+    # ── Grub integration task types ───────────────────────────────────────────
+    IMPLEMENTATION  = "implementation"   # Grub: implement this design artifact
+    REVIEW          = "review"           # Grub: review what was implemented
 
 
 class TaskStatus(str, Enum):
