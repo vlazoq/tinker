@@ -8,7 +8,7 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
-from ..state import LoopLevel, TinkerState
+from .state import LoopLevel, TinkerState
 
 LEVEL_STYLE = {
     LoopLevel.MICRO: ("bold bright_cyan",   "μ  MICRO"),

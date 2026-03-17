@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Static
 
-from ..state import TaskStatus, TaskType, TinkerState
+from .state import TaskStatus, TaskType, TinkerState
 
 STATUS_COLOURS = {
     "pending":  "yellow",

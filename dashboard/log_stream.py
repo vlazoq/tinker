@@ -7,7 +7,7 @@ from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import RichLog, Select, Static
 
-from ..log_handler import LEVEL_COLOURS, LogBuffer, LogRecord, get_log_buffer
+from .log_handler import LEVEL_COLOURS, LogBuffer, LogRecord, get_log_buffer
 
 LEVEL_ORDER = ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]
 

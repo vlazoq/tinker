@@ -10,7 +10,7 @@ from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Static
 
-from ..state import TaskInfo, TaskStatus, TaskType, TinkerState
+from .state import TaskInfo, TaskStatus, TaskType, TinkerState
 
 TYPE_STYLE: dict[TaskType, str] = {
     TaskType.DESIGN:           "bright_cyan",

@@ -15,7 +15,7 @@ from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Static
 
-from ..state import TinkerState
+from .state import TinkerState
 
 
 # ─────────────────────────────────────────────────────────────────

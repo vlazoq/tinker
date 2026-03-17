@@ -26,8 +26,10 @@ AUDIT_DB   = Path(os.getenv("TINKER_AUDIT_LOG_PATH",BASE_DIR / "tinker_audit.sql
 BACKUP_DIR = Path(os.getenv("TINKER_BACKUP_DIR",    BASE_DIR / "tinker_backups"))
 FLAGS_FILE = Path(os.getenv("TINKER_FLAGS_FILE",     BASE_DIR / "tinker_flags.json"))
 CONFIG_FILE= Path(os.getenv("TINKER_WEBUI_CONFIG",   BASE_DIR / "tinker_webui_config.json"))
-STATE_FILE = Path(os.getenv("TINKER_STATE_PATH",     BASE_DIR / "tinker_state.json"))
-HEALTH_URL = os.getenv("TINKER_HEALTH_URL", "http://localhost:8081")
+STATE_FILE      = Path(os.getenv("TINKER_STATE_PATH",     BASE_DIR / "tinker_state.json"))
+HEALTH_URL      = os.getenv("TINKER_HEALTH_URL", "http://localhost:8081")
+GRUB_QUEUE_DB   = Path(os.getenv("GRUB_QUEUE_DB",      BASE_DIR / "grub_queue.sqlite"))
+GRUB_ARTIFACTS  = Path(os.getenv("GRUB_ARTIFACTS_DIR", BASE_DIR / "grub_artifacts"))
 
 # ── Default flag values (mirrors features/flags.py) ──────────────────────────
 FLAG_DEFAULTS: dict[str, bool] = {
@@ -312,3 +314,76 @@ def now_iso() -> str:
 
 def new_id() -> str:
     return str(uuid.uuid4())
+
+# ── Grub status helpers ───────────────────────────────────────────────────────
+
+def fetch_grub_status_sync() -> dict:
+    """
+    Read Grub pipeline status from SQLite DBs and grub_artifacts/.
+    Returns a dict safe for JSON serialisation.
+    """
+    import re
+
+    # ── Tinker tasks of type implementation / review ──────────────────────────
+    task_rows = db_query_sync(
+        TASKS_DB,
+        "SELECT type, status, COUNT(*) as n "
+        "FROM tasks WHERE type IN ('implementation','review') "
+        "GROUP BY type, status",
+    )
+    task_counts: dict[str, dict[str, int]] = {}
+    for r in task_rows:
+        task_counts.setdefault(r["type"], {})[r["status"]] = r["n"]
+
+    # ── Grub queue stats ──────────────────────────────────────────────────────
+    queue_rows = db_query_sync(
+        GRUB_QUEUE_DB,
+        "SELECT status, COUNT(*) as n FROM grub_queue GROUP BY status",
+    ) if GRUB_QUEUE_DB.exists() else []
+    queue_counts = {r["status"]: r["n"] for r in queue_rows}
+
+    # ── Recent artifacts ──────────────────────────────────────────────────────
+    artifacts: list[dict] = []
+    if GRUB_ARTIFACTS.exists():
+        files = sorted(
+            GRUB_ARTIFACTS.glob("*.md"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )[:10]
+        for f in files:
+            score: float | None = None
+            subsystem = ""
+            try:
+                text = f.read_text(encoding="utf-8")
+                for line in text.splitlines()[:20]:
+                    m = re.search(r"score[:\s]+(\d+(?:\.\d+)?)", line, re.IGNORECASE)
+                    if m:
+                        v = float(m.group(1))
+                        score = v / 10.0 if v > 1.0 else v
+                        break
+                # Try to extract subsystem from filename or content
+                ss_m = re.search(r"subsystem[:\s]+(\w+)", text, re.IGNORECASE)
+                if ss_m:
+                    subsystem = ss_m.group(1)
+            except Exception:
+                pass
+            artifacts.append({
+                "name":       f.stem,
+                "mtime":      datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                "score":      score,
+                "subsystem":  subsystem,
+                "size_bytes": f.stat().st_size,
+            })
+
+    return {
+        "task_counts":    task_counts,
+        "queue_counts":   queue_counts,
+        "artifacts":      artifacts,
+        "queue_db_exists": GRUB_QUEUE_DB.exists(),
+        "artifacts_dir_exists": GRUB_ARTIFACTS.exists(),
+        "artifacts_dir":  str(GRUB_ARTIFACTS),
+    }
+
+
+async def fetch_grub_status() -> dict:
+    return await asyncio.to_thread(fetch_grub_status_sync)

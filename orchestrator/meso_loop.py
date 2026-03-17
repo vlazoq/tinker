@@ -235,6 +235,36 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
         record.document_id = doc_id
         record.status = LoopStatus.SUCCESS
 
+        # ── 3b. Emit an implementation task for Grub ──────────────────────────
+        # If Grub integration is available, create an 'implementation' task so
+        # Grub picks up this design and writes code for it.
+        # This is safe to skip if the task engine or generator are not wired in.
+        try:
+            task_engine = getattr(orch, "task_engine", None)
+            task_gen    = getattr(orch, "task_generator", None)
+            if task_engine is not None and task_gen is not None:
+                # Build a path hint — Grub will look for the actual .md file
+                # in tinker_artifacts/ matching this subsystem name.
+                artifact_hint = f"tinker_artifacts/{subsystem}_design.md"
+                impl_task = task_gen.make_implementation_task(
+                    title       = f"Implement {subsystem} from meso synthesis",
+                    description = (
+                        f"Grub: implement the {subsystem} subsystem based on the "
+                        f"meso synthesis document. Design artifact: {artifact_hint}. "
+                        f"Synthesis summary: {synthesis.get('content', '')[:300]}"
+                    ),
+                    subsystem     = subsystem,
+                    artifact_path = artifact_hint,
+                )
+                await task_engine.add_task(impl_task)
+                logger.info(
+                    "meso: emitted implementation task for Grub (subsystem=%s, task=%s)",
+                    subsystem, impl_task.id[:8],
+                )
+        except Exception as exc:
+            # Never let Grub integration errors crash the meso loop
+            logger.debug("meso: could not emit implementation task: %s", exc)
+
         # ── 4. Reset the subsystem counter ───────────────────────────────────
         # Now that we've synthesised this batch of micro-loop artifacts, reset
         # the counter to 0.  The subsystem will accumulate another batch of
