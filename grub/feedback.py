@@ -191,35 +191,34 @@ class TinkerBridge:
 
             # 2. Always create a follow-up review task for Tinker so it knows
             #    what Grub produced and can decide whether to redesign.
-            if True:
-                new_id = str(uuid.uuid4())
-                feedback_title = f"Review Grub implementation: {result.summary[:80]}"
-                notes = result.feedback_for_tinker or "(no additional notes)"
-                feedback_desc  = (
-                    f"Grub has implemented a task. Review the output and decide "
-                    f"if the architecture needs updating.\n\n"
-                    f"Implementation summary: {result.summary}\n\n"
-                    f"Files produced: {', '.join(result.files_written[:5])}\n\n"
-                    f"Notes: {notes}\n\n"
-                    f"Grub score: {result.score:.2f}"
-                )
-                meta = json.dumps({
-                    "grub_task_result": result.to_dict(),
-                    "source":           "grub_feedback",
-                })
-                con.execute(
-                    """INSERT OR IGNORE INTO tasks
-                       (id, title, description, type, subsystem, status,
-                        confidence_gap, is_exploration, created_at, updated_at,
-                        priority_score, staleness_hours, dependency_depth,
-                        last_subsystem_work_hours, attempt_count,
-                        dependencies, outputs, tags, metadata)
-                       VALUES (?,?,?,'review','cross_cutting','pending',
-                               0.6, 0, ?,?, 0.6, 0.0, 0, 0.0, 0,
-                               '[]','[]','["grub_feedback"]',?)""",
-                    (new_id, feedback_title, feedback_desc, now, now, meta)
-                )
-                logger.info("TinkerBridge: created Tinker review task %s", new_id[:8])
+            new_id = str(uuid.uuid4())
+            feedback_title = f"Review Grub implementation: {result.summary[:80]}"
+            notes = result.feedback_for_tinker or "(no additional notes)"
+            feedback_desc = (
+                f"Grub has implemented a task. Review the output and decide "
+                f"if the architecture needs updating.\n\n"
+                f"Implementation summary: {result.summary}\n\n"
+                f"Files produced: {', '.join(result.files_written[:5])}\n\n"
+                f"Notes: {notes}\n\n"
+                f"Grub score: {result.score:.2f}"
+            )
+            meta = json.dumps({
+                "grub_task_result": result.to_dict(),
+                "source":           "grub_feedback",
+            })
+            con.execute(
+                """INSERT OR IGNORE INTO tasks
+                   (id, title, description, type, subsystem, status,
+                    confidence_gap, is_exploration, created_at, updated_at,
+                    priority_score, staleness_hours, dependency_depth,
+                    last_subsystem_work_hours, attempt_count,
+                    dependencies, outputs, tags, metadata)
+                   VALUES (?,?,?,'review','cross_cutting','pending',
+                           0.6, 0, ?,?, 0.6, 0.0, 0, 0.0, 0,
+                           '[]','[]','["grub_feedback"]',?)""",
+                (new_id, feedback_title, feedback_desc, now, now, meta)
+            )
+            logger.info("TinkerBridge: created Tinker review task %s", new_id[:8])
 
             con.commit()
             con.close()
