@@ -181,24 +181,26 @@ class TinkerBridge:
             now = datetime.now(timezone.utc).isoformat()
             con = sqlite3.connect(str(self._tasks_db), timeout=10)
 
-            # 1. Mark original task as completed
+            # 1. Mark original task as complete (matches TaskStatus.COMPLETE = "complete")
             con.execute(
-                "UPDATE tasks SET status='completed', updated_at=? WHERE id=?",
+                "UPDATE tasks SET status='complete', updated_at=? WHERE id=?",
                 (now, tinker_task_id)
             )
-            logger.info("TinkerBridge: marked Tinker task %s as completed",
+            logger.info("TinkerBridge: marked Tinker task %s as complete",
                         tinker_task_id[:8])
 
-            # 2. Create a follow-up review task for Tinker
-            if result.feedback_for_tinker:
+            # 2. Always create a follow-up review task for Tinker so it knows
+            #    what Grub produced and can decide whether to redesign.
+            if True:
                 new_id = str(uuid.uuid4())
                 feedback_title = f"Review Grub implementation: {result.summary[:80]}"
+                notes = result.feedback_for_tinker or "(no additional notes)"
                 feedback_desc  = (
                     f"Grub has implemented a task. Review the output and decide "
                     f"if the architecture needs updating.\n\n"
                     f"Implementation summary: {result.summary}\n\n"
                     f"Files produced: {', '.join(result.files_written[:5])}\n\n"
-                    f"Notes: {result.feedback_for_tinker}\n\n"
+                    f"Notes: {notes}\n\n"
                     f"Grub score: {result.score:.2f}"
                 )
                 meta = json.dumps({
