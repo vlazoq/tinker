@@ -63,6 +63,7 @@ from .panels import (
     ArchitectPanel,
     ArchStatePanel,
     CriticPanel,
+    GrubPanel,
     HealthPanel,
     LogStreamPanel,
     LoopStatusPanel,
@@ -194,6 +195,7 @@ class TinkerDashboard(App[None]):
                 yield CriticPanel(id="panel-critic")
                 yield ArchStatePanel(id="panel-arch-state")
                 yield MemoryPanel(id="panel-memory")
+                yield GrubPanel(id="panel-grub")
 
         yield LogStreamPanel(id="panel-log")
         yield Footer()

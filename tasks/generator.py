@@ -107,6 +107,56 @@ class TaskGenerator:
         )
         return tasks
 
+    def make_implementation_task(
+        self,
+        title:         str,
+        description:   str,
+        subsystem:     "Subsystem | str" = "cross_cutting",
+        artifact_path: str = "",
+        tinker_task_id: str = "",
+    ) -> Task:
+        """
+        Create a task that signals Grub to implement a design artifact.
+
+        Grub's TinkerBridge polls for tasks with type='implementation'.
+        When it finds one, it picks up the design artifact at artifact_path,
+        runs the Coder → Reviewer → Tester → Debugger → Refactorer pipeline,
+        and writes results back as a 'review' task.
+
+        Call this after a meso synthesis completes and the design artifact
+        has been saved to disk.
+
+        Parameters
+        ----------
+        title          : Short description, e.g. "Implement API gateway router".
+        description    : Full instructions for Grub.
+        subsystem      : Which Tinker subsystem this is for.
+        artifact_path  : Path to the design artifact (.md file) Grub should read.
+        tinker_task_id : (optional) parent Tinker task ID for traceability.
+
+        Returns
+        -------
+        Task with type=IMPLEMENTATION and status=PENDING.
+        """
+        import json as _json
+        sub = self._parse_subsystem(
+            subsystem.value if isinstance(subsystem, Subsystem) else subsystem
+        )
+        return Task(
+            title       = title,
+            description = description,
+            type        = TaskType.IMPLEMENTATION,
+            subsystem   = sub,
+            status      = TaskStatus.PENDING,
+            confidence_gap = 0.7,
+            tags        = ["grub_ready"],
+            metadata    = {
+                "artifact_path":   artifact_path,
+                "tinker_task_id":  tinker_task_id,
+                "source":          "meso_synthesis",
+            },
+        )
+
     def make_exploration_task(
         self,
         title: str,

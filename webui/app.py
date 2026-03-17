@@ -28,7 +28,8 @@ from .core import (
     TASK_TYPES, SUBSYSTEMS,
     AUDIT_DB, BACKUP_DIR, DLQ_DB, FLAGS_FILE, TASKS_DB,
     db_execute, db_query,
-    fetch_health, list_backups, load_config, load_flags, load_state,
+    fetch_grub_status, fetch_health, list_backups,
+    load_config, load_flags, load_state,
     new_id, now_iso, save_config, save_flags,
 )
 
@@ -61,6 +62,11 @@ async def api_health():
 @app.get("/api/state")
 async def api_state():
     return load_state()
+
+@app.get("/api/grub/status")
+async def api_grub_status():
+    """Return Grub pipeline status: task counts, queue stats, recent artifacts."""
+    return await fetch_grub_status()
 
 
 # ── Config ────────────────────────────────────────────────────────────────────

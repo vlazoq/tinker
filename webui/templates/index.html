@@ -758,9 +758,149 @@ const LogViewer = () => {
   );
 };
 
+// ── Grub Status tab ───────────────────────────────────────────────────────────
+const GrubStatus = () => {
+  const [data, setData]   = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    api.get('/api/grub/status').then(d => { setData(d); setLoading(false); });
+  }, []);
+
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 5000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  if (loading) return <div className="card"><Spinner /> Loading Grub status…</div>;
+
+  const tasks     = data?.task_counts   || {};
+  const queue     = data?.queue_counts  || {};
+  const artifacts = data?.artifacts     || [];
+
+  const implPending   = tasks.implementation?.pending   || 0;
+  const implCompleted = tasks.implementation?.completed || 0;
+  const reviewPending = tasks.review?.pending || 0;
+  const queuePending  = queue.pending  || 0;
+  const queueDone     = queue.done     || 0;
+  const queueFailed   = queue.failed   || 0;
+
+  const scoreColor = (s) => {
+    if (s == null) return 'var(--muted)';
+    if (s >= 0.8)  return 'var(--success)';
+    if (s >= 0.6)  return 'var(--warning)';
+    return 'var(--danger)';
+  };
+
+  return (
+    <div>
+      {!data?.queue_db_exists && !data?.artifacts_dir_exists && (
+        <Alert type="warn">
+          Grub has not run yet — no queue DB or artifacts found. Start Grub with <code>python -m grub</code> to begin.
+        </Alert>
+      )}
+
+      <div className="grid-4 mb-16">
+        <StatBox value={implPending}   label="Impl Pending" />
+        <StatBox value={implCompleted} label="Impl Done" />
+        <StatBox value={reviewPending} label="Review Pending" />
+        <StatBox value={artifacts.length} label="Artifacts" />
+      </div>
+
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-title">Grub Queue</div>
+          {!data?.queue_db_exists
+            ? <p className="muted">Queue DB not found — Grub not started yet.</p>
+            : <table><tbody>
+                <tr><td className="muted">Pending</td>
+                    <td style={{color:'var(--warning)'}}>{queuePending}</td></tr>
+                <tr><td className="muted">Claimed (running)</td>
+                    <td style={{color:'var(--success)'}}>{queue.claimed || 0}</td></tr>
+                <tr><td className="muted">Done</td>
+                    <td style={{color:'var(--success)'}}>{queueDone}</td></tr>
+                <tr><td className="muted">Failed</td>
+                    <td style={{color:'var(--danger)'}}>{queueFailed}</td></tr>
+              </tbody></table>
+          }
+        </div>
+
+        <div className="card">
+          <div className="card-title">Tinker ↔ Grub Tasks</div>
+          <table><tbody>
+            <tr>
+              <td className="muted">Implementation (pending)</td>
+              <td style={{color:'var(--warning)'}}>{implPending}</td>
+            </tr>
+            <tr>
+              <td className="muted">Implementation (completed)</td>
+              <td style={{color:'var(--success)'}}>{implCompleted}</td>
+            </tr>
+            <tr>
+              <td className="muted">Implementation (failed)</td>
+              <td style={{color:'var(--danger)'}}>{tasks.implementation?.failed || 0}</td>
+            </tr>
+            <tr>
+              <td className="muted">Review (pending)</td>
+              <td style={{color:'var(--warning)'}}>{reviewPending}</td>
+            </tr>
+            <tr>
+              <td className="muted">Review (completed)</td>
+              <td style={{color:'var(--success)'}}>{tasks.review?.completed || 0}</td>
+            </tr>
+          </tbody></table>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="flex justify-between items-center mb-16">
+          <div className="card-title" style={{marginBottom:0}}>
+            Recent Grub Artifacts ({artifacts.length})
+          </div>
+          <div className="flex gap-8">
+            <span className="muted" style={{fontSize:12}}>{data?.artifacts_dir}</span>
+            <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
+          </div>
+        </div>
+        {!artifacts.length
+          ? <p className="muted" style={{textAlign:'center',padding:20}}>No artifacts yet</p>
+          : <div className="table-wrap">
+              <table>
+                <thead><tr>
+                  <th>Name</th><th>Subsystem</th><th>Score</th>
+                  <th>Size</th><th>Time</th>
+                </tr></thead>
+                <tbody>
+                  {artifacts.map((a, i) => (
+                    <tr key={i}>
+                      <td className="mono" style={{fontSize:12}}>{a.name}</td>
+                      <td className="muted">{a.subsystem || '—'}</td>
+                      <td>
+                        {a.score != null
+                          ? <span style={{color: scoreColor(a.score), fontWeight:'bold'}}>
+                              {(a.score * 10).toFixed(1)}/10
+                            </span>
+                          : <span className="muted">—</span>
+                        }
+                      </td>
+                      <td className="muted">{a.size_bytes > 1024 ? `${(a.size_bytes/1024).toFixed(1)}K` : `${a.size_bytes}B`}</td>
+                      <td className="muted mono" style={{fontSize:11}}>{a.mtime?.slice(11,19)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+        }
+      </div>
+    </div>
+  );
+};
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'dashboard', label: '📊 Dashboard',     Component: Dashboard },
+  { id: 'grub',      label: '🐛 Grub',           Component: GrubStatus },
   { id: 'config',    label: '⚙️ Config',         Component: Config },
   { id: 'flags',     label: '🚩 Feature Flags',  Component: FeatureFlags },
   { id: 'tasks',     label: '📋 Task Queue',     Component: TaskQueue },
