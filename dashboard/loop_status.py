@@ -61,5 +61,5 @@ class LoopStatusPanel(Widget):
         self.query_one("#loop-updated", Static).update(upd)
 
     def on_mount(self) -> None:
-        from ..state import get_store
+        from .state import get_store
         self.refresh_state(get_store().snapshot())
