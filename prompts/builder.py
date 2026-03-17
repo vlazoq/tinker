@@ -30,8 +30,10 @@ from .variants import (
 )
 
 
-class PromptBuilderError(Exception):
-    pass
+# PromptBuilderError is defined in the central exceptions module and
+# re-exported here so ``from prompts.builder import PromptBuilderError``
+# continues to work.
+from exceptions import PromptBuilderError  # noqa: F401  (intentional re-export)
 
 
 class PromptBuilder:

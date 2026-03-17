@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Optional
 
+from exceptions import ContextError, ConfigurationError
+
 logger = logging.getLogger(__name__)
 
 
@@ -138,9 +140,10 @@ class TokenBudgetManager:
     def _validate_allocation(self) -> None:
         total = sum(self.allocation.values())
         if total > 1.0:
-            raise ValueError(
+            raise ConfigurationError(
                 f"Token allocations sum to {total:.3f} > 1.0. "
-                "Reduce one or more section allocations."
+                "Reduce one or more section allocations.",
+                context={"total": total, "allocation": dict(self.allocation)},
             )
 
     # ------------------------------------------------------------------

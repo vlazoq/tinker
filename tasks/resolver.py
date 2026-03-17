@@ -63,15 +63,10 @@ log = logging.getLogger(__name__)
 # Custom exception
 # =============================================================================
 
-class DependencyCycleError(Exception):
-    """Raised when a circular dependency is detected in the task graph.
-
-    Example message: "Cycle detected: could not produce full topological order."
-
-    This exception is only raised by ``topological_order()``.  Other methods
-    like ``detect_cycles()`` return a list of cycles without raising.
-    """
-    pass
+# DependencyCycleError is defined in the central exceptions module and
+# re-exported here so ``from tasks.resolver import DependencyCycleError``
+# continues to work.
+from exceptions import DependencyCycleError  # noqa: F401  (intentional re-export)
 
 
 # =============================================================================

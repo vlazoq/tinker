@@ -58,6 +58,7 @@ import time
 from typing import TYPE_CHECKING, Optional
 
 from .state import MicroLoopRecord, LoopStatus
+from exceptions import MicroLoopError  # noqa: F401  (re-exported for callers)
 
 # This import only happens when a static analysis tool runs, not at runtime.
 # It allows us to annotate function parameters with the Orchestrator type
@@ -797,15 +798,6 @@ def _enrich_review_context(task: dict, context: dict) -> dict:
     return enriched
 
 
-class MicroLoopError(Exception):
-    """
-    Raised when a micro loop iteration cannot complete successfully.
-
-    This is the "expected" failure class for the micro loop.  The orchestrator
-    catches it in ``_run_micro()``, increments the consecutive-failure counter,
-    and decides whether to back off.
-
-    By having a dedicated exception class (instead of using a generic
-    ``Exception``), the orchestrator can distinguish "I expected this might
-    fail and handled it" from truly unexpected crashes.
-    """
+# MicroLoopError was previously defined here.  It now lives in exceptions.py
+# (as part of the unified TinkerError hierarchy) and is imported at the top of
+# this file.  This comment is kept so that ``git blame`` explains the move.

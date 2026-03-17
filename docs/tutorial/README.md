@@ -37,6 +37,7 @@ Build the chapters in order. Each one depends on the previous.
 |---|---------|---------------|
 | [00](./00-introduction.md) | Introduction & Big Picture | Architecture overview, key concepts |
 | [01](./01-python-prerequisites.md) | Python Prerequisites | `async/await`, dataclasses, type hints, env vars |
+| [01b](./01b-exception-hierarchy.md) | **The Exception Hierarchy** | Typed error surface, `retryable` flag, structured context |
 | [02](./02-model-client.md) | The Model Client | HTTP calls to Ollama, routing between two models |
 | [03](./03-memory-manager.md) | The Memory Manager | Redis, DuckDB, ChromaDB, SQLite — four memory tiers |
 | [04](./04-tool-layer.md) | The Tool Layer | Web search, web scraping, artifact writing |

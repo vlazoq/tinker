@@ -61,6 +61,7 @@ import time
 from typing import Any
 
 from .client import OllamaClient
+from exceptions import ModelRouterError, ResponseParseError
 from .context import enforce_context_limit
 from .parsing import build_json_instruction, extract_json
 from .types import (
@@ -413,7 +414,10 @@ class ModelRouter:
         OllamaClient for that machine.
         """
         if not self._clients:
-            raise RuntimeError("ModelRouter not started. Call await router.start() first.")
+            raise ModelRouterError(
+                "ModelRouter not started. Call 'await router.start()' first.",
+                context={"machine": str(machine)},
+            )
         return self._clients[machine]
 
 
@@ -495,14 +499,17 @@ def _unpack_ollama_response(raw: dict) -> tuple[str, dict, int]:
 
     Raises
     ------
-    ValueError : If the response doesn't match the expected structure (e.g.
-                 Ollama returned something unexpected).
+    ResponseParseError : If the response doesn't match the expected structure
+                         (e.g. Ollama returned something unexpected).
     """
     try:
         # Navigate: response -> choices[0] -> message -> content
         text = raw["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
-        raise ValueError(f"Unexpected Ollama response structure: {raw}") from exc
+        raise ResponseParseError(
+            f"Unexpected Ollama response structure: {raw}",
+            context={"raw_keys": list(raw.keys()) if isinstance(raw, dict) else []},
+        ) from exc
 
     # usage is optional — older Ollama versions don't always include it
     usage = raw.get("usage", {})
