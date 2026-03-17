@@ -1,12 +1,16 @@
 """
-tasks/registry.py — Persistent storage for all tasks
-=====================================================
+tasks/registry.py — SQLite-backed task registry
+================================================
 
 What this file does
 --------------------
-This is the "database layer" of the Task Engine.  The ``TaskRegistry``
-class is responsible for saving, loading, updating, and querying tasks
-using an SQLite database.
+This is the SQLite implementation of ``AbstractTaskRegistry``.  The
+canonical class name is ``SQLiteTaskRegistry``; ``TaskRegistry`` is kept
+as a backwards-compatible alias so existing code does not break.
+
+For deployments that need a shared task store across multiple processes or
+machines, use ``PostgresTaskRegistry`` (see ``tasks/postgres_registry.py``)
+or call the ``create_task_registry(backend=...)`` factory function.
 
 SQLite is a lightweight database engine that stores everything in a single
 file on disk.  It requires no separate server process, making it ideal for
@@ -50,6 +54,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
+from .abstract_registry import AbstractTaskRegistry
 from .schema import Task, TaskStatus, TaskType, Subsystem
 
 log = logging.getLogger(__name__)
@@ -139,18 +144,21 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 # TaskRegistry class
 # =============================================================================
 
-class TaskRegistry:
+class SQLiteTaskRegistry(AbstractTaskRegistry):
     """
-    Persistent store for all tasks, backed by SQLite.
+    Persistent task store backed by a local SQLite file.
 
-    This class is the single source of truth for task state.  Every create,
-    read, update, and delete goes through here.
+    This is the default backend — it requires no external services and
+    works on every platform Tinker supports.
 
     Thread safety
     -------------
     Multiple threads can read concurrently (WAL mode).  Writes are
-    serialised by SQLite's locking.  For the vast majority of Tinker's
-    usage patterns this is fine — the bottleneck is the AI API, not SQLite.
+    serialised by SQLite's internal locking.  For Tinker's usage patterns
+    this is fine — the bottleneck is the AI API, not SQLite.
+
+    For multi-process or multi-machine deployments use
+    ``PostgresTaskRegistry`` instead.
 
     Parameters
     ----------
@@ -403,3 +411,16 @@ class TaskRegistry:
         to flush any pending writes and release the file lock.
         """
         self._conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Backwards-compatibility alias
+# ---------------------------------------------------------------------------
+# Code written before the PostgreSQL backend was added imports ``TaskRegistry``
+# directly.  Keep the old name pointing to the SQLite implementation so none
+# of that code breaks.
+#
+#   from tasks.registry import TaskRegistry   # still works
+#   from tasks import TaskRegistry            # still works (via __init__.py)
+#
+TaskRegistry = SQLiteTaskRegistry
