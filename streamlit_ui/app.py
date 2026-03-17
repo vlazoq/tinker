@@ -25,6 +25,7 @@ from webui.core import (
     TASK_TYPES, SUBSYSTEMS,
     AUDIT_DB, BACKUP_DIR, DLQ_DB, FLAGS_FILE, TASKS_DB,
     db_query_sync as dbq, db_execute_sync as dbe,
+    fetch_grub_status_sync,
     list_backups, load_config, load_flags, load_state,
     new_id, now_iso, save_config, save_flags,
 )
@@ -47,7 +48,7 @@ st.markdown("""
 st.title("🔧 TINKER — Control Panel")
 
 tabs = st.tabs(["📊 Dashboard", "⚙️ Config", "🚩 Feature Flags",
-                "📋 Task Queue", "💀 DLQ", "💾 Backups", "📜 Audit Log"])
+                "📋 Task Queue", "💀 DLQ", "💾 Backups", "🤖 Grub", "📜 Audit Log"])
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 with tabs[0]:
@@ -278,8 +279,63 @@ with tabs[5]:
 
     st.caption("Tinker backs up: DuckDB (artifacts), SQLite (tasks), ChromaDB (vectors).")
 
-# ── Audit Log ─────────────────────────────────────────────────────────────────
+# ── Grub ──────────────────────────────────────────────────────────────────────
 with tabs[6]:
+    if st.button("↻ Refresh", key="grub_refresh"):
+        st.rerun()
+
+    status = fetch_grub_status_sync()
+    # task_counts: {type_str: {status_str: count}}
+    task_counts  = status.get("task_counts",  {})
+    queue_counts = status.get("queue_counts", {})
+    artifacts    = status.get("artifacts",    [])
+
+    st.subheader("Tinker tasks (implementation + review)")
+    # Flatten nested {type: {status: count}} into a list of metrics
+    flat_counts = [(f"{t}/{s}", n) for t, sm in task_counts.items() for s, n in sm.items()]
+    if flat_counts:
+        tcols = st.columns(min(len(flat_counts), 4))
+        for i, (label, count) in enumerate(flat_counts):
+            tcols[i % 4].metric(label, count)
+    else:
+        st.info("No implementation or review tasks found.")
+
+    st.subheader("Grub queue")
+    if queue_counts:
+        qcols = st.columns(min(len(queue_counts), 4))
+        for i, (label, count) in enumerate(queue_counts.items()):
+            qcols[i % 4].metric(label, count)
+    elif not status.get("queue_db_exists"):
+        st.info("Grub has not started yet — `grub_queue.sqlite` not found.")
+
+    impl_rows = dbq(TASKS_DB,
+        "SELECT id, title, type, subsystem, status, priority_score, attempt_count, updated_at "
+        "FROM tasks WHERE type IN ('implementation','review') "
+        "ORDER BY updated_at DESC LIMIT 100") or []
+    if impl_rows:
+        import pandas as pd
+        idf = pd.DataFrame(impl_rows)
+        idf["id"] = idf["id"].str[:8] + "…"
+        idf["priority_score"] = idf["priority_score"].round(3)
+        st.dataframe(idf, use_container_width=True)
+
+    st.subheader("Recent implementation artifacts")
+    arts_dir = status.get("artifacts_dir", "./grub_artifacts")
+    if artifacts:
+        for a in artifacts:
+            size_kb = round(a.get("size_bytes", 0) / 1024, 1)
+            score   = f"  score={a['score']:.2f}" if a.get("score") is not None else ""
+            label   = f"{a['name']} ({size_kb} KB){score}"
+            with st.expander(label):
+                st.caption(f"Modified: {a.get('mtime','')[:19]}")
+                if a.get("subsystem"):
+                    st.caption(f"Subsystem: {a['subsystem']}")
+    else:
+        st.info(f"No artifacts yet. Grub writes to `{arts_dir}` when tasks complete.")
+
+
+# ── Audit Log ─────────────────────────────────────────────────────────────────
+with tabs[7]:
     evt_types = [r["event_type"] for r in
                  dbq(AUDIT_DB, "SELECT DISTINCT event_type FROM audit_events ORDER BY event_type") or []]
 

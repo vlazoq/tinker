@@ -28,6 +28,7 @@ from webui.core import (
     TASK_TYPES, SUBSYSTEMS,
     AUDIT_DB, BACKUP_DIR, DLQ_DB, FLAGS_FILE, TASKS_DB,
     db_query_sync as dbq, db_execute_sync as dbe,
+    fetch_grub_status_sync,
     list_backups, load_config, load_flags, load_state,
     new_id, now_iso, save_config, save_flags,
 )
@@ -114,6 +115,64 @@ def _backup_df():
     if not bs:
         return pd.DataFrame(columns=["id","created_at","size_mb","file_count","errors"])
     return pd.DataFrame(bs)
+
+
+def _grub_md() -> str:
+    status = fetch_grub_status_sync()
+    # task_counts: {type_str: {status_str: count}}
+    task_counts  = status.get("task_counts",  {})
+    queue_counts = status.get("queue_counts", {})
+    artifacts    = status.get("artifacts",    [])
+
+    lines = [
+        "## Grub — Implementation Pipeline",
+        "",
+        "### Tinker task counts (implementation + review types)",
+        "| Type | Status | Count |",
+        "|------|--------|-------|",
+    ]
+    for task_type, status_map in task_counts.items():
+        for task_status, count in status_map.items():
+            lines.append(f"| {task_type} | {task_status} | {count} |")
+    if not task_counts:
+        lines.append("| — | — | 0 |")
+
+    lines += [
+        "",
+        "### Grub queue counts",
+        "| Status | Count |",
+        "|--------|-------|",
+    ]
+    for k, v in queue_counts.items():
+        lines.append(f"| {k} | {v} |")
+    if not queue_counts and not status.get("queue_db_exists"):
+        lines.append("| — | Grub not yet started |")
+
+    lines += ["", "### Recent implementation artifacts"]
+    if artifacts:
+        for a in artifacts:
+            size_kb = round(a.get("size_bytes", 0) / 1024, 1)
+            score   = f"  score={a['score']:.2f}" if a.get("score") is not None else ""
+            lines.append(f"- **{a['name']}** ({size_kb} KB){score} — {a.get('mtime','')[:19]}")
+    else:
+        arts_dir = status.get("artifacts_dir", "./grub_artifacts")
+        lines.append(f"_No artifacts yet. Grub writes to `{arts_dir}` when tasks complete._")
+
+    return "\n".join(lines)
+
+
+def _grub_impl_df():
+    import pandas as pd
+    rows = dbq(TASKS_DB,
+        "SELECT id, title, type, subsystem, status, priority_score, attempt_count, updated_at "
+        "FROM tasks WHERE type IN ('implementation','review') "
+        "ORDER BY updated_at DESC LIMIT 100")
+    if not rows:
+        return pd.DataFrame(columns=["id","title","type","subsystem","status","priority","attempts","updated_at"])
+    df = pd.DataFrame(rows)
+    df["id"] = df["id"].str[:8] + "…"
+    df["priority_score"] = df["priority_score"].round(3)
+    return df
 
 
 # ── App builder ───────────────────────────────────────────────────────────────
@@ -320,6 +379,18 @@ def build_app() -> gr.Blocks:
 
                 backup_trigger.click(fn=trigger_backup, outputs=[backup_msg, backup_df_out])
                 backup_refresh.click(fn=_backup_df, outputs=backup_df_out)
+
+            # ── Grub ──────────────────────────────────────────────────────────
+            with gr.Tab("🤖 Grub"):
+                grub_md_out  = gr.Markdown(_grub_md())
+                grub_df_out  = gr.DataFrame(_grub_impl_df(),
+                                            label="Implementation & Review tasks (last 100)",
+                                            interactive=False)
+                grub_refresh = gr.Button("↻ Refresh", variant="secondary", size="sm")
+                grub_refresh.click(
+                    fn=lambda: (_grub_md(), _grub_impl_df()),
+                    outputs=[grub_md_out, grub_df_out],
+                )
 
             # ── Audit Log ─────────────────────────────────────────────────────
             with gr.Tab("📜 Audit Log"):

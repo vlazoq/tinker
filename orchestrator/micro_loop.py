@@ -203,6 +203,14 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # and any other relevant system context.
         context = await _assemble_context(orch, task)
 
+        # ── 2b. Review-task enrichment ───────────────────────────────────────
+        # When Grub writes back a 'review' task, the Grub result data lives
+        # inside task["metadata"]["grub_task_result"].  Extract it and surface
+        # it as a top-level context key so the Architect can see it clearly
+        # without having to dig through nested metadata JSON.
+        if task.get("type") == "review":
+            context = _enrich_review_context(task, context)
+
         # ── 3. Architect Call ────────────────────────────────────────────────
         # The Architect AI reads the task and context and proposes an
         # architectural design.  This is typically the slowest and most
@@ -753,6 +761,40 @@ def _coroutine_if_needed(fn):
 # runtime.  It keeps the call sites clean and avoids importing the helper
 # function everywhere.
 asyncio.coroutine_if_needed = _coroutine_if_needed
+
+
+def _enrich_review_context(task: dict, context: dict) -> dict:
+    """
+    For review tasks written by Grub, extract the implementation result from
+    task metadata and add it as a prominent top-level key in the context.
+
+    This ensures the Architect's prompt clearly shows what Grub produced
+    (files written, test results, score, feedback) without requiring the
+    Architect to parse nested JSON metadata.
+
+    Returns a shallow copy of context with a ``grub_implementation`` key added.
+    """
+    import json as _json
+
+    enriched = dict(context)
+    try:
+        meta = task.get("metadata") or {}
+        # SQLite stores metadata as a JSON string; parse it if needed.
+        if isinstance(meta, str):
+            meta = _json.loads(meta)
+        grub_result = meta.get("grub_task_result")
+        if grub_result:
+            if isinstance(grub_result, str):
+                grub_result = _json.loads(grub_result)
+            enriched["grub_implementation"] = grub_result
+            logger.debug(
+                "micro: enriched review task %s with grub_implementation (score=%.2f)",
+                task["id"],
+                grub_result.get("score", 0.0),
+            )
+    except Exception as exc:
+        logger.debug("_enrich_review_context: could not parse grub result (non-fatal): %s", exc)
+    return enriched
 
 
 class MicroLoopError(Exception):

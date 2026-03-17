@@ -179,8 +179,14 @@ class TokenBudgetManager:
 
 
 # ---------------------------------------------------------------------------
-# Stub interfaces (implement / replace with real Memory Manager + Prompt
-# Builder once those components are wired in)
+# Abstract interface definitions (Protocol classes)
+#
+# These are NOT incomplete implementations — they are interface contracts
+# (similar to Python ABCs or TypeScript interfaces).  Each method body
+# raises NotImplementedError intentionally, so that subclasses which forget
+# to implement a method fail loudly at call time instead of silently returning
+# None.  The concrete implementations live in context/stubs.py (for tests)
+# and in memory/manager.py + prompt_builder.py (for production).
 # ---------------------------------------------------------------------------
 
 class _MemoryManagerProtocol:

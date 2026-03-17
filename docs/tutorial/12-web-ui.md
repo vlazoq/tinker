@@ -434,7 +434,30 @@ The key difference from FastAPI: Gradio is **synchronous**.  Functions like
 
 ---
 
-## Step 5 — Running All Three UIs
+## Step 5 — Grub Status Tab
+
+All three UIs include a **Grub** tab that shows Grub's implementation pipeline
+alongside Tinker's design loops.  The data comes from `fetch_grub_status_sync()`
+in `webui/core.py`, which reads:
+
+- **Task queue** — `TASKS_DB` filtered to `type IN ('implementation','review')`
+- **Grub queue** — `GRUB_QUEUE_DB` (`grub_queue.sqlite`) task counts by status
+- **Artifacts** — the 10 most recent `.md` files in `GRUB_ARTIFACTS_DIR`
+
+### What each UI shows in the Grub tab
+
+| UI | Implementation tasks | Grub queue counts | Recent artifacts |
+|----|---------------------|------------------|-----------------|
+| webui (FastAPI + React) | ✓ table | ✓ metrics | ✓ list with preview |
+| gradio_ui | ✓ DataFrame | ✓ Markdown | ✓ Markdown list |
+| streamlit_ui | ✓ DataFrame | ✓ st.metric tiles | ✓ expandable list |
+
+To add more Grub detail to any UI, extend `fetch_grub_status_sync()` in
+`webui/core.py` — the data shape automatically flows to all three frontends.
+
+---
+
+## Step 6 — Running All Three UIs
 
 ```bash
 # Terminal 1: Web UI (React)
