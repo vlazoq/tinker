@@ -404,6 +404,56 @@ class SQLiteTaskRegistry(AbstractTaskRegistry):
         # so ORDER BY created_at ASC correctly returns the earliest timestamp.
         return Task.from_dict(_row_to_dict(row)) if row else None
 
+    def save_batch(self, tasks: list[Task]) -> list[Task]:
+        """Insert or update multiple tasks in a single transaction.
+
+        All upserts are committed atomically — either every task is written
+        or none is (the transaction is rolled back on any failure).  This is
+        far faster than calling ``save()`` N times because it avoids N
+        separate commit round-trips to the SQLite file.
+
+        Typical use case: seeding a fresh task queue from a problem statement
+        that spawns dozens of design tasks simultaneously.
+
+        Parameters
+        ----------
+        tasks : list[Task]
+            Tasks to upsert.  Passing an empty list is a no-op.
+
+        Returns
+        -------
+        list[Task]
+            The same list, unchanged.
+        """
+        if not tasks:
+            return tasks
+
+        # Build the parameterised SQL once; SQLite re-uses the same statement
+        # for every row (the ``?`` placeholders are re-bound per row).
+        placeholders = ", ".join(f":{c}" for c in _COLUMNS)
+        cols = ", ".join(_COLUMNS)
+        sql  = f"INSERT OR REPLACE INTO tasks ({cols}) VALUES ({placeholders})"
+
+        rows = [self._task_to_row(t) for t in tasks]
+        with self._tx() as conn:
+            conn.executemany(sql, rows)
+
+        log.debug("Saved batch of %d tasks", len(tasks))
+        return tasks
+
+    def health_check(self) -> bool:
+        """Return True if the SQLite connection is live and the schema is present.
+
+        Executes a minimal ``SELECT 1 FROM tasks LIMIT 1`` query.  If the
+        connection is closed or the table is missing the query raises, and
+        we catch it and return ``False``.  This method never raises.
+        """
+        try:
+            self._conn.execute("SELECT 1 FROM tasks LIMIT 1")
+            return True
+        except Exception:
+            return False
+
     def close(self) -> None:
         """Close the database connection.
 
