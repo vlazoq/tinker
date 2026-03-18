@@ -234,12 +234,21 @@ class GrubAgent:
             self.request_shutdown()
 
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             loop.add_signal_handler(signal.SIGINT,  self.request_shutdown)
             loop.add_signal_handler(signal.SIGTERM, self.request_shutdown)
         except (NotImplementedError, RuntimeError):
-            # Windows: ProactorEventLoop doesn't support add_signal_handler
+            # Windows: ProactorEventLoop doesn't support add_signal_handler.
+            # Fall back to signal.signal() for SIGINT only (SIGTERM is not a
+            # real signal on Windows).
             if sys.platform == "win32":
                 signal.signal(signal.SIGINT, _handler)
+                # SIGTERM does not exist on Windows — skip it silently.
+                sigterm = getattr(signal, "SIGTERM", None)
+                if sigterm is not None:
+                    try:
+                        signal.signal(sigterm, _handler)
+                    except (OSError, ValueError):
+                        pass
             else:
                 logger.warning("GrubAgent: could not install signal handlers")

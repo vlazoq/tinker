@@ -87,12 +87,16 @@ class _InterceptHandler(logging.Handler):
     """Route stdlib logging records through loguru."""
 
     def emit(self, record: logging.LogRecord) -> None:
+        # _InterceptHandler is only installed when loguru is present (see
+        # _setup_logging), so this import is always safe.
+        from loguru import logger as _loguru
+
         try:
-            from loguru import logger as _loguru
-            level = _loguru.level(record.levelname).name
-        except (ImportError, ValueError):
-            level = record.levelno  # type: ignore[assignment]
-            from loguru import logger as _loguru
+            level: str = _loguru.level(record.levelname).name
+        except ValueError:
+            # Unknown custom level — fall back to the raw level name so
+            # loguru still receives a string (not an int).
+            level = record.levelname
 
         # Walk up the call stack past logging internals so loguru reports
         # the original call site rather than a line inside logging/__init__.py.
@@ -252,9 +256,11 @@ def _build_enterprise_stack() -> dict:
     from observability.sla_tracker import build_default_sla_tracker
     from observability.alerting import AlertType as _AlertType
 
+    _sla_alert_logger = logging.getLogger("tinker.sla_tracker")
+
     def _sla_breach_callback(report) -> None:
         # Always called from within the running event loop, so create_task is safe.
-        asyncio.create_task(
+        task = asyncio.create_task(
             alerter.alert(
                 alert_type=_AlertType.SLA_BREACH,
                 title=f"SLA breach: {report.name}",
@@ -262,6 +268,13 @@ def _build_enterprise_stack() -> dict:
                 context=report.to_dict(),
             )
         )
+        # Prevent silent failure: log any exception the alert coroutine raises.
+        def _on_alert_done(t: asyncio.Task) -> None:
+            if not t.cancelled() and t.exception() is not None:
+                _sla_alert_logger.warning(
+                    "SLA breach alert delivery failed: %s", t.exception()
+                )
+        task.add_done_callback(_on_alert_done)
 
     sla_tracker = build_default_sla_tracker(alert_on_breach=_sla_breach_callback)
 
