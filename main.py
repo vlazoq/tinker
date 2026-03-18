@@ -71,17 +71,96 @@ if _env_file.exists():
         pass  # python-dotenv not installed — env vars must be set externally
 
 # ---------------------------------------------------------------------------
-# Set up logging so we can see what Tinker is doing.
+# Structured logging via loguru.
 #
-# The format is: "10:00:01  INFO      tinker.main  Starting up..."
-# Every module creates its own logger (e.g. "tinker.orchestrator.micro")
-# which appears in this format so you know which part of the system logged it.
+# All Tinker modules use stdlib ``logging.getLogger(...)``.  The
+# _InterceptHandler below routes every stdlib log record through loguru so
+# they all share the same sink configuration without requiring changes to the
+# individual modules.
+#
+# Set TINKER_JSON_LOGS=true to emit newline-delimited JSON (e.g. for
+# Datadog / CloudWatch / Loki ingestion).  The default is a human-readable
+# coloured format for local development.
 # ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-    datefmt="%H:%M:%S",
-)
+
+class _InterceptHandler(logging.Handler):
+    """Route stdlib logging records through loguru."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            from loguru import logger as _loguru
+            level = _loguru.level(record.levelname).name
+        except (ImportError, ValueError):
+            level = record.levelno  # type: ignore[assignment]
+            from loguru import logger as _loguru
+
+        # Walk up the call stack past logging internals so loguru reports
+        # the original call site rather than a line inside logging/__init__.py.
+        frame, depth = logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back  # type: ignore[assignment]
+            depth += 1
+
+        _loguru.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
+
+
+def _setup_logging(level: str) -> None:
+    """
+    Configure loguru as the unified log sink for all of Tinker.
+
+    * Removes loguru's default stderr sink.
+    * Adds a new sink: JSON (for production) or coloured text (for dev).
+    * Installs _InterceptHandler on the root stdlib logger so every
+      ``logging.getLogger(...)`` call ends up here.
+    """
+    try:
+        from loguru import logger as _loguru
+
+        _loguru.remove()  # Drop the default handler added at import time
+
+        json_logs = os.getenv("TINKER_JSON_LOGS", "false").lower() == "true"
+        if json_logs:
+            # Structured JSON — one object per line, suitable for log aggregators.
+            _loguru.add(
+                sys.stderr,
+                level=level,
+                serialize=True,   # emit JSON
+                enqueue=False,    # keep synchronous for predictable ordering
+            )
+        else:
+            # Human-readable coloured output for local development.
+            _loguru.add(
+                sys.stderr,
+                level=level,
+                format=(
+                    "<green>{time:HH:mm:ss}</green>  "
+                    "<level>{level:<8}</level>  "
+                    "<cyan>{name}</cyan>  {message}"
+                ),
+                colorize=True,
+            )
+
+        # Redirect all stdlib logging through loguru.
+        logging.root.handlers = [_InterceptHandler()]
+        logging.root.setLevel(0)  # let loguru handle level filtering
+        # Silence propagation noise from third-party libraries that add their
+        # own handlers (e.g. uvicorn, chromadb).
+        for name in list(logging.root.manager.loggerDict):
+            lg = logging.getLogger(name)
+            lg.handlers = []
+            lg.propagate = True
+
+    except ImportError:
+        # loguru not installed — fall back to plain stdlib basicConfig.
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+            datefmt="%H:%M:%S",
+        )
+
+
 logger = logging.getLogger("tinker.main")
 
 # ---------------------------------------------------------------------------
@@ -171,16 +250,20 @@ def _build_enterprise_stack() -> dict:
 
     # ── SLA tracker ───────────────────────────────────────────────────────────
     from observability.sla_tracker import build_default_sla_tracker
-    sla_tracker = build_default_sla_tracker(
-        alert_on_breach=lambda report: asyncio.create_task(
+    from observability.alerting import AlertType as _AlertType
+
+    def _sla_breach_callback(report) -> None:
+        # Always called from within the running event loop, so create_task is safe.
+        asyncio.create_task(
             alerter.alert(
-                alert_type=__import__("observability.alerting", fromlist=["AlertType"]).AlertType.SLA_BREACH,
+                alert_type=_AlertType.SLA_BREACH,
                 title=f"SLA breach: {report.name}",
                 message=f"p99={report.p99_s:.1f}s > target {report.sla_p99:.1f}s",
                 context=report.to_dict(),
             )
-        ) if asyncio.get_event_loop().is_running() else None,
-    )
+        )
+
+    sla_tracker = build_default_sla_tracker(alert_on_breach=_sla_breach_callback)
 
     # ── Audit log ─────────────────────────────────────────────────────────────
     from observability.audit_log import AuditLog
@@ -679,6 +762,18 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         except Exception as exc:
             logger.warning("Health server failed to start: %s", exc)
 
+    # ── Dashboard snapshot callback ───────────────────────────────────────────
+    # When the dashboard runs in the same process, we want to push live state
+    # updates into its asyncio queue after every snapshot write.
+    # We do this via the Orchestrator's snapshot_callback parameter — a clean
+    # zero-argument callable that the Orchestrator calls after each successful
+    # write, with no monkey-patching required.
+    from dashboard.subscriber import publish_state as _publish_state
+
+    def _dashboard_snapshot_cb() -> None:
+        # Translate OrchestratorState → dashboard patch format and publish.
+        _publish_state(_make_dashboard_patch(orchestrator.state.to_dict()))
+
     # Create the Orchestrator with all the wired-up components.
     # Note: the Orchestrator receives components by keyword argument and never
     # imports them directly. This is "dependency injection" — the Orchestrator
@@ -695,6 +790,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         arch_state_manager  = components["arch_state_manager"],
         stagnation_monitor  = components.get("stagnation_monitor"),
         metrics             = metrics,
+        snapshot_callback   = _dashboard_snapshot_cb,
     )
 
     # ── Wire the health server to the orchestrator (now that it exists) ──────
@@ -711,40 +807,6 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     logger.info("Health endpoint: http://localhost:%d/health",
                 int(os.getenv("TINKER_HEALTH_PORT", "8080")))
     logger.info("=" * 60)
-
-    # ── Dashboard integration ─────────────────────────────────────────────────
-    # The orchestrator writes a state snapshot file after each loop. We also
-    # want to push state updates into the dashboard's asyncio queue in real time
-    # (when the dashboard runs in the same process).
-    #
-    # We do this by monkey-patching the orchestrator's _try_write_snapshot method:
-    # we save a reference to the original method, then replace it with our version
-    # that calls the original AND also calls publish_state().
-    #
-    # "Monkey-patching" means replacing a method at runtime without changing
-    # the source file. It's a pragmatic trick to add behaviour without modifying
-    # the Orchestrator class itself.
-    from dashboard.subscriber import publish_state as _publish_state
-
-    _orig_try_write = orchestrator._try_write_snapshot  # Save the original method
-
-    def _hooked_write_snapshot() -> None:
-        """
-        Replacement for orchestrator._try_write_snapshot.
-        Does everything the original did, plus publishes state to the dashboard queue.
-        """
-        _orig_try_write()   # Call the original: writes state to the JSON file on disk
-        try:
-            # Also push a state patch to the dashboard's in-process queue.
-            # _make_dashboard_patch() translates the orchestrator's state format
-            # into the format the dashboard subscriber expects.
-            _publish_state(_make_dashboard_patch(orchestrator.state.to_dict()))
-        except Exception as _exc:
-            # Never crash the orchestrator because the dashboard had a problem
-            logger.debug("Dashboard publish_state failed: %s", _exc)
-
-    # Replace the method on this specific instance (not the class)
-    orchestrator._try_write_snapshot = _hooked_write_snapshot
 
     # ── Run the orchestrator (with or without the in-process dashboard) ────────
 
@@ -894,8 +956,8 @@ Press Ctrl-C to stop.  Run the dashboard in a separate terminal:
 
     args = parser.parse_args()
 
-    # Apply the log level to the root logger (affects all sub-loggers)
-    logging.getLogger().setLevel(args.log_level)
+    # Configure loguru (or fall back to stdlib basicConfig if loguru is absent).
+    _setup_logging(args.log_level)
 
     try:
         # asyncio.run() creates a new event loop, runs _async_main until it returns,

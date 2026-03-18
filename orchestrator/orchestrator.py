@@ -163,6 +163,7 @@ class Orchestrator:
         arch_state_manager: Any,
         stagnation_monitor: Any = None,
         metrics: Any = None,
+        snapshot_callback: Optional[Any] = None,
     ) -> None:
         """
         Initialise the orchestrator with all of its components.
@@ -199,6 +200,10 @@ class Orchestrator:
         metrics            : Optional TinkerMetrics instance (from metrics.py).
                              If provided, counters and gauges are updated after
                              each loop.  Pass None to disable metrics.
+        snapshot_callback  : Optional zero-argument callable invoked after every
+                             successful state snapshot write.  Use this to push
+                             live state to an in-process dashboard or test
+                             harness without monkey-patching _try_write_snapshot.
         """
         # If the caller didn't provide a config, use the production defaults.
         self.config = config or OrchestratorConfig()
@@ -215,10 +220,14 @@ class Orchestrator:
         self.tool_layer = tool_layer
         self.arch_state_manager = arch_state_manager
 
-        # Optional components — both default to None, meaning the feature is
+        # Optional components — all default to None, meaning the feature is
         # disabled if not wired in.
         self.stagnation_monitor = stagnation_monitor
         self.metrics = metrics
+        # Callback invoked after each snapshot write (e.g. to push state to
+        # an in-process dashboard).  Replaces the previous pattern of
+        # monkey-patching _try_write_snapshot at the call site in main.py.
+        self._snapshot_callback = snapshot_callback
 
         # Enterprise components dictionary — populated by ``_build_enterprise_stack()``
         # in main.py after the Orchestrator is constructed.  Stores all optional
@@ -1026,9 +1035,20 @@ class Orchestrator:
         the path is read-only, or any other I/O error occurs, we log a warning
         and keep running.  The Dashboard losing its state feed is unfortunate
         but should not crash the orchestrator.
+
+        After a successful write, ``_snapshot_callback`` (if set) is called so
+        in-process observers (e.g. a TUI dashboard) can react to the new state
+        without requiring any monkey-patching of this method.
         """
         try:
             self.state.write_snapshot(self.config.state_snapshot_path)
         except Exception as exc:
             # Log at WARNING level (not ERROR) because this is non-fatal.
             logger.warning("Could not write state snapshot: %s", exc)
+            return
+
+        if self._snapshot_callback is not None:
+            try:
+                self._snapshot_callback()
+            except Exception as exc:
+                logger.debug("snapshot_callback failed (non-fatal): %s", exc)
