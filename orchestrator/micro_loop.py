@@ -33,10 +33,10 @@ helper functions (prefixed with ``_``) — one per step above.  Each helper:
   * Raises ``MicroLoopError`` on failure so the top-level function can catch
     everything in one place.
 
-The helper functions reference ``asyncio.coroutine_if_needed()``, which is
-monkey-patched onto the ``asyncio`` module at the bottom of this file.  This
-utility lets the orchestrator work with both async and sync component
-implementations without the callers needing to know which they're dealing with.
+The helper functions use ``coroutine_if_needed()`` (imported from
+``orchestrator.compat``), which lets the orchestrator work with both async and
+sync component implementations without the callers needing to know which they're
+dealing with.
 
 What is TYPE_CHECKING?
 -----------------------
@@ -57,6 +57,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Optional
 
+from .compat import coroutine_if_needed
 from .state import MicroLoopRecord, LoopStatus
 from exceptions import MicroLoopError  # noqa: F401  (re-exported for callers)
 
@@ -391,9 +392,9 @@ async def _select_task(orch: "Orchestrator") -> Optional[dict]:
     """
     try:
         return await asyncio.wait_for(
-            # asyncio.coroutine_if_needed wraps sync functions so we can
-            # await them safely — see the bottom of this file for its definition.
-            asyncio.coroutine_if_needed(orch.task_engine.select_task)(),
+            # coroutine_if_needed wraps sync functions so they can be awaited
+            # without blocking the event loop (see orchestrator/compat.py).
+            coroutine_if_needed(orch.task_engine.select_task)(),
             timeout=10.0,
         )
     except Exception as exc:
@@ -419,7 +420,7 @@ async def _assemble_context(orch: "Orchestrator", task: dict) -> dict:
     """
     try:
         return await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.context_assembler.build)(
+            coroutine_if_needed(orch.context_assembler.build)(
                 task=task,
                 # Limit the number of prior artifacts to keep the context
                 # window manageable and avoid overwhelming the Architect.
@@ -455,7 +456,7 @@ async def _call_architect(
     """
     try:
         return await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.architect_agent.call)(
+            coroutine_if_needed(orch.architect_agent.call)(
                 task=task, context=context
             ),
             timeout=timeout,
@@ -514,7 +515,7 @@ async def _route_researcher(
     for gap in knowledge_gaps[: cfg.max_researcher_calls_per_loop]:
         try:
             result = await asyncio.wait_for(
-                asyncio.coroutine_if_needed(orch.tool_layer.research)(query=gap),
+                coroutine_if_needed(orch.tool_layer.research)(query=gap),
                 timeout=cfg.tool_timeout,
             )
             research_results.append({"gap": gap, "result": result})
@@ -556,7 +557,7 @@ async def _call_critic(
     """
     try:
         return await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.critic_agent.call)(
+            coroutine_if_needed(orch.critic_agent.call)(
                 task=task, architect_result=architect_result
             ),
             timeout=timeout,
@@ -615,7 +616,7 @@ async def _store_artifact(
         }
         # store_artifact returns an Artifact object; we need its .id string.
         artifact = await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.memory_manager.store_artifact)(
+            coroutine_if_needed(orch.memory_manager.store_artifact)(
                 content=content,
                 task_id=task["id"],
                 metadata=metadata,
@@ -645,7 +646,7 @@ async def _complete_task(orch: "Orchestrator", task: dict, artifact_id: str) -> 
     """
     try:
         await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.task_engine.complete_task)(
+            coroutine_if_needed(orch.task_engine.complete_task)(
                 task_id=task["id"], artifact_id=artifact_id
             ),
             timeout=10.0,
@@ -655,7 +656,7 @@ async def _complete_task(orch: "Orchestrator", task: dict, artifact_id: str) -> 
         # keyword argument — try the legacy signature with ``outputs`` list.
         try:
             await asyncio.wait_for(
-                asyncio.coroutine_if_needed(orch.task_engine.complete_task)(
+                coroutine_if_needed(orch.task_engine.complete_task)(
                     task_id=task["id"], outputs=[artifact_id]
                 ),
                 timeout=10.0,
@@ -695,7 +696,7 @@ async def _generate_tasks(
     """
     try:
         new_tasks = await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.task_engine.generate_tasks)(
+            coroutine_if_needed(orch.task_engine.generate_tasks)(
                 parent_task=task,
                 architect_result=architect_result,
                 critic_result=critic_result,
@@ -709,59 +710,9 @@ async def _generate_tasks(
         return 0
 
 
-# ── asyncio compatibility helper ─────────────────────────────────────────────
-
-def _coroutine_if_needed(fn):
-    """
-    Wrap a plain (synchronous) function so it can be awaited.
-
-    The Orchestrator is designed to work with both async and sync component
-    implementations.  In an ideal world, all components would be ``async def``
-    functions and we'd just ``await`` them directly.  But some components may
-    be synchronous (e.g., a simple in-memory store that doesn't need async),
-    and we want to support those without requiring the component author to add
-    ``async`` boilerplate.
-
-    How it works:
-      * If ``fn`` is already a coroutine function (``async def``), return it
-        unchanged.
-      * If ``fn`` is a regular function (``def``), return a thin async wrapper
-        that runs ``fn`` in a thread pool (via ``loop.run_in_executor``).
-        This prevents the synchronous function from blocking the event loop
-        while it runs.
-
-    ``inspect.iscoroutinefunction(fn)`` checks whether Python considers ``fn``
-    to be a coroutine function (i.e., defined with ``async def``).
-
-    ``loop.run_in_executor(None, lambda: fn(*args, **kwargs))`` schedules the
-    call to run in the default thread pool.  The event loop can continue
-    handling other work while the thread runs.
-
-    Parameters
-    ----------
-    fn : Any callable (sync or async).
-
-    Returns
-    -------
-    An async callable that can be awaited.
-    """
-    import inspect
-    if inspect.iscoroutinefunction(fn):
-        # Already async — use it as-is.
-        return fn
-    # Synchronous function — wrap it in an async function that runs it in a
-    # thread pool so it doesn't block the event loop.
-    async def wrapper(*args, **kwargs):
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: fn(*args, **kwargs))
-    return wrapper
-
-# Attach our helper to the asyncio module so the step functions above can
-# call it as ``asyncio.coroutine_if_needed(fn)``.  This is a technique called
-# "monkey patching" — attaching extra attributes to an existing module at
-# runtime.  It keeps the call sites clean and avoids importing the helper
-# function everywhere.
-asyncio.coroutine_if_needed = _coroutine_if_needed
+# coroutine_if_needed is imported from orchestrator.compat at the top of this
+# file.  It was previously defined here and monkey-patched onto the asyncio
+# module; it now lives in its own module to keep the standard library clean.
 
 
 def _enrich_review_context(task: dict, context: dict) -> dict:

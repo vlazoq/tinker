@@ -62,6 +62,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from .compat import coroutine_if_needed
 from .state import MesoLoopRecord, LoopStatus
 
 # Only imported by type checkers (e.g. mypy, pyright) — not at runtime.
@@ -126,7 +127,7 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
         # tagged with this subsystem.  ``context_max_artifacts`` caps the total
         # because the Synthesizer has a finite context window.
         artifacts = await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.memory_manager.get_artifacts)(
+            coroutine_if_needed(orch.memory_manager.get_artifacts)(
                 subsystem=subsystem,
                 limit=cfg.context_max_artifacts,
             ),
@@ -156,7 +157,7 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
             ]
             if recent_task_ids and hasattr(orch.memory_manager, "get_artifacts_by_task_ids"):
                 extra_rows = await asyncio.wait_for(
-                    asyncio.coroutine_if_needed(
+                    coroutine_if_needed(
                         orch.memory_manager.get_artifacts_by_task_ids
                     )(task_ids=recent_task_ids, limit_each=2),
                     timeout=10.0,
@@ -206,7 +207,7 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
         # Synthesizer knows what kind of output to produce (as opposed to the
         # system-wide "macro" synthesis it produces for the macro loop).
         synthesis = await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.synthesizer_agent.call)(
+            coroutine_if_needed(orch.synthesizer_agent.call)(
                 level="meso",
                 subsystem=subsystem,
                 artifacts=artifacts,
@@ -228,7 +229,7 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
             "trigger_iteration": trigger_iteration,  # which micro loop triggered this
         }
         doc_id = await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.memory_manager.store_document)(document),
+            coroutine_if_needed(orch.memory_manager.store_document)(document),
             timeout=15.0,
         )
         # Record the document ID so it appears in the Dashboard history.

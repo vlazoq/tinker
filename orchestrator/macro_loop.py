@@ -59,6 +59,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from .compat import coroutine_if_needed
 from .state import MacroLoopRecord, LoopStatus
 
 # Only imported by type checkers — not at runtime — to avoid a circular import.
@@ -121,7 +122,7 @@ async def run_macro_loop(orch: "Orchestrator", trigger_iteration: int) -> MacroL
         # snapshot is supposed to be comprehensive.  In production, this might
         # be dozens of documents spanning all subsystems.
         documents = await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.memory_manager.get_all_documents)(),
+            coroutine_if_needed(orch.memory_manager.get_all_documents)(),
             timeout=30.0,
         )
         logger.info("macro: %d document(s) collected", len(documents))
@@ -135,7 +136,7 @@ async def run_macro_loop(orch: "Orchestrator", trigger_iteration: int) -> MacroL
         # We also pass the current loop counts so the AI can frame its output
         # in context: "As of micro loop 847, the system looks like this..."
         snapshot = await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.synthesizer_agent.call)(
+            coroutine_if_needed(orch.synthesizer_agent.call)(
                 level="macro",
                 documents=documents,
                 snapshot_version=snapshot_version,
@@ -163,7 +164,7 @@ async def run_macro_loop(orch: "Orchestrator", trigger_iteration: int) -> MacroL
             "subsystem_counts": dict(orch.state.subsystem_micro_counts),
         }
         commit_hash = await asyncio.wait_for(
-            asyncio.coroutine_if_needed(orch.arch_state_manager.commit)(commit_payload),
+            coroutine_if_needed(orch.arch_state_manager.commit)(commit_payload),
             timeout=30.0,
         )
         # Store the commit hash in the record so it appears in the Dashboard
