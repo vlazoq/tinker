@@ -470,10 +470,8 @@ class Orchestrator:
             # Gather current system signals
             queue_depth = getattr(self.task_engine, "queue_depth", 0) or 0
             failure_streak = self.state.consecutive_failures
-            artifact_count = (
-                self.state.micro_history[-1].artifact_id is not None
-                if self.state.micro_history
-                else 0
+            artifact_count = sum(
+                1 for r in self.state.micro_history if r.artifact_id is not None
             )
 
             recommendation = bp_controller.evaluate(
@@ -508,11 +506,16 @@ class Orchestrator:
                     recommendation.wait_seconds, recommendation.reason,
                 )
                 # Tell the task engine to pause if it supports the flag.
-                if hasattr(self.task_engine, "pause_generation"):
+                # The finally block guarantees the flag is cleared even if
+                # _interruptible_sleep is cancelled or raises.
+                _has_pause_flag = hasattr(self.task_engine, "pause_generation")
+                if _has_pause_flag:
                     self.task_engine.pause_generation = True
-                await self._interruptible_sleep(recommendation.wait_seconds)
-                if hasattr(self.task_engine, "pause_generation"):
-                    self.task_engine.pause_generation = False
+                try:
+                    await self._interruptible_sleep(recommendation.wait_seconds)
+                finally:
+                    if _has_pause_flag:
+                        self.task_engine.pause_generation = False
 
             elif action == BackpressureAction.COMPRESS_MEMORY:
                 logger.warning(

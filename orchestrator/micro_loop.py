@@ -227,7 +227,9 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                 if arch_limiter is not None:
                     await arch_limiter.acquire()
             except Exception as exc:
-                logger.debug("Rate limiter acquire failed (non-fatal): %s", exc)
+                logger.warning(
+                    "Architect rate limiter acquire failed (continuing unthrottled): %s", exc
+                )
 
         architect_result = await _call_architect(orch, task, context, cfg.architect_timeout)
         # Record how many tokens the Architect used — useful for cost tracking.
@@ -239,8 +241,8 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                 arch_limiter = rate_limiters.get("architect")
                 if arch_limiter is not None:
                     arch_limiter.record_tokens(record.architect_tokens)
-            except Exception:
-                pass  # non-fatal
+            except Exception as exc:
+                logger.debug("Architect rate limiter record_tokens failed (non-fatal): %s", exc)
 
         # ── 4. Researcher Routing (optional) ─────────────────────────────────
         # The Architect may say "I'm not sure about X — I have a knowledge gap."
@@ -280,8 +282,8 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                 critic_limiter = rate_limiters.get("critic")
                 if critic_limiter is not None:
                     critic_limiter.record_tokens(record.critic_tokens)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Critic rate limiter record_tokens failed (non-fatal): %s", exc)
         # Store the raw score on the record so the orchestrator can forward it
         # to the StagnationMonitor (Critique Collapse detector) after the loop.
         record.critic_score = critic_result.get("score")

@@ -145,7 +145,6 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
         # that ran on this subsystem and succeeded.  We cap the list at 20 IDs
         # to avoid a huge IN clause.
         try:
-            from .state import LoopStatus
             recent_task_ids = [
                 r.task_id
                 for r in orch.state.micro_history[-20:]
