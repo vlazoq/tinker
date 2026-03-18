@@ -441,17 +441,35 @@ class ContextAssembler:
     # Orchestrator-facing adapter
     # ------------------------------------------------------------------
 
-    async def build(self, task: dict, max_artifacts: int = 10) -> dict:
+    async def build(
+        self,
+        task: dict,
+        max_artifacts: int = 10,
+        role: Optional[AgentRole] = None,
+    ) -> dict:
         """
         Simplified adapter used by the Orchestrator's micro loop.
 
-        Converts the plain dict *task* into a context dict the Architect
-        agent can use.  Delegates to `assemble()` internally for full
+        Converts the plain dict *task* into a context dict the appropriate
+        agent can use.  Delegates to ``assemble()`` internally for full
         token-budgeted assembly, or falls back to a lightweight dict if
-        `assemble()` fails (e.g. memory backend not yet connected).
+        ``assemble()`` fails (e.g. memory backend not yet connected).
 
-        Returns a dict:  {"task": task, "prompt": str, "prior_artifacts": [...], ...}
+        Parameters
+        ----------
+        task : dict
+            Raw task dict from the task engine.
+        max_artifacts : int
+            Hint for how many prior artifacts to surface.
+        role : AgentRole, optional
+            The agent role to build context for.  Defaults to
+            ``AgentRole.ARCHITECT`` when not supplied, which is correct
+            for every micro-loop call.
+
+        Returns a dict: ``{"task": task, "prompt": str, ...}``
         """
+        effective_role = role if role is not None else AgentRole.ARCHITECT
+
         # Build an internal Task object from the dict
         internal_task = Task(
             id=task.get("id", "unknown"),
@@ -465,7 +483,7 @@ class ContextAssembler:
         try:
             assembled = await self.assemble(
                 task=internal_task,
-                role=AgentRole.ARCHITECT,
+                role=effective_role,
                 loop_level=0,
             )
             return {

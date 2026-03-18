@@ -28,7 +28,8 @@ from .assembler import (
     TokenBudgetManager,
     SECTION_PRIORITY,
 )
-from stubs import StubMemoryManager, StubPromptBuilder
+from .stubs import StubMemoryManager, StubPromptBuilder
+from exceptions import ConfigurationError
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +109,9 @@ class TestTokenBudgetManager(unittest.TestCase):
         self.assertFalse(self.bm.fits("x" * 100_000, "task"))
 
     def test_invalid_allocation_raises(self):
-        with self.assertRaises(ValueError):
+        # ConfigurationError (from the central exceptions module) is raised
+        # when section allocations sum to > 1.0.
+        with self.assertRaises(ConfigurationError):
             TokenBudgetManager(allocation_overrides={
                 "system_identity": 0.9,
                 "task": 0.9,  # sum > 1.0

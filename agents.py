@@ -216,6 +216,39 @@ class ArchitectAgent:
         # but fall back to serialising the whole context dict.
         context_str = context.get("prompt", _json_block(context))[:4000]
 
+        # ── Grub implementation section (review tasks only) ─────────────────
+        # When Tinker is processing a 'review' task, _enrich_review_context()
+        # in the micro loop adds a 'grub_implementation' key to the context
+        # dict.  This contains what Grub actually built (score, files, tests,
+        # summary) so the Architect can make an informed decision about
+        # whether the design needs refining.
+        #
+        # We surface it as an explicit section in the user prompt so the model
+        # can easily compare "what was designed" vs "what was built".
+        grub_section = ""
+        grub_impl = context.get("grub_implementation")
+        if grub_impl:
+            score    = grub_impl.get("score", "?")
+            summary  = grub_impl.get("summary", "")[:600]
+            files    = grub_impl.get("files_written", [])[:5]
+            tests    = grub_impl.get("test_results", {})
+            status   = grub_impl.get("status", "unknown")
+            tests_str = (
+                f"Passed: {tests.get('passed', '?')}, "
+                f"Failed: {tests.get('failed', '?')}"
+                if tests else "Not available"
+            )
+            files_str = ", ".join(files) if files else "(none recorded)"
+            grub_section = (
+                f"\n\n## Grub Implementation Report\n"
+                f"**Status**: {status}  |  **Quality score**: {score}\n"
+                f"**Files produced**: {files_str}\n"
+                f"**Tests**: {tests_str}\n"
+                f"**Summary**: {summary}\n\n"
+                f"Based on this report, decide whether the design needs "
+                f"refining or can be accepted as-is."
+            )
+
         # The system prompt sets the AI's "persona" and tells it exactly
         # what format we expect in the response.
         system_prompt = (
@@ -234,7 +267,8 @@ class ArchitectAgent:
         # The user prompt is the actual question we're asking on this turn.
         user_prompt = (
             f"## Task\nSubsystem: {subsystem}\nDescription: {task_desc}\n\n"
-            f"## Context\n{context_str}\n\n"
+            f"## Context\n{context_str}"
+            f"{grub_section}\n\n"
             "Produce your JSON design proposal now."
         )
 
