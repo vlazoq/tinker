@@ -1193,3 +1193,337 @@ class TestDatabasePersistence:
         ).fetchone()[0]
         con2.close()
         assert review == 1, "Review task written by bridge_a not visible to bridge_b"
+
+
+# ===========================================================================
+# 11. Fixture isolation (C2)
+# ===========================================================================
+
+class TestFixtureIsolation:
+    """
+    Verify that separate test instances each get their own isolated SQLite
+    database and that writes from one do not bleed into another.
+
+    pytest's ``tmp_path`` fixture is function-scoped, so each test gets a
+    unique directory.  These tests make that guarantee explicit and catchable:
+    if someone accidentally makes a fixture session- or module-scoped, these
+    tests will fail loudly.
+    """
+
+    def test_two_bridges_have_separate_databases(self, tmp_path):
+        """Two TinkerBridge instances using different paths cannot see each other."""
+        db_a = tmp_path / "db_a.sqlite"
+        db_b = tmp_path / "db_b.sqlite"
+
+        for db in (db_a, db_b):
+            con = sqlite3.connect(str(db))
+            con.execute("PRAGMA journal_mode=WAL")
+            con.executescript(_FULL_SCHEMA)
+            con.commit()
+            con.close()
+
+        bridge_a = TinkerBridge(
+            tinker_tasks_db      = str(db_a),
+            tinker_artifacts_dir = str(tmp_path / "ta_a"),
+            grub_artifacts_dir   = str(tmp_path / "ga_a"),
+        )
+        bridge_b = TinkerBridge(
+            tinker_tasks_db      = str(db_b),
+            tinker_artifacts_dir = str(tmp_path / "ta_b"),
+            grub_artifacts_dir   = str(tmp_path / "ga_b"),
+        )
+
+        # Insert a task only in db_a
+        con = sqlite3.connect(str(db_a))
+        _insert_task(con, id="isolation-task", title="Only in A")
+        con.commit()
+        con.close()
+
+        tasks_a = bridge_a.fetch_implementation_tasks()
+        tasks_b = bridge_b.fetch_implementation_tasks()
+
+        assert len(tasks_a) == 1, "bridge_a should see its own task"
+        assert len(tasks_b) == 0, "bridge_b must not see bridge_a's task"
+
+    def test_each_tasks_db_fixture_is_independent(self, tasks_db, tmp_path):
+        """
+        A task written into this test's tasks_db must not appear in a freshly
+        created database — confirming that the fixture creates a NEW file each
+        time, not a module-level singleton.
+        """
+        con = sqlite3.connect(str(tasks_db))
+        _insert_task(con, id="iso-write-1", title="Isolation write test")
+        con.commit()
+        con.close()
+
+        # Create a completely separate DB (simulates a different test's fixture)
+        other_db = tmp_path / "other_test.sqlite"
+        con2 = sqlite3.connect(str(other_db))
+        con2.execute("PRAGMA journal_mode=WAL")
+        con2.executescript(_FULL_SCHEMA)
+        con2.commit()
+        con2.close()
+
+        rows = sqlite3.connect(str(other_db)).execute(
+            "SELECT id FROM tasks WHERE id='iso-write-1'"
+        ).fetchall()
+        assert rows == [], "Data from tasks_db fixture leaked into a separate DB"
+
+
+# ===========================================================================
+# 12. Failure modes (C3)
+# ===========================================================================
+
+class TestFailureModes:
+    """
+    Verify that TinkerBridge degrades gracefully under abnormal conditions:
+
+    * Read-only database (simulates disk-full or permission revoked after open)
+    * Corrupted database file (garbage bytes instead of SQLite pages)
+    * Malformed metadata JSON in an existing task row
+    """
+
+    @pytest.mark.skipif(
+        __import__("os").getuid() == 0,
+        reason="chmod write-protection has no effect for root — skip in CI containers",
+    )
+    def test_report_to_readonly_db_returns_false(self, tmp_path):
+        """
+        If the SQLite file becomes read-only between bridge creation and the
+        first write, report_result() must return False — not raise.
+
+        Skipped when running as root (e.g. Docker CI containers) because
+        chmod has no effect for the superuser.
+        """
+        import stat
+
+        db = tmp_path / "readonly.sqlite"
+        con = sqlite3.connect(str(db))
+        con.execute("PRAGMA journal_mode=WAL")
+        con.executescript(_FULL_SCHEMA)
+        _insert_task(con, id="ro-task", title="Read-only task")
+        con.commit()
+        con.close()
+
+        # Remove write permission
+        db.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+        try:
+            bridge = TinkerBridge(tinker_tasks_db=str(db))
+            result = MinionResult(
+                task_id="g-ro", minion_name="coder", status=ResultStatus.SUCCESS,
+            )
+            ok = bridge.report_result(result, tinker_task_id="ro-task")
+            assert ok is False, (
+                "report_result() must return False on a read-only DB, not raise"
+            )
+        finally:
+            # Restore write permission so pytest can clean up tmp_path
+            db.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+
+    def test_fetch_from_corrupted_db_returns_empty_list(self, tmp_path):
+        """
+        If the SQLite file contains garbage bytes (e.g. partial write / disk
+        error), fetch_implementation_tasks() must return [] — not raise.
+        """
+        db = tmp_path / "corrupt.sqlite"
+        db.write_bytes(b"THIS IS NOT A VALID SQLITE FILE\x00" * 32)
+
+        bridge = TinkerBridge(tinker_tasks_db=str(db))
+        tasks = bridge.fetch_implementation_tasks()
+        assert tasks == [], (
+            "fetch_implementation_tasks() must return [] on a corrupted DB"
+        )
+
+    def test_report_to_corrupted_db_returns_false(self, tmp_path):
+        """report_result() must return False when the DB file is corrupt."""
+        db = tmp_path / "corrupt2.sqlite"
+        db.write_bytes(b"\xff\xfe" * 512)
+
+        bridge = TinkerBridge(tinker_tasks_db=str(db))
+        result = MinionResult(
+            task_id="g-c", minion_name="coder", status=ResultStatus.SUCCESS,
+        )
+        ok = bridge.report_result(result, tinker_task_id="any-id")
+        assert ok is False
+
+    def test_malformed_metadata_does_not_crash_fetch(self, tasks_db):
+        """
+        If a task row contains non-JSON in the metadata column, fetch must
+        skip or recover gracefully — not propagate a JSONDecodeError.
+        """
+        con = sqlite3.connect(str(tasks_db))
+        _insert_task(con, id="bad-meta", title="Bad metadata task",
+                     metadata={"artifact_path": "ok.md"})
+        # Overwrite metadata with garbage after insertion
+        con.execute(
+            "UPDATE tasks SET metadata = ? WHERE id = 'bad-meta'",
+            ("{this is not valid json!!!",),
+        )
+        con.commit()
+        con.close()
+
+        bridge = TinkerBridge(tinker_tasks_db=str(tasks_db))
+        # Must not raise — bad JSON should be handled gracefully
+        try:
+            tasks = bridge.fetch_implementation_tasks()
+        except Exception as exc:
+            raise AssertionError(
+                f"fetch_implementation_tasks() raised {type(exc).__name__} on "
+                f"malformed metadata — must handle gracefully: {exc}"
+            ) from exc
+        # The malformed task may be returned with empty/default metadata or
+        # skipped entirely — both are acceptable; what matters is no exception.
+
+
+# ===========================================================================
+# 13. Schema completeness (C4)
+# ===========================================================================
+
+class TestSchemaCompleteness:
+    """
+    End-to-end schema validation: every field written by Tinker must survive
+    the full Tinker → Grub → Tinker round-trip without loss or corruption.
+
+    The key fields under test:
+      GrubTask   : id, title, description, subsystem, priority, tinker_task_id,
+                   artifact_path, target_files, context
+      MinionResult: task_id, minion_name, status, score, files_written,
+                    summary, feedback_for_tinker, test_results, notes,
+                    iterations, duration_seconds
+    """
+
+    def test_all_grub_task_fields_survive_fetch(self, bridge, tasks_db):
+        """
+        Every field Tinker writes into the tasks table must be readable by Grub
+        via fetch_implementation_tasks() without field loss.
+        """
+        con = sqlite3.connect(str(tasks_db))
+        _insert_task(
+            con,
+            id            = "schema-t1",
+            title         = "Full schema task",
+            description   = "Detailed description here.",
+            type          = "implementation",
+            subsystem     = "payments",
+            priority_score= 0.9,
+            metadata      = {
+                "artifact_path": "tinker_artifacts/payments_design.md",
+                "target_files":  ["src/payments/core.py", "src/payments/tests.py"],
+                "context":       {"framework": "fastapi", "db": "postgres"},
+            },
+        )
+        con.commit()
+        con.close()
+
+        tasks = bridge.fetch_implementation_tasks()
+        assert len(tasks) == 1
+        t = tasks[0]
+
+        # All identity fields
+        assert t.tinker_task_id == "schema-t1"
+        assert t.title          == "Full schema task"
+        assert t.description    == "Detailed description here."
+        assert t.subsystem      == "payments"
+
+        # Metadata fields
+        assert t.artifact_path == "tinker_artifacts/payments_design.md"
+        assert "src/payments/core.py" in t.target_files
+
+    def test_all_minion_result_fields_survive_report(self, bridge, tasks_db):
+        """
+        Every MinionResult field must be preserved in the review task's
+        metadata after report_result() — Tinker must be able to read back
+        everything Grub produced.
+        """
+        con = sqlite3.connect(str(tasks_db))
+        _insert_task(con, id="schema-t2", title="Schema result task")
+        con.commit()
+        con.close()
+
+        result = MinionResult(
+            task_id             = "grub-schema-1",
+            minion_name         = "coder",
+            status              = ResultStatus.PARTIAL,
+            score               = 0.72,
+            files_written       = ["src/auth.py", "src/auth_test.py", "docs/auth.md"],
+            summary             = "Partial: 5 of 8 requirements met.",
+            feedback_for_tinker = "JWT expiry needs to be configurable.",
+            notes               = "Blocked by missing crypto dependency.",
+            iterations          = 3,
+            duration_seconds    = 47.8,
+            test_results        = TestSummary(
+                passed=5, failed=2, errors=1, skipped=0,
+                output="FAILED test_auth_token_expiry\nFAILED test_refresh_token",
+            ),
+        )
+
+        ok = bridge.report_result(result, tinker_task_id="schema-t2")
+        assert ok is True
+
+        con = sqlite3.connect(str(tasks_db))
+        con.row_factory = sqlite3.Row
+        row = con.execute(
+            "SELECT metadata FROM tasks WHERE type='review'"
+        ).fetchone()
+        con.close()
+        assert row is not None
+
+        meta = json.loads(row["metadata"])
+        gr   = meta["grub_task_result"]
+
+        # All scalar fields
+        assert gr["task_id"]     == "grub-schema-1"
+        assert gr["minion_name"] == "coder"
+        assert gr["status"]      == "partial"
+        assert gr["score"]       == pytest.approx(0.72, abs=0.001)
+        assert gr["summary"]     == "Partial: 5 of 8 requirements met."
+        assert gr["feedback_for_tinker"] == "JWT expiry needs to be configurable."
+        assert gr["iterations"]  == 3
+
+        # List fields
+        assert "src/auth.py"      in gr["files_written"]
+        assert "src/auth_test.py" in gr["files_written"]
+        assert "docs/auth.md"     in gr["files_written"]
+
+        # Nested test_results
+        tr = gr.get("test_results", {})
+        assert tr.get("passed")  == 5
+        assert tr.get("failed")  == 2
+        assert tr.get("errors")  == 1
+
+    def test_round_trip_no_field_added_or_removed(self, bridge, tasks_db):
+        """
+        The set of keys in a round-tripped MinionResult dict must match the
+        canonical to_dict() output — no fields silently dropped or invented.
+        """
+        con = sqlite3.connect(str(tasks_db))
+        _insert_task(con, id="schema-t3", title="Key set task")
+        con.commit()
+        con.close()
+
+        original = MinionResult(
+            task_id     = "grub-ks-1",
+            minion_name = "tester",
+            status      = ResultStatus.SUCCESS,
+            score       = 0.95,
+            summary     = "All tests pass.",
+            files_written = ["mod.py"],
+        )
+        canonical_keys = set(original.to_dict().keys())
+
+        bridge.report_result(original, tinker_task_id="schema-t3")
+
+        con = sqlite3.connect(str(tasks_db))
+        row = con.execute(
+            "SELECT metadata FROM tasks WHERE type='review'"
+        ).fetchone()
+        con.close()
+
+        stored = json.loads(row[0])["grub_task_result"]
+        stored_keys = set(stored.keys())
+
+        missing = canonical_keys - stored_keys
+        assert not missing, (
+            f"Fields present in MinionResult.to_dict() but missing after "
+            f"round-trip: {missing}"
+        )

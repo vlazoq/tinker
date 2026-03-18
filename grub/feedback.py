@@ -123,6 +123,7 @@ class TinkerBridge:
                 title          = row["title"],
                 description    = row["description"] or "",
                 artifact_path  = artifact_path,
+                target_files   = meta.get("target_files", []),
                 subsystem      = row["subsystem"] or "unknown",
                 tinker_task_id = row["id"],
                 priority       = TaskPriority.NORMAL,

@@ -86,14 +86,41 @@ BLOCKED_URL_PATTERNS = [
     r"ftp://",
 ]
 
-# Regex for detecting suspicious prompt injection patterns
+# Regex for detecting suspicious prompt injection patterns.
+# Covers common jailbreak and context-hijacking phrasing.
+# Note: this is a heuristic filter — not a security guarantee.
 INJECTION_PATTERNS = [
+    # Classic "ignore previous instructions" variants
     r"ignore\s+previous\s+instructions",
     r"ignore\s+all\s+previous",
+    r"disregard\s+(your\s+)?(previous\s+)?instructions",
+    r"disregard\s+(all\s+)?prior",
+    r"forget\s+(your\s+)?(previous\s+|all\s+)?instructions",
+    r"override\s+(your\s+)?(previous\s+|all\s+)?instructions",
+    # Role / persona hijacking
+    r"\bact\s+as\s+(a\s+|an\s+)?(?!architect|critic|synthesizer)\w",
+    r"\bpretend\s+(you\s+are|to\s+be)\b",
+    r"\byou\s+are\s+now\b",
+    r"\bnew\s+persona\b",
+    r"\bassume\s+(the\s+)?role\s+of\b",
+    r"\brespond\s+as\s+(?!an?\s+architect|a\s+critic)\b",
+    # System prompt injection markers
     r"system\s*:\s*you\s+are",
-    r"</?(system|human|assistant)>",
+    r"<\s*/?\s*(system|human|assistant)\s*>",
+    r"\[SYSTEM\]",
+    r"\[INST\]",
+    r"<<SYS>>",
+    # Jailbreak keywords
+    r"\bjailbreak\b",
+    r"\bdan\s+mode\b",          # "Do Anything Now" jailbreak
+    r"\bgrandma\s+trick\b",
+    r"\btoken\s+smuggling\b",
     r"\bprompt\s+injection\b",
-    r"disregard\s+(your\s+)?instructions",
+    r"\bprompt\s+leak\b",
+    # Instruction boundary manipulation
+    r"---+\s*end\s+of\s+(system\s+)?prompt",
+    r"---+\s*new\s+instructions",
+    r"\bstop\s+following\s+(your\s+)?instructions\b",
 ]
 
 

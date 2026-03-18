@@ -54,6 +54,17 @@ async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+# ── API version ───────────────────────────────────────────────────────────────
+@app.get("/api/version")
+async def api_version():
+    """Return the Tinker API version and schema version for client compatibility checks."""
+    return {
+        "api_version": "v1",
+        "schema_version": 1,
+        "app": "tinker-webui",
+    }
+
+
 # ── Health / status ───────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def api_health():
