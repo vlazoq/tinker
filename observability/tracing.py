@@ -323,3 +323,65 @@ class Tracer:
 
 # Module-level default tracer — import and use directly
 default_tracer = Tracer()
+
+
+# ---------------------------------------------------------------------------
+# TinkerError ↔ Span integration
+# ---------------------------------------------------------------------------
+
+def record_tinker_exception(exc: Exception, span: "Span") -> None:
+    """
+    Record a ``TinkerError`` on a tracing ``Span``.
+
+    Attaches the exception's ``context`` dict as individual span attributes
+    (prefixed with ``"exc."``) and sets the span's ``error`` field to the
+    exception string representation.
+
+    This is the **canonical** way to record an exception inside a span.
+    It ensures structured context from ``exc.context`` is surfaced in the
+    trace — an on-call engineer can see the full diagnostic dict (task IDs,
+    URLs, attempt counts) in the span attributes without parsing log strings.
+
+    Works with any exception, not just ``TinkerError`` — non-TinkerError
+    exceptions get no attribute enrichment, only the error string.
+
+    Usage inside a trace span::
+
+        from observability.tracing import record_tinker_exception
+
+        with trace.span("architect_call") as span:
+            try:
+                result = await architect.call(task, context)
+            except TinkerError as exc:
+                record_tinker_exception(exc, span)
+                raise
+
+    The span's ``error`` field and ``attributes`` are then available in
+    ``Trace.to_dict()`` and in any downstream log aggregator that consumes
+    Tinker traces.
+
+    Parameters
+    ----------
+    exc : Exception
+        The exception to record.  ``TinkerError`` subclasses get their
+        ``context`` dict and ``retryable`` flag attached as attributes.
+    span : Span
+        The active span to annotate.
+    """
+    # Always set the error string — this is visible in the trace timeline
+    span.error = str(exc)
+
+    # Enrich span attributes from TinkerError.context
+    try:
+        from exceptions import TinkerError  # local import to avoid circular dep
+        if isinstance(exc, TinkerError):
+            span.attributes["exc.type"]      = type(exc).__name__
+            span.attributes["exc.retryable"] = exc.retryable
+            for key, value in exc.context.items():
+                # Prefix with "exc." to namespace exception attrs from normal attrs
+                span.attributes[f"exc.{key}"] = value
+        else:
+            span.attributes["exc.type"] = type(exc).__name__
+    except Exception:
+        # Never let observability code break the calling code
+        pass
