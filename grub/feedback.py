@@ -16,7 +16,7 @@ TINKER → GRUB:
 GRUB → TINKER:
   3. After Grub finishes implementing a task, it calls
      TinkerBridge.report_result() which:
-       a. Marks the original Tinker task as "completed"
+       a. Marks the original Tinker task as status="complete"
        b. Injects a new Tinker task like "Review implementation of X"
           so Tinker knows to review the code and possibly redesign.
 
@@ -87,6 +87,11 @@ class TinkerBridge:
 
         try:
             con  = sqlite3.connect(str(self._tasks_db), timeout=5)
+            # WAL mode: allows concurrent readers + one writer without "database is
+            # locked" errors.  Tinker (reader/writer) and Grub (writer) share this
+            # file; WAL makes that safe.  The mode persists in the DB file — setting
+            # it here is idempotent if Tinker already set it.
+            con.execute("PRAGMA journal_mode=WAL")
             con.row_factory = sqlite3.Row
             rows = con.execute(
                 "SELECT id, title, description, subsystem, metadata "
@@ -160,7 +165,7 @@ class TinkerBridge:
         Write Grub's result back to Tinker.
 
         Does two things:
-        1. Marks the original Tinker task as 'completed'.
+        1. Marks the original Tinker task as ``status='complete'``.
         2. Creates a new Tinker task: "Review implementation of X" so Tinker
            knows to look at what Grub produced and decide what to do next.
 
@@ -180,6 +185,8 @@ class TinkerBridge:
         try:
             now = datetime.now(timezone.utc).isoformat()
             con = sqlite3.connect(str(self._tasks_db), timeout=10)
+            # WAL mode: see fetch_implementation_tasks for rationale.
+            con.execute("PRAGMA journal_mode=WAL")
 
             # 1. Mark original task as complete (matches TaskStatus.COMPLETE = "complete")
             con.execute(
