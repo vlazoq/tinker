@@ -495,4 +495,79 @@ no shared process — just a file that both sides agree on.
 
 ---
 
+---
+
+## Testing the Web UI
+
+Tinker's web UI has two complementary test suites.
+
+### 1. Source-inspection smoke tests (`webui/tests/test_ui_smoke.py`)
+
+Runs with **no optional dependencies** installed (no FastAPI, no httpx, no
+Streamlit).  Uses Python's `ast` module to verify structure without importing
+any UI code:
+
+| Test class | What it checks |
+|------------|---------------|
+| `TestSyntax` | All four UI source files parse as valid Python |
+| `TestCoreConstants` | `webui/core.py` exports all 24 required names; FLAG_DEFAULTS ↔ FLAG_DESCRIPTIONS ↔ FLAG_GROUPS keys are self-consistent |
+| `TestSingleSourceOfTruth` | All three UI apps import constants from `webui.core`; none re-define them locally |
+| `TestFeatureParity` | All three apps cover the same 8 feature areas (dashboard, config, flags, tasks, DLQ, backups, Grub, audit) |
+| `TestFastAPIRoutes` | `webui/app.py` registers every required API route |
+
+### 2. HTTP integration tests (`webui/tests/test_api.py`)
+
+Makes **real HTTP requests** through FastAPI's `TestClient`.  Exercises every
+route at the HTTP level: status codes, response schemas, error handling, CORS
+headers, input validation, and state persistence.
+
+| Test class | What it verifies |
+|------------|-----------------|
+| `TestHealthEndpoints` | `/api/health`, `/api/state`, `/api/grub/status` return 200 and JSON; never 500 when backend is offline |
+| `TestConfigEndpoints` | GET returns orchestrator + stagnation + `_schema` keys; POST validates min bounds (422 with errors list on violation) |
+| `TestFeatureFlagEndpoints` | All default flags toggle successfully; unknown flag → 404 with error message; response has `flag`, `enabled`, `message` keys |
+| `TestFlagPersistence` | Toggle via POST; re-read via GET returns updated value; toggle of flag A doesn't mutate flag B |
+| `TestConfigPersistence` | Save via POST; reload via GET reflects saved value; response includes "restart" instruction |
+| `TestTasksEndpoints` | GET returns `tasks`, `stats`, `task_types`, `subsystems`; POST inject returns 200 + UUID id; minimal payload uses defaults |
+| `TestDLQEndpoints` | GET returns `items`, `stats`; POST resolve/discard return 200 with `ok` key; missing notes use default |
+| `TestBackupsEndpoints` | GET returns `backups` (list) + `backup_dir` (str) |
+| `TestAuditEndpoints` | GET returns `items`, `event_types`, `page`, `has_next`; filters don't crash; pagination `page` param reflected |
+| `TestSSEStream` | Route registered + accepts GET; async generator emits `data: ` lines on state change; payload is valid JSON with `time`/`micro_loops`; no duplicate events |
+| `TestResponseSchemas` | Every endpoint returns all required top-level keys; flag response contains every `FLAG_DEFAULTS` entry |
+| `TestHTTPSemantics` | All JSON routes return `application/json`; CORS `Access-Control-Allow-Origin` present; unknown route → 404; GET-only routes → 405 on POST/PUT |
+| `TestInputBoundaries` | Very long strings accepted; extra JSON fields ignored; large page numbers return empty list; edge-case path parameters don't crash routes |
+
+#### Running the tests
+
+```bash
+# All UI tests (smoke + HTTP):
+pytest webui/tests/ -v
+
+# HTTP integration only:
+pytest webui/tests/test_api.py -v
+
+# Fast check (quiet, stop on first failure):
+pytest webui/tests/test_api.py -q -x
+```
+
+No external services are required — routes degrade gracefully when the
+backing SQLite databases do not exist yet.  Tests that verify persistence
+(flags, config) use `unittest.mock.patch` to redirect file paths to
+`pytest`-provided `tmp_path` directories, so they never write to your
+working tree.
+
+#### SSE streaming test design
+
+The `/api/logs/stream` endpoint uses an infinite `while True` generator —
+full HTTP integration tests via `TestClient` would block forever.  Instead,
+the SSE tests use two approaches:
+
+1. **Route inspection** — verify the route is registered and accepts GET.
+2. **Async generator tests** — call the route handler directly with a mock
+   `Request` whose `is_disconnected()` returns `True` after *N* iterations,
+   consuming the body iterator inside the patch context.
+
+This tests the generator's data emission, JSON correctness, and deduplication
+logic without a live server.
+
 → Next: [Chapter 13 — Integration: Wiring It All Together](./13-integration.md)
