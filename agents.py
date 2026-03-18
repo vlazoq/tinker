@@ -631,7 +631,22 @@ class ArchitectAgent:
         # containing the full assembled context (architecture state + recent
         # artifacts + research notes + prior critique), pre-truncated to the
         # token budget.  This becomes the 'architecture_state' for PromptBuilder.
-        context_str = context.get("prompt", _json_block(context))[:4000]
+        #
+        # Token budget guard: warn if the assembler already hit or exceeded its
+        # budget (should not normally happen, but surfaces misconfigurations).
+        _tokens_used   = context.get("tokens_used", 0)
+        _tokens_budget = context.get("tokens_budget", 8192)
+        if _tokens_used and _tokens_budget and _tokens_used > _tokens_budget:
+            logger.warning(
+                "ArchitectAgent: context tokens_used (%d) exceeds budget (%d) "
+                "[task=%s trace_id=%s] — prompt will be truncated",
+                _tokens_used, _tokens_budget, task_id, trace_id,
+            )
+        # Use the assembler's token budget to derive a character limit instead
+        # of a hardcoded slice.  chars_per_token ≈ 3.8 (LLaMA/GPT average).
+        _chars_limit = int(_tokens_budget * 3.8)
+        raw_prompt   = context.get("prompt", _json_block(context))
+        context_str  = raw_prompt[:_chars_limit] if len(raw_prompt) > _chars_limit else raw_prompt
 
         # ── Grub implementation section (review tasks only) ─────────────────
         # When Tinker is processing a 'review' task, _enrich_review_context()
