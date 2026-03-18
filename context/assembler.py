@@ -17,23 +17,18 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Optional
 
 from exceptions import ContextError, ConfigurationError
 
+# AgentRole is the single source of truth for role names throughout Tinker.
+# It lives in llm.types because the model router uses it to decide which
+# machine / model to target.  We import it here so ContextAssembler callers
+# can use the same enum without a separate import.  Previously this module
+# defined its own duplicate AgentRole — that redundancy is now eliminated.
+from llm.types import AgentRole  # noqa: F401  (re-exported for callers)
+
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Domain types
-# ---------------------------------------------------------------------------
-
-class AgentRole(str, Enum):
-    ARCHITECT   = "architect"
-    CRITIC      = "critic"
-    RESEARCHER  = "researcher"
-    SYNTHESIZER = "synthesizer"
 
 
 @dataclass

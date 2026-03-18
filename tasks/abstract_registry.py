@@ -133,6 +133,49 @@ class AbstractTaskRegistry(ABC):
         to be adjusted.
         """
 
+    # ── Bulk write ────────────────────────────────────────────────────────────
+
+    @abstractmethod
+    def save_batch(self, tasks: list[Task]) -> list[Task]:
+        """
+        Insert or update multiple tasks in a single transaction.
+
+        Equivalent to calling ``save()`` for every task but performs the
+        operation in one database round-trip instead of N, which is
+        significantly faster for bulk operations (e.g. seeding 50 design
+        tasks from a single problem statement).
+
+        Parameters
+        ----------
+        tasks : list[Task]
+            Tasks to upsert.  May be empty — returns ``[]`` immediately.
+
+        Returns
+        -------
+        list[Task]
+            The same list of tasks, unchanged (mirrors ``save()``'s contract).
+        """
+
+    # ── Operations ────────────────────────────────────────────────────────────
+
+    @abstractmethod
+    def health_check(self) -> bool:
+        """
+        Verify the registry is reachable and the tasks table exists.
+
+        Returns ``True`` when the backend is operational, ``False`` when it
+        is not.  Returns ``False`` rather than raising so callers can poll
+        without wrapping in try/except — useful for liveness/readiness probes
+        in production deployments and for health-check endpoints.
+
+        Contract
+        --------
+        * Must never raise an exception.
+        * Must complete quickly (no long timeouts).
+        * Checks connectivity **and** schema presence — returns ``False``
+          if the connection succeeds but the ``tasks`` table is missing.
+        """
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     @abstractmethod

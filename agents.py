@@ -38,6 +38,30 @@ All three agents talk to the AI models through the `ModelRouter` (llm/router.py)
 which decides whether to use the primary server (big 7B model) or the secondary
 machine (smaller, faster model).
 
+Prompt construction
+-------------------
+Agents use ``PromptBuilder`` (prompts/builder.py) to build system and user
+prompts from version-controlled templates.  This is the production code path:
+
+    system, user = PromptBuilder.for_architect_micro(
+        architecture_state = context_str,
+        task_description   = task_desc,
+        constraints        = constraints_str,
+        context            = "(see architecture state above)",
+    )
+
+If ``PromptBuilder`` is unavailable (e.g. templates directory missing during
+testing), the agents fall back to concise inline prompts so the orchestrator
+can always make progress.
+
+Retry policy
+------------
+Every model call is wrapped with ``resilience.retry.retry_async`` using the
+``CONSERVATIVE`` preset: 3 attempts, 2-second base delay, 60-second cap, with
+full jitter.  Only ``TinkerError`` subclasses where ``retryable=True`` trigger
+a retry — connection errors, timeouts, and rate-limit errors are retried;
+response parse errors and configuration errors propagate immediately.
+
 Error handling
 --------------
 If the AI returns a JSON response, great — we parse the fields directly.
@@ -55,6 +79,33 @@ from typing import Any
 # Standard Python logging — any message from this module will appear with
 # the prefix "tinker.agents" in the log output.
 logger = logging.getLogger("tinker.agents")
+
+
+# ---------------------------------------------------------------------------
+# Lazy infrastructure imports
+# ---------------------------------------------------------------------------
+# Both PromptBuilder and retry_async are optional at import time so that
+# agents.py remains loadable in minimal test environments without the full
+# prompts/ and resilience/ packages installed.
+
+def _get_prompt_builder_cls():
+    """Return the PromptBuilder class, or None if not available."""
+    try:
+        from prompts.builder import PromptBuilder
+        return PromptBuilder
+    except Exception as exc:
+        logger.debug("agents: PromptBuilder not available — using inline prompts: %s", exc)
+        return None
+
+
+def _get_retry_async():
+    """Return (retry_async, CONSERVATIVE) or (None, None) if unavailable."""
+    try:
+        from resilience.retry import retry_async, CONSERVATIVE
+        return retry_async, CONSERVATIVE
+    except Exception as exc:
+        logger.debug("agents: resilience.retry not available — calls are not retried: %s", exc)
+        return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +202,255 @@ def _extract_score(text: str) -> float:
     return 0.7  # Return a neutral score if we can't find any number
 
 
+def _parse_architect_structured(d: dict) -> tuple[str, list, list, list, list]:
+    """
+    Parse a structured (JSON) Architect response into the canonical tuple.
+
+    Handles BOTH the PromptBuilder schema (artifact_type="design_proposal",
+    fields: design.summary, open_questions, candidate_next_tasks) AND the
+    legacy schema (fields: content, knowledge_gaps, decisions, candidate_tasks).
+
+    Returns (content, knowledge_gaps, decisions, open_questions, candidate_tasks).
+    """
+    # ── PromptBuilder schema (design_proposal) ──────────────────────────────
+    if d.get("artifact_type") == "design_proposal":
+        design   = d.get("design", {})
+        summary  = design.get("summary", "")
+        # Reconstruct a readable narrative from structured fields
+        components_txt = ""
+        for comp in design.get("components", [])[:5]:
+            components_txt += f"\n- {comp.get('name', '?')}: {comp.get('responsibility', '')}"
+        trade_offs = design.get("trade_offs", {})
+        trade_offs_txt = (
+            f"\nGains: {trade_offs.get('gains', [])}"
+            f"\nCosts: {trade_offs.get('costs', [])}"
+            f"\nRisks: {trade_offs.get('risks', [])}"
+        )
+        content = (
+            f"## {d.get('title', 'Design Proposal')}\n"
+            f"{summary}"
+            f"\n### Components{components_txt}"
+            f"\n### Trade-offs{trade_offs_txt}"
+        )
+        # Extract knowledge gaps from open_questions (same concept)
+        open_qs = d.get("open_questions", [])
+        # candidate_next_tasks → candidate_tasks with remapping
+        raw_next = d.get("candidate_next_tasks", [])
+        candidate_tasks = [
+            {
+                "title":          t.get("task", "")[:120],
+                "description":    t.get("task", ""),
+                "type":           "design",
+                "subsystem":      "unknown",
+                "confidence_gap": 0.5,
+                "tags":           [],
+            }
+            for t in raw_next
+            if isinstance(t, dict)
+        ]
+        # reasoning_chain steps → decisions
+        decisions = [
+            step.get("thought", "")
+            for step in d.get("reasoning_chain", [])[:3]
+            if isinstance(step, dict)
+        ]
+        return content, open_qs, decisions, open_qs, candidate_tasks
+
+    # ── Legacy schema ────────────────────────────────────────────────────────
+    content    = d.get("content", "")
+    gaps       = d.get("knowledge_gaps", [])
+    decisions  = d.get("decisions", [])
+    questions  = d.get("open_questions", [])
+    candidates = d.get("candidate_tasks", [])
+    return content, gaps, decisions, questions, candidates
+
+
+def _build_architect_prompts(
+    task_desc: str,
+    subsystem: str,
+    context_str: str,
+    grub_section: str,
+    constraints_str: str,
+) -> tuple[str, str]:
+    """
+    Build (system, user) prompt pair using PromptBuilder when available.
+
+    Falls back to concise inline prompts so the orchestrator can always
+    make progress even without the prompts/ package.
+
+    Parameters
+    ----------
+    task_desc     : Short description of the design task.
+    subsystem     : Subsystem this task belongs to.
+    context_str   : The assembled architecture state (from ContextAssembler).
+    grub_section  : Optional section for review tasks; empty string otherwise.
+    constraints_str : Formatted constraints string.
+    """
+    pb_cls = _get_prompt_builder_cls()
+    if pb_cls is not None:
+        try:
+            system, user = pb_cls.for_architect_micro(
+                # The assembled context IS the architecture state — it contains
+                # all the relevant sections (arch state, recent artifacts,
+                # research notes, prior critique) that ContextAssembler fetched.
+                architecture_state = context_str[:3000],
+                task_description   = task_desc,
+                constraints        = constraints_str or "None specified.",
+                # Additional context: the grub review section if present.
+                context            = grub_section.strip() or "(see architecture state above)",
+            )
+            return system, user
+        except Exception as exc:
+            logger.debug(
+                "agents: PromptBuilder.for_architect_micro failed (%s) — "
+                "using inline fallback prompt", exc,
+            )
+
+    # Inline fallback — matches the PromptBuilder output format closely so
+    # downstream response parsing handles both paths identically.
+    system = (
+        "You are a senior software architect in Tinker, an autonomous "
+        "architecture-design engine.  Analyse the task and produce a structured "
+        "design proposal.\n\n"
+        "IMPORTANT: Respond with a JSON object containing:\n"
+        "- 'content': string — your full design narrative\n"
+        "- 'knowledge_gaps': array of strings — topics you need more info on\n"
+        "- 'candidate_tasks': array of objects with 'title','description','type',"
+        "'subsystem','confidence_gap','tags'\n"
+        "- 'decisions': array of strings — key design decisions made\n"
+        "- 'open_questions': array of strings\n"
+    )
+    user = (
+        f"## Task\nSubsystem: {subsystem}\nDescription: {task_desc}\n\n"
+        f"## Architecture State\n{context_str[:3000]}\n\n"
+        f"## Constraints\n{constraints_str or 'None specified.'}"
+        f"{grub_section}\n\n"
+        "Produce your JSON design proposal now."
+    )
+    return system, user
+
+
+def _build_critic_prompts(
+    task_desc: str,
+    design_content: str,
+) -> tuple[str, str]:
+    """
+    Build (system, user) prompt pair for the Critic using PromptBuilder.
+
+    Falls back to inline prompts if PromptBuilder is unavailable.
+
+    Parameters
+    ----------
+    task_desc      : The original task description (for context).
+    design_content : The Architect's proposal content to critique.
+    """
+    pb_cls = _get_prompt_builder_cls()
+    if pb_cls is not None:
+        try:
+            system, user = pb_cls.for_critic_micro(
+                target_artifact   = {"content": design_content[:2000]},
+                architecture_state = task_desc,
+                focus_areas       = "Design quality, scalability, and completeness.",
+            )
+            return system, user
+        except Exception as exc:
+            logger.debug(
+                "agents: PromptBuilder.for_critic_micro failed (%s) — "
+                "using inline fallback prompt", exc,
+            )
+
+    # Inline fallback
+    system = (
+        "You are a senior software architect acting as a critic in Tinker, "
+        "an autonomous architecture engine.  Evaluate the design proposal "
+        "and respond with a JSON object containing:\n"
+        "- 'content': string — your critique narrative\n"
+        "- 'score': float between 0 and 1 (1 = excellent)\n"
+        "- 'flags': array of strings — specific issues to address\n"
+        "- 'strengths': array of strings\n"
+    )
+    user = (
+        f"## Original Task\n{task_desc}\n\n"
+        f"## Design Proposal\n{design_content}\n\n"
+        "Critique this proposal and return your JSON evaluation."
+    )
+    return system, user
+
+
+def _build_synthesizer_prompts(
+    level: str,
+    **kwargs: Any,
+) -> tuple[str, str]:
+    """
+    Build (system, user) prompt pair for the Synthesizer using PromptBuilder.
+
+    For meso synthesis: uses ``PromptBuilder.for_synthesizer_meso()``.
+    For macro synthesis: falls back to inline (no factory method yet).
+
+    Falls back to inline prompts if PromptBuilder is unavailable.
+    """
+    pb_cls = _get_prompt_builder_cls()
+
+    if level == "meso" and pb_cls is not None:
+        subsystem = kwargs.get("subsystem", "unknown")
+        artifacts = kwargs.get("artifacts", [])
+        try:
+            system, user = pb_cls.for_synthesizer_meso(
+                source_artifacts     = artifacts[:10],
+                synthesis_directive  = (
+                    f"Synthesise all micro-level design artifacts for the "
+                    f"'{subsystem}' subsystem into a coherent design document."
+                ),
+                prior_meso_synthesis = "None — first meso synthesis for this subsystem.",
+            )
+            return system, user
+        except Exception as exc:
+            logger.debug(
+                "agents: PromptBuilder.for_synthesizer_meso failed (%s) — "
+                "using inline fallback", exc,
+            )
+
+    # Inline fallbacks (macro always uses this path; meso uses it on PB failure)
+    if level == "meso":
+        subsystem = kwargs.get("subsystem", "unknown")
+        artifacts = kwargs.get("artifacts", [])
+        artifacts_text = "\n---\n".join(
+            (a.get("content", str(a)) if isinstance(a, dict) else str(a))[:500]
+            for a in artifacts[:10]
+        )
+        system = (
+            "You are a senior software architect. Synthesise the provided "
+            "design artifacts for a subsystem into a coherent design document."
+        )
+        user = (
+            f"## Subsystem: {subsystem}\n\n"
+            f"## Artifacts to synthesise ({len(artifacts)} items)\n{artifacts_text}\n\n"
+            "Produce a synthesis document covering architecture decisions, patterns, "
+            "open issues, and recommended next steps."
+        )
+    else:
+        # level == "macro"
+        documents   = kwargs.get("documents", [])
+        version     = kwargs.get("snapshot_version", 0)
+        micro_count = kwargs.get("total_micro_loops", 0)
+        docs_text = "\n---\n".join(
+            (d.get("content", str(d)) if isinstance(d, dict) else str(d))[:300]
+            for d in documents[:20]
+        )
+        system = (
+            "You are a chief architect. Produce a high-level architectural snapshot "
+            "from the subsystem design documents provided."
+        )
+        user = (
+            f"## Global Snapshot v{version} (after {micro_count} micro loops)\n\n"
+            f"## Subsystem Documents ({len(documents)} total)\n{docs_text}\n\n"
+            "Produce a macro-level architecture snapshot covering system-wide patterns, "
+            "cross-cutting concerns, major decisions, and open risks."
+        )
+
+    return system, user
+
+
 # ---------------------------------------------------------------------------
 # ArchitectAgent
 # ---------------------------------------------------------------------------
@@ -161,18 +461,26 @@ class ArchitectAgent:
 
     When called, it receives:
       - A task dict (what to design)
-      - A context dict (relevant background info assembled from memory)
+      - A context dict (assembled by ContextAssembler — contains the
+        architecture state, recent artifacts, research notes, etc.)
 
-    It sends a carefully-crafted prompt to the large 7B model (qwen3:7b)
-    and asks it to return a structured JSON response with:
-      - 'content': the actual design narrative
-      - 'knowledge_gaps': things it doesn't know yet
-      - 'candidate_tasks': follow-up tasks to investigate
-      - 'decisions': key design decisions made
-      - 'open_questions': unresolved questions
+    It uses ``PromptBuilder.for_architect_micro()`` to build a
+    production-grade (system, user) prompt pair from version-controlled
+    templates, then sends it to the large 7B model (qwen3:7b).
 
-    If the model returns plain text instead of JSON, we use regex fallbacks
-    to extract as much structure as possible.
+    The model call is automatically retried on transient failures
+    (connection errors, timeouts, rate limits) using
+    ``resilience.retry.retry_async`` with the ``CONSERVATIVE`` preset
+    (3 attempts, 2 s base delay, full jitter).
+
+    Response schema (what this method returns)
+    ------------------------------------------
+    - 'content'         — the design narrative (string)
+    - 'tokens_used'     — how many tokens this call consumed (for monitoring)
+    - 'knowledge_gaps'  — list of strings: things to research
+    - 'decisions'       — list of strings: design choices made
+    - 'open_questions'  — list of strings: unresolved questions
+    - 'candidate_tasks' — list of dicts: follow-up tasks to create
 
     Analogy: Think of the Architect as the senior engineer who goes to a
     whiteboard and designs the solution. The Critic then reviews what they drew.
@@ -190,8 +498,8 @@ class ArchitectAgent:
         Parameters:
             task    — dict with 'description', 'subsystem', 'id', etc.
                       (comes from TaskEngine.select_task())
-            context — dict with 'prompt' key containing assembled background info
-                      (comes from ContextAssembler.build())
+            context — assembled context dict from ContextAssembler.build().
+                      The 'prompt' key contains the full assembled context string.
 
         Returns a dict with:
             'content'         — the design narrative (string)
@@ -201,19 +509,23 @@ class ArchitectAgent:
             'open_questions'  — list of strings: unresolved questions
             'candidate_tasks' — list of dicts: follow-up tasks to create
         """
-        # Import inside the function to avoid circular imports at module load time.
-        # These are only needed when we actually call the agent.
-        from llm.types import AgentRole, Message
-        from llm.router import ModelRouter  # noqa: F401 (type hint only)
+        from llm.types import AgentRole, Message, ModelRequest
 
         # Pull the most useful fields out of the task dict.
         # .get() with a default means we won't crash if a field is missing.
-        task_desc   = task.get("description", task.get("title", "architecture task"))
-        subsystem   = task.get("subsystem", "unknown")
+        task_desc  = task.get("description", task.get("title", "architecture task"))
+        subsystem  = task.get("subsystem", "unknown")
+        constraints_list = task.get("constraints", [])
+        constraints_str  = (
+            ", ".join(constraints_list) if isinstance(constraints_list, list) and constraints_list
+            else str(constraints_list) if constraints_list
+            else "None specified."
+        )
 
-        # The context can be large; truncate to 4000 chars to avoid exceeding
-        # the model's context window. We prefer the pre-assembled 'prompt' string,
-        # but fall back to serialising the whole context dict.
+        # The context dict from ContextAssembler.build() has a 'prompt' key
+        # containing the full assembled context (architecture state + recent
+        # artifacts + research notes + prior critique), pre-truncated to the
+        # token budget.  This becomes the 'architecture_state' for PromptBuilder.
         context_str = context.get("prompt", _json_block(context))[:4000]
 
         # ── Grub implementation section (review tasks only) ─────────────────
@@ -222,9 +534,6 @@ class ArchitectAgent:
         # dict.  This contains what Grub actually built (score, files, tests,
         # summary) so the Architect can make an informed decision about
         # whether the design needs refining.
-        #
-        # We surface it as an explicit section in the user prompt so the model
-        # can easily compare "what was designed" vs "what was built".
         grub_section = ""
         grub_impl = context.get("grub_implementation")
         if grub_impl:
@@ -249,33 +558,19 @@ class ArchitectAgent:
                 f"refining or can be accepted as-is."
             )
 
-        # The system prompt sets the AI's "persona" and tells it exactly
-        # what format we expect in the response.
-        system_prompt = (
-            "You are a senior software architect participating in an autonomous "
-            "architecture-design engine called Tinker.  Your role is to analyse "
-            "the current task and produce a structured design proposal.\n\n"
-            "IMPORTANT: Respond with a JSON object containing:\n"
-            "- 'content': string — your full design narrative\n"
-            "- 'knowledge_gaps': array of strings — topics you need more info on\n"
-            "- 'candidate_tasks': array of objects with 'title','description','type',"
-            "'subsystem','confidence_gap','tags'\n"
-            "- 'decisions': array of strings — key design decisions made\n"
-            "- 'open_questions': array of strings\n"
+        # Build (system, user) prompts using PromptBuilder, falling back to
+        # inline prompts when PromptBuilder is unavailable.
+        system_prompt, user_prompt = _build_architect_prompts(
+            task_desc       = task_desc,
+            subsystem       = subsystem,
+            context_str     = context_str,
+            grub_section    = grub_section,
+            constraints_str = constraints_str,
         )
 
-        # The user prompt is the actual question we're asking on this turn.
-        user_prompt = (
-            f"## Task\nSubsystem: {subsystem}\nDescription: {task_desc}\n\n"
-            f"## Context\n{context_str}"
-            f"{grub_section}\n\n"
-            "Produce your JSON design proposal now."
-        )
-
-        # Build the request object and send it to the AI via ModelRouter.
+        # Build the request and send it to the AI via ModelRouter.
         # AgentRole.ARCHITECT tells the router to use the large, capable model
         # (qwen3:7b on the primary server) rather than the smaller critic model.
-        from llm.types import ModelRequest
         req = ModelRequest(
             agent_role=AgentRole.ARCHITECT,
             messages=[
@@ -285,22 +580,33 @@ class ArchitectAgent:
             expect_json=True,   # Tell the router we want JSON back
             temperature=0.7,    # 0=deterministic, 1=very creative; 0.7 is a good balance
         )
-        resp = await self._router.complete(req)
 
-        # Parse the response: try structured JSON first, fall back to regex extraction
-        if resp.structured and isinstance(resp.structured, dict):
-            # Happy path: the AI returned valid JSON and the router parsed it for us
-            content   = resp.structured.get("content", resp.raw_text)
-            gaps      = resp.structured.get("knowledge_gaps", [])
-            decisions = resp.structured.get("decisions", [])
-            questions = resp.structured.get("open_questions", [])
-            candidates = resp.structured.get("candidate_tasks", [])
+        # Wrap the model call with retry for transient failures.
+        # CONSERVATIVE = 3 attempts, 2 s base delay, 60 s max, full jitter.
+        # Only TinkerError subclasses with retryable=True are retried.
+        retry_async, CONSERVATIVE = _get_retry_async()
+        if retry_async is not None:
+            resp = await retry_async(
+                lambda: self._router.complete(req),
+                config=CONSERVATIVE,
+            )
         else:
-            # Fallback: the AI returned plain text — extract what we can
-            content   = resp.raw_text
-            gaps      = _extract_knowledge_gaps(content)
-            decisions = []
-            questions = []
+            resp = await self._router.complete(req)
+
+        # Parse the response: try structured JSON first, fall back to regex
+        if resp.structured and isinstance(resp.structured, dict):
+            # Happy path: the AI returned valid JSON and the router parsed it.
+            # _parse_architect_structured handles both the PromptBuilder schema
+            # (artifact_type="design_proposal") and the legacy schema.
+            content, gaps, decisions, questions, candidates = (
+                _parse_architect_structured(resp.structured)
+            )
+        else:
+            # Fallback: the AI returned plain text — extract what we can.
+            content    = resp.raw_text
+            gaps       = _extract_knowledge_gaps(content)
+            decisions  = []
+            questions  = []
             candidates = _extract_candidate_tasks(content)
 
         # Return a normalised dict that the Orchestrator's micro loop expects.
@@ -331,6 +637,9 @@ class CriticAgent:
     The score is used by the stagnation detector and task generator to decide
     how to proceed. A low score means the design needs more work on this
     subsystem; a high score means we can move on.
+
+    The Critic uses ``PromptBuilder.for_critic_micro()`` to build production
+    prompts from templates, and ``resilience.retry`` for transient error recovery.
 
     Analogy: If the Architect is the engineer who draws the design, the Critic
     is the tech lead who reviews it and says "this won't scale" or "good idea".
@@ -365,19 +674,11 @@ class CriticAgent:
         design_content = architect_result.get("content", "")[:3000]
         task_desc      = task.get("description", task.get("title", ""))
 
-        system_prompt = (
-            "You are a senior software architect acting as a critic in Tinker, "
-            "an autonomous architecture engine.  Evaluate the design proposal "
-            "and respond with a JSON object containing:\n"
-            "- 'content': string — your critique narrative\n"
-            "- 'score': float between 0 and 1 (1 = excellent)\n"
-            "- 'flags': array of strings — specific issues to address\n"
-            "- 'strengths': array of strings\n"
-        )
-        user_prompt = (
-            f"## Original Task\n{task_desc}\n\n"
-            f"## Design Proposal\n{design_content}\n\n"
-            "Critique this proposal and return your JSON evaluation."
+        # Build (system, user) prompts using PromptBuilder, falling back to
+        # inline prompts when PromptBuilder is unavailable.
+        system_prompt, user_prompt = _build_critic_prompts(
+            task_desc      = task_desc,
+            design_content = design_content,
         )
 
         req = ModelRequest(
@@ -389,7 +690,16 @@ class CriticAgent:
             expect_json=True,
             temperature=0.3,  # Lower temperature = more consistent, less creative scoring
         )
-        resp = await self._router.complete(req)
+
+        # Retry on transient failures.
+        retry_async, CONSERVATIVE = _get_retry_async()
+        if retry_async is not None:
+            resp = await retry_async(
+                lambda: self._router.complete(req),
+                config=CONSERVATIVE,
+            )
+        else:
+            resp = await self._router.complete(req)
 
         # Parse the response, with regex fallback
         if resp.structured and isinstance(resp.structured, dict):
@@ -427,11 +737,13 @@ class SynthesizerAgent:
        on the same subsystem (e.g. "caching"), the Synthesizer reads all the
        artifacts produced for that subsystem and writes a coherent design document.
        Think of this as the weekly summary of all the whiteboard sessions.
+       Uses ``PromptBuilder.for_synthesizer_meso()`` for production-grade prompts.
 
     2. **Macro synthesis** (level="macro"): Every few hours, the Synthesizer reads
        all the meso-level documents and produces a global architectural snapshot.
        Think of this as the quarterly architecture review document.
 
+    Both levels use ``resilience.retry`` for transient error recovery.
     The Synthesizer uses the large model (qwen3:7b) because synthesis requires
     deep understanding and coherent writing across large amounts of text.
     """
@@ -461,47 +773,8 @@ class SynthesizerAgent:
         """
         from llm.types import AgentRole, Message, ModelRequest
 
-        if level == "meso":
-            # Build a meso synthesis prompt: summarise all artifacts for one subsystem
-            subsystem = kwargs.get("subsystem", "unknown")
-            artifacts = kwargs.get("artifacts", [])
-
-            # Join up to 10 artifacts, each truncated to 500 chars, with a divider
-            artifacts_text = "\n---\n".join(
-                (a.get("content", str(a)) if isinstance(a, dict) else str(a))[:500]
-                for a in artifacts[:10]
-            )
-            system_prompt = (
-                "You are a senior software architect. Synthesise the provided "
-                "design artifacts for a subsystem into a coherent design document."
-            )
-            user_prompt = (
-                f"## Subsystem: {subsystem}\n\n"
-                f"## Artifacts to synthesise ({len(artifacts)} items)\n{artifacts_text}\n\n"
-                "Produce a synthesis document covering architecture decisions, patterns, "
-                "open issues, and recommended next steps."
-            )
-        else:
-            # level == "macro": build a global snapshot from all meso documents
-            documents   = kwargs.get("documents", [])
-            version     = kwargs.get("snapshot_version", 0)
-            micro_count = kwargs.get("total_micro_loops", 0)
-
-            # Join up to 20 documents, each truncated to 300 chars
-            docs_text = "\n---\n".join(
-                (d.get("content", str(d)) if isinstance(d, dict) else str(d))[:300]
-                for d in documents[:20]
-            )
-            system_prompt = (
-                "You are a chief architect. Produce a high-level architectural snapshot "
-                "from the subsystem design documents provided."
-            )
-            user_prompt = (
-                f"## Global Snapshot v{version} (after {micro_count} micro loops)\n\n"
-                f"## Subsystem Documents ({len(documents)} total)\n{docs_text}\n\n"
-                "Produce a macro-level architecture snapshot covering system-wide patterns, "
-                "cross-cutting concerns, major decisions, and open risks."
-            )
+        # Build (system, user) prompts using PromptBuilder when available.
+        system_prompt, user_prompt = _build_synthesizer_prompts(level, **kwargs)
 
         # Use the SYNTHESIZER role — typically routed to the large model
         req = ModelRequest(
@@ -513,7 +786,16 @@ class SynthesizerAgent:
             expect_json=False,  # Synthesis output is prose, not JSON
             temperature=0.5,    # Moderate temperature: creative but coherent
         )
-        resp = await self._router.complete(req)
+
+        # Retry on transient failures.
+        retry_async, CONSERVATIVE = _get_retry_async()
+        if retry_async is not None:
+            resp = await retry_async(
+                lambda: self._router.complete(req),
+                config=CONSERVATIVE,
+            )
+        else:
+            resp = await self._router.complete(req)
 
         return {
             "content":     resp.raw_text,

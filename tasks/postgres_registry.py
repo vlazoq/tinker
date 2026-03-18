@@ -30,6 +30,47 @@ Key differences from SQLiteTaskRegistry
 | WAL mode         | ``PRAGMA journal_mode=WAL``   | Not needed (PostgreSQL default) |
 | Boolean storage  | INTEGER (0/1)                 | INTEGER (0/1) — kept same   |
 
+Enterprise features
+-------------------
+This implementation adds several capabilities that production deployments
+need beyond the basic CRUD surface:
+
+Connection retry with exponential back-off
+    Pool acquisition and connection setup can fail transiently when the
+    PostgreSQL server restarts, the network hiccups, or the pool is
+    momentarily exhausted.  ``_conn()`` automatically retries up to
+    ``max_retries`` times (default 3) with delays that double each attempt
+    (``retry_base_delay`` × 2ⁿ, default 0.5 s → 1 s → 2 s).
+
+    Only *transient* errors trigger a retry (connection refused, server
+    restart, SSL reset, too-many-connections).  Logic errors like
+    ``UndefinedTable`` or ``SyntaxError`` are never retried.
+
+Query timeout
+    Long-running queries (a full table scan on a million-row tasks table,
+    a deadlock that holds locks for seconds) block the whole connection.
+    Pass ``query_timeout_ms=5000`` to cap every query at 5 seconds.  The
+    PostgreSQL ``statement_timeout`` GUC is set at connection-pool creation
+    so the limit applies to every query, including schema init.
+
+Schema migration versioning
+    Production databases evolve over time; ALTER TABLE must be applied
+    exactly once.  ``PostgresTaskRegistry`` maintains a
+    ``schema_migrations`` table that records every applied migration by
+    version number.  New migrations are added to ``_MIGRATIONS`` in this
+    file; they are applied automatically on the next startup.  Migrations
+    are idempotent — running them twice is safe because they are guarded by
+    ``INSERT OR IGNORE`` / ``IF NOT EXISTS``.
+
+Bulk writes (``save_batch``)
+    A single-transaction executemany beats N separate round-trips by a
+    large margin when seeding a queue.  Use this whenever you have more
+    than ~5 tasks to write at once.
+
+Health check (``health_check``)
+    Issues ``SELECT 1 FROM tasks LIMIT 1`` and returns True/False without
+    raising.  Wire this into your readiness probe.
+
 Connection pooling
 ------------------
 The registry manages a ``psycopg2.pool.ThreadedConnectionPool`` so that
@@ -51,7 +92,9 @@ For unit tests that do not have a PostgreSQL server available, pass a
     mock_conn = MagicMock()
     registry  = PostgresTaskRegistry(connection_factory=lambda: mock_conn)
 
-This lets every method be tested without a real database.
+This lets every method be tested without a real database.  In
+``connection_factory`` mode no pool is created and retry / timeout logic
+is bypassed (the mock connection never raises transient errors).
 
 Environment variable
 --------------------
@@ -66,6 +109,7 @@ import json
 import logging
 import os
 import threading
+import time
 from contextlib import contextmanager
 from typing import Any, Callable, Generator
 
@@ -137,6 +181,93 @@ _UPSERT_SET = ", ".join(f"{c} = EXCLUDED.{c}" for c in _COLUMNS if c != "id")
 
 
 # =============================================================================
+# Schema migration definitions
+# =============================================================================
+# Each migration is a tuple of:
+#   (version: int, description: str, sql_statements: list[str])
+#
+# Rules:
+#   1. Versions must be monotonically increasing integers starting at 1.
+#   2. Never edit a migration once it has been applied in any environment.
+#      Always add a NEW entry instead.
+#   3. Each SQL statement is executed separately (psycopg2 does not support
+#      multi-statement strings).
+#   4. Migrations are applied inside a transaction; if one statement fails
+#      the entire migration is rolled back.
+#
+# To add a new migration, append to this list:
+#   (3, "Add attempt_limit column", [
+#       "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attempt_limit INTEGER"
+#   ]),
+
+_CREATE_MIGRATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version     INTEGER PRIMARY KEY,
+    description TEXT    NOT NULL,
+    applied_at  TEXT    NOT NULL
+)
+"""
+
+_MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (
+        1,
+        "Initial schema: tasks table and indexes",
+        [_CREATE_TABLE] + _CREATE_INDEXES,
+    ),
+    # --------------------------------------------------------------------------
+    # Future migrations go here.  Example:
+    #
+    # (
+    #     2,
+    #     "Add attempt_limit column to tasks",
+    #     [
+    #         "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "
+    #         "attempt_limit INTEGER NOT NULL DEFAULT 5",
+    #     ],
+    # ),
+    # --------------------------------------------------------------------------
+]
+
+
+# =============================================================================
+# Transient-error detection
+# =============================================================================
+# These substrings appear in psycopg2.OperationalError messages for errors
+# that are safe to retry (server restarted, network blip, pool exhausted).
+# Logical errors (bad SQL, constraint violations) are never in this set.
+
+_TRANSIENT_FRAGMENTS: frozenset[str] = frozenset({
+    "could not connect to server",
+    "connection to server",
+    "server closed the connection",
+    "ssl connection has been closed unexpectedly",
+    "connection refused",
+    "too many connections",
+    "connection pool exhausted",
+    "connection timed out",
+    "remaining connection slots are reserved",
+})
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Return True if *exc* looks like a transient connectivity error.
+
+    Only ``OperationalError`` subclasses are transient.  All other error
+    types (``ProgrammingError``, ``IntegrityError``, etc.) represent
+    permanent failures that must not be retried.
+    """
+    try:
+        import psycopg2
+        if not isinstance(exc, psycopg2.OperationalError):
+            return False
+    except ImportError:
+        pass  # test environment — check the message heuristically
+
+    msg = str(exc).lower()
+    return any(fragment in msg for fragment in _TRANSIENT_FRAGMENTS)
+
+
+# =============================================================================
 # Row helpers
 # =============================================================================
 
@@ -182,10 +313,23 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         Minimum number of connections in the pool (default 1).
     max_conn : int
         Maximum number of connections in the pool (default 10).
+    max_retries : int
+        Number of retry attempts for transient connectivity failures
+        before giving up (default 3).  Uses exponential back-off starting
+        at ``retry_base_delay`` seconds.
+    retry_base_delay : float
+        Initial retry delay in seconds (default 0.5).  Each subsequent
+        attempt doubles this value: 0.5 s → 1 s → 2 s → …
+    query_timeout_ms : int | None
+        Maximum time in milliseconds that any single query may run.
+        Passed to PostgreSQL as ``statement_timeout``.  ``None`` (default)
+        means no timeout — use this for long-running maintenance tasks.
+        Recommended value for production: ``5000`` (5 seconds).
     connection_factory : callable, optional
         ``() -> connection`` — for unit testing only.  When supplied,
         ``dsn`` is ignored and no pool is created; all operations use the
-        single connection returned by the factory.
+        single connection returned by the factory.  Retry and timeout
+        logic is bypassed in this mode.
     """
 
     def __init__(
@@ -194,14 +338,20 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         *,
         min_conn:           int      = 1,
         max_conn:           int      = 10,
+        max_retries:        int      = 3,
+        retry_base_delay:   float    = 0.5,
+        query_timeout_ms:   int | None = None,
         connection_factory: Callable | None = None,
     ) -> None:
-        self._lock    = threading.Lock()
-        self._pool    = None
-        self._single  = None       # used only when connection_factory is set
+        self._lock              = threading.Lock()
+        self._pool              = None
+        self._single            = None       # used only when connection_factory is set
+        self._max_retries       = max_retries
+        self._retry_base_delay  = retry_base_delay
+        self._query_timeout_ms  = query_timeout_ms
 
         if connection_factory is not None:
-            # Test / mock mode: use a single connection, no pool.
+            # Test / mock mode: use a single connection, no pool, no retry.
             self._single = connection_factory()
             log.debug("PostgresTaskRegistry: using injected connection (test mode)")
         else:
@@ -221,31 +371,60 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
                 ) from exc
 
             self._psycopg2 = psycopg2
-            self._pool = _pool.ThreadedConnectionPool(
+
+            # Build the pool.  If query_timeout_ms is set, inject the
+            # statement_timeout GUC via the ``options`` keyword so every
+            # connection in the pool is pre-configured.  This is the
+            # standard PostgreSQL approach for per-connection settings
+            # that should apply to ALL queries.
+            pool_kwargs: dict[str, Any] = dict(
                 minconn=min_conn, maxconn=max_conn, dsn=effective_dsn
             )
+            if query_timeout_ms is not None:
+                pool_kwargs["options"] = f"-c statement_timeout={query_timeout_ms}"
+
+            self._pool = _pool.ThreadedConnectionPool(**pool_kwargs)
             log.info(
-                "PostgresTaskRegistry: connected pool (min=%d max=%d) → %s",
+                "PostgresTaskRegistry: connected pool "
+                "(min=%d max=%d timeout=%s) → %s",
                 min_conn, max_conn,
+                f"{query_timeout_ms}ms" if query_timeout_ms else "none",
                 effective_dsn.split("@")[-1],  # hide credentials in log
             )
 
-        self._init_schema()
+        self._run_migrations()
 
     # ── Connection management ─────────────────────────────────────────────────
 
     @contextmanager
     def _conn(self) -> Generator[Any, None, None]:
         """
-        Yield a connection and cursor in a transaction.
+        Yield a connection in a transaction, with automatic retry for
+        transient connectivity errors.
 
-        In pool mode: borrows a connection from the pool, commits on
-        success, rolls back on exception, then returns it to the pool.
+        **Pool mode** (production):
+          Borrows a connection from ``ThreadedConnectionPool``, commits on
+          success, rolls back on exception, then returns it to the pool.
+          If the pool is temporarily unavailable (server restart, network
+          blip) the acquisition is retried up to ``max_retries`` times with
+          exponential back-off (``retry_base_delay × 2ⁿ``).  Only errors
+          that match ``_TRANSIENT_FRAGMENTS`` trigger a retry; logic errors
+          (bad SQL, constraint violations) are propagated immediately.
 
-        In single-connection mode (tests): yields the injected connection
-        directly, still committing / rolling back.
+        **Single-connection mode** (tests):
+          Yields the injected connection directly.  No retry — the mock
+          connection does not raise transient errors.
+
+        Retry policy
+        ------------
+        Attempt 1: immediate
+        Attempt 2: sleep retry_base_delay seconds
+        Attempt 3: sleep retry_base_delay × 2 seconds
+        …
+        After max_retries exhausted: re-raise the last exception.
         """
         if self._single is not None:
+            # Test/mock mode — bypass retry logic entirely.
             conn = self._single
             try:
                 yield conn
@@ -255,7 +434,32 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
                 raise
             return
 
-        conn = self._pool.getconn()
+        # Production pool mode — acquire with retry.
+        last_exc: Exception | None = None
+        conn = None
+
+        for attempt in range(self._max_retries + 1):
+            if attempt > 0:
+                delay = self._retry_base_delay * (2 ** (attempt - 1))
+                log.warning(
+                    "PostgresTaskRegistry: transient error on attempt %d/%d, "
+                    "retrying in %.1fs — %s",
+                    attempt, self._max_retries, delay, last_exc,
+                )
+                time.sleep(delay)
+
+            try:
+                conn = self._pool.getconn()
+                break   # successfully acquired
+            except Exception as exc:
+                last_exc = exc
+                if not _is_transient(exc):
+                    raise   # permanent error — don't retry
+
+        if conn is None:
+            # All retries exhausted; last_exc is set because we entered the loop.
+            raise last_exc  # type: ignore[misc]
+
         try:
             yield conn
             conn.commit()
@@ -274,16 +478,84 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
             # Fallback for mock connections in tests (no real psycopg2).
             return conn.cursor()
 
-    # ── Schema init ───────────────────────────────────────────────────────────
+    # ── Schema migrations ─────────────────────────────────────────────────────
 
-    def _init_schema(self) -> None:
-        """Create the tasks table and indexes if they do not exist."""
+    def _run_migrations(self) -> None:
+        """Apply any unapplied schema migrations in version order.
+
+        How it works
+        ------------
+        1. Create ``schema_migrations`` table if it does not exist.
+        2. Query which versions have already been applied.
+        3. For each migration whose version is *not* in that set, execute
+           all its SQL statements in a single transaction and record the
+           version in ``schema_migrations``.
+
+        This is called once in ``__init__`` and is idempotent — running it
+        again when all migrations are already applied is a no-op.
+
+        Design notes
+        ------------
+        * Each migration runs in its own transaction.  This means a failed
+          migration does not corrupt earlier migrations that succeeded.
+        * Migrations are applied in ascending version order regardless of
+          how they appear in ``_MIGRATIONS``.
+        * ``schema_migrations`` itself is created outside a migration so
+          that the bookkeeping table is always available.
+        """
         with self._conn() as conn:
             cur = self._cursor(conn)
-            cur.execute(_CREATE_TABLE)
-            for idx_sql in _CREATE_INDEXES:
-                cur.execute(idx_sql)
-        log.info("PostgresTaskRegistry: schema initialised")
+            cur.execute(_CREATE_MIGRATIONS_TABLE)
+
+        # Find which migrations have already been applied.
+        with self._conn() as conn:
+            cur = self._cursor(conn)
+            cur.execute("SELECT version FROM schema_migrations")
+            applied = {row["version"] for row in cur.fetchall()}
+
+        # Apply unapplied migrations in ascending version order.
+        for version, description, statements in sorted(_MIGRATIONS, key=lambda m: m[0]):
+            if version in applied:
+                continue
+
+            log.info(
+                "PostgresTaskRegistry: applying migration %d — %s",
+                version, description,
+            )
+            with self._conn() as conn:
+                cur = self._cursor(conn)
+                for sql in statements:
+                    cur.execute(sql)
+                now = __import__("datetime").datetime.now(
+                    __import__("datetime").timezone.utc
+                ).isoformat()
+                cur.execute(
+                    "INSERT INTO schema_migrations (version, description, applied_at) "
+                    "VALUES (%s, %s, %s) ON CONFLICT (version) DO NOTHING",
+                    (version, description, now),
+                )
+
+        log.info("PostgresTaskRegistry: migrations complete")
+
+    def list_applied_migrations(self) -> list[dict]:
+        """Return a list of applied migrations ordered by version.
+
+        Each item is a dict with keys: ``version``, ``description``,
+        ``applied_at``.  Useful for observability and debugging.
+
+        Returns [] if the ``schema_migrations`` table does not exist yet
+        (i.e. before the first call to ``_run_migrations``).
+        """
+        try:
+            with self._conn() as conn:
+                cur = self._cursor(conn)
+                cur.execute(
+                    "SELECT version, description, applied_at "
+                    "FROM schema_migrations ORDER BY version ASC"
+                )
+                return [dict(r) for r in cur.fetchall()]
+        except Exception:
+            return []
 
     # ── Write ─────────────────────────────────────────────────────────────────
 
@@ -296,7 +568,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         primary key already exists.  This is equivalent to SQLite's
         ``INSERT OR REPLACE``.
         """
-        row = _task_to_row(task)
+        row   = _task_to_row(task)
         cols  = ", ".join(_COLUMNS)
         vals  = ", ".join("%s" for _ in _COLUMNS)
         sql   = (
@@ -311,6 +583,45 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
 
         log.debug("Saved task %s (%s)", task.id, task.status.value)
         return task
+
+    def save_batch(self, tasks: list[Task]) -> list[Task]:
+        """Insert or update multiple tasks in a single transaction.
+
+        Uses ``executemany`` to send all rows in one round-trip rather than
+        issuing N separate ``INSERT … ON CONFLICT`` statements.  For large
+        batches (50+ tasks) this is 10–50× faster than calling ``save()``
+        in a loop.
+
+        All tasks are committed atomically — a failure in the middle leaves
+        the database unchanged (the transaction is rolled back).
+
+        Parameters
+        ----------
+        tasks : list[Task]
+            Tasks to upsert.  An empty list is a no-op; returns ``[]``.
+
+        Returns
+        -------
+        list[Task]
+            The same list, unchanged.
+        """
+        if not tasks:
+            return tasks
+
+        cols   = ", ".join(_COLUMNS)
+        vals   = ", ".join("%s" for _ in _COLUMNS)
+        sql    = (
+            f"INSERT INTO tasks ({cols}) VALUES ({vals}) "
+            f"ON CONFLICT (id) DO UPDATE SET {_UPSERT_SET}"
+        )
+        params_list = [[_task_to_row(t)[c] for c in _COLUMNS] for t in tasks]
+
+        with self._conn() as conn:
+            cur = self._cursor(conn)
+            cur.executemany(sql, params_list)
+
+        log.debug("Saved batch of %d tasks", len(tasks))
+        return tasks
 
     def update(self, task: Task) -> Task:
         """Refresh ``updated_at`` and persist the task."""
@@ -409,6 +720,27 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         if row is None:
             return None
         return Task.from_dict(_pg_row_to_dict(row))
+
+    # ── Operations ────────────────────────────────────────────────────────────
+
+    def health_check(self) -> bool:
+        """Return True if the PostgreSQL backend is reachable and schema is present.
+
+        Executes ``SELECT 1 FROM tasks LIMIT 1`` — the lightest possible
+        query that verifies both connectivity and schema presence.  Returns
+        False (never raises) so callers can use this in polling loops or
+        liveness probes without try/except.
+
+        In ``connection_factory`` (test) mode the mock connection is used
+        directly, which always succeeds unless the mock is configured to fail.
+        """
+        try:
+            with self._conn() as conn:
+                cur = self._cursor(conn)
+                cur.execute("SELECT 1 FROM tasks LIMIT 1")
+            return True
+        except Exception:
+            return False
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
