@@ -24,3 +24,10 @@ prometheus-client>=0.20.0
 
 # ── Dependency management ─────────────────────────────────────────────────────
 pip-tools>=7.0.0
+
+# ── Security ──────────────────────────────────────────────────────────────────
+# pip-audit scans requirements lock files against the OSV (Open Source
+# Vulnerabilities) database and the GitHub Advisory Database.
+# Run locally: make audit
+# Run in CI:   .github/workflows/ci.yml (security-audit job)
+pip-audit>=2.7.0

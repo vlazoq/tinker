@@ -65,6 +65,34 @@ Grub just reads from Tinker's database.  The only coupling is:
 1. The database schema (Grub reads `tasks` table, writes rows back)
 2. The artifact directory location (configured in `.env`)
 
+### SQLite WAL mode — mandatory for concurrent access
+
+SQLite's default journal mode (DELETE) uses **file-level locking**: only one
+connection may read or write at any moment.  When Tinker (reader/writer) and
+Grub (reader/writer) both access the same file simultaneously, you will see:
+
+```
+sqlite3.OperationalError: database is locked
+```
+
+`TinkerBridge` enables **WAL mode** on every connection it opens:
+
+```python
+con.execute("PRAGMA journal_mode=WAL")
+```
+
+WAL (Write-Ahead Logging) allows **multiple concurrent readers + one writer**
+simultaneously, which is exactly the Tinker/Grub access pattern.
+The mode is stored in the database file and persists across all future
+connections — setting it is idempotent.
+
+**Critical:** if you create the database file yourself (e.g. in tests or
+deployment scripts), set WAL mode before Tinker starts:
+
+```bash
+sqlite3 tinker_tasks_engine.sqlite "PRAGMA journal_mode=WAL"
+```
+
 ---
 
 ## How Tinker Creates Implementation Tasks
@@ -353,21 +381,36 @@ Run them with no external services required:
 python -m pytest grub/tests/test_grub_tinker_integration.py -v
 ```
 
-Tests cover:
+### Test coverage
 
-| Category | What's tested |
-|----------|--------------|
-| Full loop | Fetch → Minion runs → Report → Tinker marks complete → Review task created |
-| `_enrich_review_context` | Extracts grub result from review task metadata |
-| Priority ordering | HIGH score tasks returned before LOW score tasks |
-| Failed results | Even failed Minions produce a review task for Tinker |
-| Edge cases | Missing DB, malformed metadata, idempotent report (no duplicate review tasks) |
+| Test class | What it verifies |
+|------------|-----------------|
+| `TestFullLoop` | Fetch → Minion → Report → task marked complete → review task created |
+| `TestEnrichReviewContext` | `_enrich_review_context` extracts grub result; handles dict/string/malformed metadata; no mutation |
+| `TestFetchOrdering` | Priority-score ordering; `limit=` respected; type + status filters |
+| `TestFailedResults` | Failed and partial Minions still produce review tasks so Tinker can redesign |
+| `TestEdgeCases` | Missing DB → graceful empty/False return; idempotent double-report = 1 review task |
+| `TestWALMode` | SQLite WAL journal mode is active in fixture; preserved after fetch + report |
+| `TestConcurrentWrites` | 20 threads reporting to different tasks → all succeed; 10 threads reporting to same task → exactly 1 review (INSERT OR IGNORE dedup); concurrent data integrity (no corrupt JSON) |
+| `TestConcurrentFetchReport` | 3 reader + 5 writer threads interleaved → no deadlock, no exceptions; completed tasks not returned after concurrent report |
+| `TestArtifactDiscovery` | `_find_artifact` finds `billing_design.md`, glob matches, spaces→underscores, missing dir |
+| `TestDatabasePersistence` | Writes visible from a fresh connection object; writes visible from a separate TinkerBridge instance |
 
-The idempotency test verifies a specific production guarantee: calling
-`report_result()` twice for the same Tinker task (e.g. after a crash and
-recovery) must not create two review tasks.  This is enforced by using a
-deterministic review-task ID (`f"review-{tinker_task_id}"`) so that SQLite's
-`INSERT OR IGNORE` silently discards the duplicate.
+### Idempotency and crash recovery
+
+Calling `report_result()` twice for the same Tinker task (e.g. Grub crashes
+after the write but before acknowledging success, then retries) must not
+create two review tasks.  This is enforced by a **deterministic review-task
+ID**:
+
+```python
+new_id = f"review-{tinker_task_id}"   # always the same for the same input
+```
+
+SQLite's `INSERT OR IGNORE` silently discards the duplicate insert.
+`TestConcurrentWrites::test_concurrent_reports_same_task_no_duplicate_review`
+verifies this guarantee holds under **10 simultaneous threads**, not just
+serial retries.
 
 ---
 

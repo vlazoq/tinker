@@ -1,0 +1,123 @@
+##############################################################################
+# .github/dependabot.yml
+# =============================================================================
+#
+# Dependabot automated dependency update configuration for Tinker.
+#
+# Dependabot opens pull requests when new versions of dependencies are
+# available.  Those PRs update both the *.in source files AND the *.txt
+# lock files so that CI passes without any manual `make deps-all`.
+#
+# Update strategy
+# ---------------
+# • pip  — Tinker's Python dependencies.  Dependabot updates pyproject.toml
+#          and the requirements/*.in files; `make deps-all` must be run
+#          locally (or in the Dependabot PR) to regenerate the lock files.
+#          Weekly schedule reduces noise while keeping security patches timely.
+#
+# • github-actions — keeps workflow actions (@v4 pins) on recent releases,
+#          which addresses action supply-chain security (a common attack vector
+#          where malicious commits are made to un-pinned action refs).
+#
+# Security auto-merge policy
+# --------------------------
+# CVE-severity "critical" and "high" Dependabot alerts are exempt from the
+# weekly schedule — GitHub will open a security PR immediately on disclosure.
+# Maintainers should merge these within 48 hours.
+#
+# Grouping rules
+# --------------
+# Patch/minor updates are grouped into a single PR per ecosystem per week
+# so the review queue stays manageable.  Major version bumps always come
+# as separate PRs because they may contain breaking changes.
+##############################################################################
+
+version: 2
+
+updates:
+
+  # ---------------------------------------------------------------------------
+  # Python — pip ecosystem
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "pip"
+    # Dependabot scans the requirements/ directory for *.in and *.txt files,
+    # and pyproject.toml for [project.dependencies].
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+
+    # Open PRs against main only.
+    target-branch: "main"
+
+    # --- grouping -----------------------------------------------------------
+    groups:
+      # All patch and minor updates in one PR — low risk, easy to review.
+      patch-and-minor:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+      # Security patches always get their own PR so they are never buried
+      # inside a noisy "bump 30 packages" PR.
+      security-patches:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+    # --- labels for triage --------------------------------------------------
+    labels:
+      - "dependencies"
+      - "automated"
+
+    # --- PR limits (avoid opening hundreds of PRs at once) ------------------
+    open-pull-requests-limit: 10
+
+    # --- commit message style -----------------------------------------------
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: "scope"
+
+    # --- ignore rules -------------------------------------------------------
+    # Ignore major version bumps on packages known to contain breaking API
+    # changes between majors.  Maintainers should handle these manually after
+    # reading the migration guide.
+    ignore:
+      - dependency-name: "torch"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "chromadb"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pydantic"
+        update-types: ["version-update:semver-major"]
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions — action pins
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:30"
+      timezone: "UTC"
+
+    target-branch: "main"
+
+    groups:
+      action-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "automated"
+
+    open-pull-requests-limit: 5
+
+    commit-message:
+      prefix: "chore(actions)"
