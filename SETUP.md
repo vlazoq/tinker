@@ -277,6 +277,32 @@ git add requirements/
 git commit -m "chore: update dependency lock files"
 ```
 
+### Supply-chain security — SHA-256 hash verification
+
+All lock files are generated with `--generate-hashes` (see `make deps-all`).
+The resulting `requirements/*.txt` files include a SHA-256 hash for every
+downloaded wheel and sdist.  `pip` verifies those hashes automatically at
+install time — no extra flags needed.
+
+If a compromised package is uploaded to PyPI (or a CDN serves a tampered wheel),
+pip will refuse to install it and print a hash-mismatch error.
+
+### CVE scanning
+
+```bash
+# Scan all lock files for published CVEs:
+make audit
+
+# Automatically upgrade any vulnerable packages:
+make audit-fix
+```
+
+`pip-audit` queries the OSV database and the GitHub Advisory Database.
+The `security-audit` job in CI (`.github/workflows/ci.yml`) runs `pip-audit`
+on every PR and blocks merges if any CVE is found.
+
+For full details, see `requirements/README.md`.
+
 ---
 
 ## Step 6 — Configure Environment Variables

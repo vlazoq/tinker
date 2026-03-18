@@ -75,6 +75,7 @@ dev = [
     "textual-dev>=0.52.0",           # Textual live-reload devtools
     "prometheus-client>=0.20.0",
     "pip-tools>=7.0.0",              # pip-compile for lock-file regeneration
+    "pip-audit>=2.7.0",             # CVE scan of lock files (make audit)
 ]
 
 # Install with: pip install -e ".[enterprise]"

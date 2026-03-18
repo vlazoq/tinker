@@ -1,0 +1,275 @@
+##############################################################################
+# .github/workflows/ci.yml
+# =============================================================================
+#
+# Tinker — Continuous Integration
+#
+# Jobs (all run in parallel unless dependencies are declared):
+#
+#   test          — run the full pytest suite on Python 3.11
+#   lint          — ruff code-quality checks (no auto-format)
+#   dep-freshness — verify every requirements/*.txt is in sync with its .in
+#                   source; fails the PR until the developer commits updated
+#                   lock files generated with `make deps-all`
+#   security-audit — pip-audit CVE scan of all pinned dependency sets;
+#                   fails the PR if any package has a published CVE
+#
+# Trigger conditions:
+#   • Every push to main / master and any claude/* branch
+#   • Every pull request targeting main / master
+#
+# Why all four jobs?
+#   test + lint    → code quality gate (no regressions, no linter warnings)
+#   dep-freshness  → prevents "works on my machine" caused by stale lock files
+#   security-audit → supply-chain security; catches CVEs before they reach prod
+#
+# Lock-file hash verification (supply-chain security)
+# ---------------------------------------------------
+# The dep-freshness job re-runs pip-compile with --generate-hashes.
+# When lock files contain SHA-256 hashes, `pip install -r requirements/base.txt`
+# automatically verifies every downloaded wheel against those hashes — even
+# without --require-hashes — because pip enforces hashes for any package that
+# has them in the requirements file.
+#
+# First-time setup / migration note
+# -----------------------------------
+# If the committed lock files do not yet contain hashes (they lack the
+# `--hash=sha256:…` lines), the dep-freshness job will fail on first run.
+# Developers need to run:
+#
+#   make deps-all     # regenerates all lock files with --generate-hashes
+#   git add requirements/
+#   git commit -m "chore: add SHA-256 hash pins to all lock files"
+#
+# After that commit, the dep-freshness job passes and hash verification is
+# enforced for all future installs and CI runs.
+##############################################################################
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "claude/**"
+  pull_request:
+    branches:
+      - main
+      - master
+
+# Cancel in-progress runs on new push to the same branch/PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # Test
+  # ---------------------------------------------------------------------------
+  test:
+    name: "Test (Python ${{ matrix.python-version }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements/dev.txt
+          pip install -e . --no-deps
+
+      - name: Run tests
+        run: pytest -x -q --tb=short
+
+  # ---------------------------------------------------------------------------
+  # Lint
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install ruff
+        # Pin ruff to avoid unexpected lint failures from a ruff upgrade.
+        # Keep in sync with requirements/dev.in.
+        run: pip install "ruff>=0.4.0"
+
+      - name: Lint (ruff check)
+        run: ruff check .
+
+      - name: Format check (ruff format --check)
+        run: ruff format --check .
+
+  # ---------------------------------------------------------------------------
+  # Dependency lock-file freshness
+  # ---------------------------------------------------------------------------
+  dep-freshness:
+    name: "Dep freshness (lock files up to date)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pip-tools
+        run: pip install "pip-tools>=7.0.0"
+
+      - name: Regenerate base.txt and diff
+        # --generate-hashes: every package gets a SHA-256 hash (supply-chain)
+        # --quiet:           suppress progress noise; only show the diff
+        # --strip-extras:    keep the output portable across pip-tools versions
+        # --no-upgrade:      do NOT upgrade — we only check freshness against
+        #                    whatever the resolver currently produces for the
+        #                    same pinned set; upgrades are handled by Dependabot
+        run: |
+          pip-compile requirements/base.in \
+            --generate-hashes \
+            --quiet \
+            --strip-extras \
+            --no-upgrade \
+            --output-file /tmp/base.txt.check
+          if ! diff --unified=5 requirements/base.txt /tmp/base.txt.check; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌  requirements/base.txt is STALE or MISSING HASHES"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Regenerate locally and commit:"
+            echo "    make deps"
+            echo "    git add requirements/base.txt"
+            echo "    git commit -m 'chore: update base dependency lock file'"
+            echo ""
+            exit 1
+          fi
+          echo "✓ requirements/base.txt is up to date and contains SHA-256 hashes"
+
+      - name: Regenerate dev.txt and diff
+        run: |
+          pip-compile requirements/dev.in \
+            --generate-hashes \
+            --quiet \
+            --strip-extras \
+            --no-upgrade \
+            --output-file /tmp/dev.txt.check
+          if ! diff --unified=5 requirements/dev.txt /tmp/dev.txt.check; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌  requirements/dev.txt is STALE or MISSING HASHES"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Regenerate locally and commit:"
+            echo "    make deps-dev"
+            echo "    git add requirements/dev.txt"
+            echo "    git commit -m 'chore: update dev dependency lock file'"
+            echo ""
+            exit 1
+          fi
+          echo "✓ requirements/dev.txt is up to date and contains SHA-256 hashes"
+
+      - name: Regenerate metrics.txt and diff
+        run: |
+          pip-compile requirements/metrics.in \
+            --generate-hashes \
+            --quiet \
+            --strip-extras \
+            --no-upgrade \
+            --output-file /tmp/metrics.txt.check
+          if ! diff --unified=5 requirements/metrics.txt /tmp/metrics.txt.check; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌  requirements/metrics.txt is STALE or MISSING HASHES"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Regenerate locally and commit:"
+            echo "    make deps-metrics"
+            echo "    git add requirements/metrics.txt"
+            echo "    git commit -m 'chore: update metrics dependency lock file'"
+            echo ""
+            exit 1
+          fi
+          echo "✓ requirements/metrics.txt is up to date and contains SHA-256 hashes"
+
+  # ---------------------------------------------------------------------------
+  # Security — CVE audit
+  # ---------------------------------------------------------------------------
+  security-audit:
+    name: "Security audit (pip-audit CVE scan)"
+    runs-on: ubuntu-latest
+    # Run even if other jobs fail — security issues should always be surfaced.
+    # Reviewers must not merge a PR that introduces a known CVE.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pip-audit
+        # pip-audit queries the OSV (Open Source Vulnerabilities) database and
+        # the PyPI advisory database for published CVEs.
+        run: pip install "pip-audit>=2.7.0"
+
+      - name: Audit base dependencies
+        # --require-hashes: refuse to run unless every package has a hash;
+        #   this catches lock files that are missing hash lines (i.e. generated
+        #   without --generate-hashes).  If this step fails, re-run `make deps`.
+        # --progress-spinner=off: cleaner CI log output
+        run: |
+          pip-audit \
+            --requirement requirements/base.txt \
+            --require-hashes \
+            --progress-spinner=off \
+            --output=columns
+        continue-on-error: false
+
+      - name: Audit dev dependencies
+        run: |
+          pip-audit \
+            --requirement requirements/dev.txt \
+            --require-hashes \
+            --progress-spinner=off \
+            --output=columns
+        continue-on-error: false
+
+      - name: Audit metrics dependencies
+        run: |
+          pip-audit \
+            --requirement requirements/metrics.txt \
+            --require-hashes \
+            --progress-spinner=off \
+            --output=columns
+        continue-on-error: false
