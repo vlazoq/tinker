@@ -400,36 +400,48 @@ pattern is:
 The orchestrator installed signal handlers for graceful shutdown:
 
 ```python
-# OLD (crashed on Windows)
-loop = asyncio.get_event_loop()
+# OLD — two problems
+loop = asyncio.get_event_loop()       # deprecated in Python 3.10+; emits DeprecationWarning
 loop.add_signal_handler(signal.SIGINT, self.request_shutdown)
+loop.add_signal_handler(signal.SIGTERM, self.request_shutdown)
 ```
 
 On Windows, `asyncio.ProactorEventLoop` (the default on Windows) does not
-support `add_signal_handler()`.  It raises `NotImplementedError`.
+support `add_signal_handler()`.  It raises `NotImplementedError`.  Additionally,
+`SIGTERM` is not a real OS signal on Windows — its presence on the `signal`
+module varies across Python builds, so referencing it unconditionally can
+raise `AttributeError` on the Windows fallback path.
 
 ### The fix
 
-Use `signal.signal()` on Windows instead:
+Use `asyncio.get_running_loop()` (not the deprecated `get_event_loop()`), and
+fall back to `signal.signal()` on Windows.  Also guard against SIGTERM being
+absent on some Windows Python builds with `getattr`:
 
 ```python
 import sys, signal
 
+def _handler(_sig, _frame):
+    logger.info("Received interrupt, shutting down...")
+    self.request_shutdown()
+
 try:
-    loop.add_signal_handler(signal.SIGINT, self.request_shutdown)
+    loop = asyncio.get_running_loop()          # ← get_running_loop, not get_event_loop
+    loop.add_signal_handler(signal.SIGINT,  self.request_shutdown)
     loop.add_signal_handler(signal.SIGTERM, self.request_shutdown)
-    logger.debug("Signal handlers installed via event loop")
 except (NotImplementedError, RuntimeError):
-    # Windows: ProactorEventLoop doesn't support add_signal_handler
+    # Windows: ProactorEventLoop doesn't support add_signal_handler.
+    # Fall back to signal.signal() for SIGINT only (SIGTERM is not a
+    # real signal on Windows).
     if sys.platform == "win32":
-        try:
-            signal.signal(
-                signal.SIGINT,
-                lambda _sig, _frame: self.request_shutdown()
-            )
-            logger.debug("Windows SIGINT handler installed via signal.signal()")
-        except Exception as exc:
-            logger.warning("Could not install signal handler: %s", exc)
+        signal.signal(signal.SIGINT, _handler)
+        # SIGTERM does not exist on Windows — skip it silently.
+        sigterm = getattr(signal, "SIGTERM", None)
+        if sigterm is not None:
+            try:
+                signal.signal(sigterm, _handler)
+            except (OSError, ValueError):
+                pass
     else:
         logger.warning("Signal handlers not supported in this environment")
 ```
