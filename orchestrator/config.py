@@ -49,6 +49,8 @@ import os
 # default values are computed at runtime (e.g. reading an env variable).
 from dataclasses import dataclass, field
 
+from exceptions import ConfigurationError
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,11 +75,15 @@ def _positive_float(value: float, name: str, min_val: float = 0.0) -> float:
     try:
         v = float(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"Config field '{name}' must be a number, got {value!r}") from exc
+        raise ConfigurationError(
+            f"Config field '{name}' must be a number, got {value!r}",
+            context={"field": name, "value": repr(value)},
+        ) from exc
     if v < min_val:
-        raise ValueError(
+        raise ConfigurationError(
             f"Config field '{name}' must be >= {min_val}, got {v}. "
-            f"Hint: check your environment variables for TINKER_* settings."
+            f"Hint: check your TINKER_* environment variables.",
+            context={"field": name, "value": v, "min": min_val},
         )
     return v
 
@@ -99,10 +105,14 @@ def _positive_int(value: int, name: str, min_val: int = 1) -> int:
     try:
         v = int(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"Config field '{name}' must be an integer, got {value!r}") from exc
+        raise ConfigurationError(
+            f"Config field '{name}' must be an integer, got {value!r}",
+            context={"field": name, "value": repr(value)},
+        ) from exc
     if v < min_val:
-        raise ValueError(
-            f"Config field '{name}' must be >= {min_val}, got {v}."
+        raise ConfigurationError(
+            f"Config field '{name}' must be >= {min_val}, got {v}.",
+            context={"field": name, "value": v, "min": min_val},
         )
     return v
 

@@ -40,6 +40,7 @@ import logging
 from typing import Any
 
 from .base import BaseTool, ToolResult, ToolSchema
+from exceptions import ToolNotFoundError
 
 # Standard Python logging.  Log messages from this file will appear under the
 # logger name "tools.registry", making it easy to filter in log output.
@@ -135,11 +136,13 @@ class ToolRegistry:
         """
         Retrieve a registered tool by name.
 
-        Raises ``KeyError`` if the name isn't found, with a helpful message
-        listing what's actually registered.
+        Raises ``ToolNotFoundError`` if the name isn't found.
         """
         if name not in self._tools:
-            raise KeyError(f"No tool registered with name '{name}'.")
+            raise ToolNotFoundError(
+                f"No tool registered with name '{name}'.",
+                context={"requested": name, "available": sorted(self._tools)},
+            )
         return self._tools[name]
 
     def schemas(self) -> list[ToolSchema]:

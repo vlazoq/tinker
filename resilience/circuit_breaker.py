@@ -66,21 +66,12 @@ class CircuitState(enum.Enum):
     HALF_OPEN = "half_open"  # Probe state — one call allowed through
 
 
-class CircuitBreakerOpenError(Exception):
-    """
-    Raised when a call is attempted on an OPEN circuit breaker.
-
-    Callers should catch this and apply graceful degradation logic rather
-    than propagating it as a fatal error.
-    """
-    def __init__(self, name: str, recovery_at: float) -> None:
-        self.name = name
-        self.recovery_at = recovery_at
-        remaining = max(0.0, recovery_at - time.monotonic())
-        super().__init__(
-            f"Circuit '{name}' is OPEN — service unavailable. "
-            f"Recovery probe in {remaining:.1f}s."
-        )
+# Import the canonical definition from the central exceptions module.
+# ``CircuitBreakerOpenError`` is defined there (with the full TinkerError
+# hierarchy, retryable flag, and structured context) and re-exported here
+# so existing code that does ``from resilience.circuit_breaker import
+# CircuitBreakerOpenError`` continues to work without any changes.
+from exceptions import CircuitBreakerOpenError  # noqa: F401  (intentional re-export)
 
 
 class CircuitBreaker:

@@ -66,6 +66,8 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from exceptions import ExperimentError
+
 logger = logging.getLogger(__name__)
 
 
@@ -134,12 +136,18 @@ class ABTestingFramework:
 
         Raises
         ------
-        ValueError : If the experiment already exists or has fewer than 2 variants.
+        ExperimentError : If the experiment already exists or has fewer than 2 variants.
         """
         if name in self._experiments:
-            raise ValueError(f"Experiment '{name}' already exists")
+            raise ExperimentError(
+                f"Experiment '{name}' already exists",
+                context={"experiment": name},
+            )
         if len(variants) < 2:
-            raise ValueError(f"Experiment '{name}' needs at least 2 variants")
+            raise ExperimentError(
+                f"Experiment '{name}' needs at least 2 variants",
+                context={"experiment": name, "variant_count": len(variants)},
+            )
 
         exp = Experiment(name=name, variants=dict(variants), metric=metric)
         self._experiments[name] = exp
@@ -166,12 +174,15 @@ class ABTestingFramework:
 
         Raises
         ------
-        KeyError : If the experiment doesn't exist.
-        RuntimeError : If the experiment is inactive.
+        ExperimentError : If the experiment doesn't exist.
         """
         exp = self._experiments.get(experiment_name)
         if not exp:
-            raise KeyError(f"Experiment '{experiment_name}' not found")
+            raise ExperimentError(
+                f"Experiment '{experiment_name}' not found",
+                context={"experiment": experiment_name,
+                         "available": sorted(self._experiments)},
+            )
         if not exp.active:
             # Return control if experiment is paused
             control = next(iter(exp.variants))
@@ -222,11 +233,15 @@ class ABTestingFramework:
 
         Raises
         ------
-        KeyError : If the experiment doesn't exist.
+        ExperimentError : If the experiment doesn't exist.
         """
         exp = self._experiments.get(experiment_name)
         if not exp:
-            raise KeyError(f"Experiment '{experiment_name}' not found")
+            raise ExperimentError(
+                f"Experiment '{experiment_name}' not found",
+                context={"experiment": experiment_name,
+                         "available": sorted(self._experiments)},
+            )
 
         report = {
             "name": experiment_name,

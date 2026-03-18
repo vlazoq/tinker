@@ -65,6 +65,28 @@ except ImportError:  # pragma: no cover
 
 from .types import MachineConfig, Message, RetryConfig
 
+# Import the typed exception hierarchy from the central exceptions module.
+# All model-client exceptions live in exceptions.py so the full error surface
+# is visible from one place.  We re-export the names that callers of THIS
+# module typically import so existing ``from llm.client import ...`` code
+# continues to work without changes.
+from exceptions import (
+    ModelClientError,
+    ModelConnectionError,
+    ModelTimeoutError,
+    ModelRateLimitError,
+    ModelServerError,
+    ResponseParseError,
+)
+
+# Backwards-compatibility aliases: older code that did
+#   from llm.client import ConnectionError, TimeoutError, RateLimitError, ServerError
+# still works — these names are intentional re-exports, NOT new definitions.
+ConnectionError  = ModelConnectionError   # noqa: A001  (intentional shadowing alias)
+TimeoutError     = ModelTimeoutError      # noqa: A001
+RateLimitError   = ModelRateLimitError
+ServerError      = ModelServerError
+
 logger = logging.getLogger(__name__)
 
 # CircuitBreaker is an optional enterprise dependency — import it lazily so
@@ -76,68 +98,6 @@ except ImportError:
     CircuitBreaker = None  # type: ignore[assignment,misc]
     CircuitBreakerOpenError = None  # type: ignore[assignment,misc]
     _CIRCUIT_BREAKER_AVAILABLE = False
-
-
-# ---------------------------------------------------------------------------
-# Exceptions — a tidy hierarchy of errors
-# ---------------------------------------------------------------------------
-# Having separate exception classes for each failure mode is important because
-# callers can then catch exactly the error type they care about.  For example,
-# a caller that wants to retry on connection errors but not on parse errors
-# can write ``except ConnectionError`` instead of checking string messages.
-
-class ModelClientError(Exception):
-    """
-    Base class for all errors raised by the model client.
-
-    Catch this if you want to handle *any* model-client failure in one place.
-    Catch a more specific subclass if you only care about one kind of failure.
-    """
-
-
-class ConnectionError(ModelClientError):
-    """
-    Raised when the client cannot establish a TCP connection to Ollama.
-
-    Common causes: Ollama is not running, wrong ``base_url``, firewall rules.
-    This error is retryable — the server might come back up shortly.
-    """
-
-
-class TimeoutError(ModelClientError):
-    """
-    Raised when a request or connection attempt takes longer than the
-    configured timeout.
-
-    This is retryable because the server might just be under heavy load.
-    """
-
-
-class RateLimitError(ModelClientError):
-    """
-    Raised when the server responds with HTTP 429 ("Too Many Requests").
-
-    This means we're sending requests faster than the server can handle.
-    The retry logic will back off and try again after a delay.
-    """
-
-
-class ServerError(ModelClientError):
-    """
-    Raised when the server responds with a 5xx status code (500, 502, 503, …).
-
-    5xx means something went wrong on the *server's* side.  These are
-    retryable — the server may recover quickly.
-    """
-
-
-class ResponseParseError(ModelClientError):
-    """
-    Raised when the server's response is not valid JSON.
-
-    This is *not* retryable — if the server sends garbage, retrying will
-    probably get the same garbage back.
-    """
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +348,7 @@ class OllamaClient:
                 await asyncio.sleep(delay)   # pause before retrying
                 # Exponential back-off: double the delay, but cap at max_delay
                 delay = min(delay * self.retry.backoff_factor, self.retry.max_delay)
-            except (ConnectionError, TimeoutError) as exc:
+            except (ModelConnectionError, ModelTimeoutError) as exc:
                 # Network problems are also worth retrying
                 last_exc = exc
                 if attempt == self.retry.max_attempts:
@@ -426,12 +386,12 @@ class OllamaClient:
 
         Raises
         ------
-        RateLimitError     : HTTP 429
-        ServerError        : HTTP 5xx
-        ModelClientError   : Other HTTP 4xx errors
-        ResponseParseError : Response body is not valid JSON
-        ConnectionError    : TCP connection failed
-        TimeoutError       : Request timed out
+        ModelRateLimitError  : HTTP 429
+        ModelServerError     : HTTP 5xx
+        ModelClientError     : Other HTTP 4xx errors
+        ResponseParseError   : Response body is not valid JSON
+        ModelConnectionError : TCP connection failed
+        ModelTimeoutError    : Request timed out
         """
         t0 = time.monotonic()   # record start time for elapsed logging
         session = await self._get_session()
@@ -451,35 +411,57 @@ class OllamaClient:
 
                 if resp.status == 429:
                     # 429 = "Too Many Requests" — server is asking us to slow down
-                    raise RateLimitError(f"Rate limited by {url}")
+                    raise ModelRateLimitError(
+                        f"Rate limited by {url}",
+                        context={"url": url, "status": 429},
+                    )
 
                 if resp.status in self.retry.retryable_status_codes:
                     # 5xx server errors — worth retrying
-                    raise ServerError(f"HTTP {resp.status} from {url}: {body[:200]}")
+                    raise ModelServerError(
+                        f"HTTP {resp.status} from {url}: {body[:200]}",
+                        context={"url": url, "status": resp.status},
+                    )
 
                 if resp.status >= 400:
                     # Any other 4xx error is a client mistake — don't retry
-                    raise ModelClientError(f"HTTP {resp.status} from {url}: {body[:200]}")
+                    raise ModelClientError(
+                        f"HTTP {resp.status} from {url}: {body[:200]}",
+                        context={"url": url, "status": resp.status},
+                    )
 
                 # --- Parse the response body ---
                 try:
                     return json.loads(body)
                 except json.JSONDecodeError as exc:
                     raise ResponseParseError(
-                        f"Could not parse JSON from {url}: {body[:200]}"
+                        f"Could not parse JSON from {url}: {body[:200]}",
+                        context={"url": url},
                     ) from exc
 
         # --- Translate aiohttp network errors into our own exception types ---
 
         except aiohttp.ServerConnectionError as exc:
             # Server closed the connection unexpectedly
-            raise ConnectionError(f"Cannot connect to {url}: {exc}") from exc
+            raise ModelConnectionError(
+                f"Cannot connect to {url}: {exc}",
+                context={"url": url},
+            ) from exc
         except aiohttp.ClientConnectorError as exc:
             # TCP connection refused or DNS lookup failed
-            raise ConnectionError(f"Cannot connect to {url}: {exc}") from exc
+            raise ModelConnectionError(
+                f"Cannot connect to {url}: {exc}",
+                context={"url": url},
+            ) from exc
         except asyncio.TimeoutError as exc:
             # Either the connect timeout or the total request timeout fired
-            raise TimeoutError(f"Request to {url} timed out") from exc
+            raise ModelTimeoutError(
+                f"Request to {url} timed out",
+                context={"url": url},
+            ) from exc
         except aiohttp.ClientError as exc:
             # Catch-all for any other aiohttp-level error
-            raise ModelClientError(f"HTTP client error: {exc}") from exc
+            raise ModelClientError(
+                f"HTTP client error: {exc}",
+                context={"url": url},
+            ) from exc

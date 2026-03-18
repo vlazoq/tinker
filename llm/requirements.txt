@@ -1,5 +1,16 @@
-# Tinker — model_client requirements
-aiohttp>=3.9.0
+# llm/requirements.txt
+# ---------------------------------------------------------------------------
+# Direct dependencies for the LLM / model-client layer.
+#
+# These loose ranges are the CANONICAL source for this sub-package.
+# They are merged into requirements/base.in at the project level.
+#
+# For exact pinned installs, use:
+#   pip install -r ../requirements/base.txt
+# ---------------------------------------------------------------------------
 
-# Optional: improves token counting accuracy (falls back to char heuristic if absent)
-# tiktoken>=0.6.0
+aiohttp>=3.9.0      # async HTTP transport for OllamaClient
+
+# Optional: improves token-counting accuracy for context trimming.
+# Falls back to a character-heuristic (~4 chars/token) when absent.
+# tiktoken>=0.7.0

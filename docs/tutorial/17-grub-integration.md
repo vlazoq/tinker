@@ -178,9 +178,36 @@ bridge.report_result(result, tinker_task_id=original_task.tinker_task_id)
 ```
 
 Under the hood, this does two things:
-1. `UPDATE tasks SET status='completed' WHERE id=?`
+1. `UPDATE tasks SET status='complete' WHERE id=?`
+   — uses `TaskStatus.COMPLETE = "complete"` (not `"completed"`)
 2. Inserts a new task with `type='review'` and the implementation summary
-   as the description, so Tinker picks it up in its next loop
+   as the description, so Tinker picks it up in its next loop.
+   The review task id is deterministic (`f"review-{tinker_task_id}"`) so
+   `INSERT OR IGNORE` deduplicates correctly on crash-recovery.
+
+### How Tinker's micro loop reads Grub's result
+
+When Tinker picks up a `type='review'` task, its micro loop calls
+`_enrich_review_context()` which extracts the MinionResult from the task's
+`metadata["grub_task_result"]` and surfaces it as a top-level key:
+
+```python
+# In orchestrator/micro_loop.py (automatically called for review tasks)
+if task.get("type") == "review":
+    context = _enrich_review_context(task, context)
+
+# After enrichment, context["grub_implementation"] looks like:
+# {
+#     "status": "success",
+#     "score": 0.88,
+#     "files_written": ["billing/module.py"],
+#     "summary": "Billing module implemented.",
+#     "test_results": {"passed": 12, "failed": 0, ...},
+# }
+```
+
+The Architect can now directly read what Grub built — without digging through
+nested JSON — and decide whether to refine the design or accept it.
 
 ---
 
@@ -314,6 +341,33 @@ Both must point to the same file.  Check:
 - `TINKER_TASK_DB` in `.env`
 - `tinker_tasks_db` in `grub_config.json`
 They must be the same absolute path.
+
+---
+
+## Testing the Integration
+
+The integration tests live in `grub/tests/test_grub_tinker_integration.py`.
+Run them with no external services required:
+
+```bash
+python -m pytest grub/tests/test_grub_tinker_integration.py -v
+```
+
+Tests cover:
+
+| Category | What's tested |
+|----------|--------------|
+| Full loop | Fetch → Minion runs → Report → Tinker marks complete → Review task created |
+| `_enrich_review_context` | Extracts grub result from review task metadata |
+| Priority ordering | HIGH score tasks returned before LOW score tasks |
+| Failed results | Even failed Minions produce a review task for Tinker |
+| Edge cases | Missing DB, malformed metadata, idempotent report (no duplicate review tasks) |
+
+The idempotency test verifies a specific production guarantee: calling
+`report_result()` twice for the same Tinker task (e.g. after a crash and
+recovery) must not create two review tasks.  This is enforced by using a
+deterministic review-task ID (`f"review-{tinker_task_id}"`) so that SQLite's
+`INSERT OR IGNORE` silently discards the duplicate.
 
 ---
 

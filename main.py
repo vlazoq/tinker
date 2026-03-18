@@ -341,96 +341,20 @@ def _build_real_components(problem: str) -> dict:
     # prompt. Before calling the Architect, we fetch relevant past results from
     # memory and package them up with a token budget.
     #
-    # The ContextAssembler was designed with a specific memory interface
-    # (methods like get_arch_state_summary, semantic_search_session, etc.)
-    # that doesn't exactly match the real MemoryManager's API. We bridge the
-    # gap with a small _MemoryAdaptor class defined right here.
-    from context.assembler import ContextAssembler, _MemoryManagerProtocol
+    # Two adapters bridge the real backends to the ContextAssembler's protocols:
+    #   MemoryAdaptor        — maps MemoryManager → _MemoryManagerProtocol
+    #   PromptBuilderAdapter — maps PromptBuilder → _PromptBuilderProtocol
+    #
+    # Both live in context/ so they are testable and reusable; nothing is
+    # defined inline in this function any more.
+    from context.assembler            import ContextAssembler
+    from context.memory_adapter       import MemoryAdaptor
+    from context.prompt_builder_adapter import PromptBuilderAdapter
 
-    class _MemoryAdaptor(_MemoryManagerProtocol):
-        """
-        Bridges the real MemoryManager (memory/manager.py) to the interface
-        that ContextAssembler expects (_MemoryManagerProtocol).
-
-        The ContextAssembler was built with a specific set of method names
-        (get_arch_state_summary, semantic_search_session, etc.) that don't
-        exist on the real MemoryManager. Rather than changing either component,
-        we adapt between them here with a thin wrapper class.
-
-        This pattern is called the "Adapter" design pattern.
-        """
-
-        def __init__(self, mm: MemoryManager) -> None:
-            self._mm = mm  # Store a reference to the real MemoryManager
-
-        async def get_arch_state_summary(self) -> str:
-            """Return a short summary of the current architecture state."""
-            try:
-                # get_all_documents() returns stored meso/macro synthesis documents.
-                # We return the content of the most recent one ([-1] = last item).
-                docs = await self._mm.get_all_documents()
-                if not docs:
-                    return ""
-                latest = docs[-1]
-                return latest.get("content", "")[:1500]  # Truncate to avoid huge prompts
-            except Exception:
-                return ""  # Graceful degradation: return empty if anything goes wrong
-
-        async def semantic_search_session(self, query: str, top_k: int = 5):
-            """Find recent session artifacts relevant to the query."""
-            from context.assembler import MemoryItem
-            try:
-                # get_recent_artifacts() returns the most recent DuckDB artifacts.
-                # We fetch 2x more than needed to have some to filter from.
-                artifacts = await self._mm.get_recent_artifacts(limit=top_k * 2)
-                items = []
-                for a in artifacts[:top_k]:
-                    items.append(MemoryItem(
-                        id=a.id,
-                        content=a.content[:500],
-                        score=0.8,         # Fixed score — we're not doing real ranking here
-                        source="session",
-                    ))
-                return items
-            except Exception:
-                return []
-
-        async def semantic_search_archive(self, query: str, top_k: int = 5):
-            """Search the research archive (ChromaDB) for relevant notes."""
-            from context.assembler import MemoryItem
-            try:
-                # search_research() does a vector similarity search in ChromaDB.
-                notes = await self._mm.search_research(query=query, n_results=top_k)
-                return [
-                    MemoryItem(id=n.id, content=n.content[:500], score=0.75, source="archive")
-                    for n in notes
-                ]
-            except Exception:
-                return []
-
-        async def get_prior_critique(self, task_id: str):
-            """Retrieve previous Architect+Critic artifacts stored under this task."""
-            from context.assembler import MemoryItem
-            try:
-                artifacts = await self._mm.get_artifacts_by_task(task_id, limit=3)
-                return [
-                    MemoryItem(
-                        id=a.id,
-                        content=a.content[:800],
-                        score=1.0,
-                        source="critique",
-                    )
-                    for a in artifacts
-                ]
-            except Exception:
-                return []
-
-    from context.stubs import StubPromptBuilder
-
-    # Create the ContextAssembler with our adapted memory interface
+    # Create the ContextAssembler with production adapters
     context_assembler = ContextAssembler(
-        memory_manager = _MemoryAdaptor(memory_manager),
-        prompt_builder = StubPromptBuilder(),
+        memory_manager = MemoryAdaptor(memory_manager),
+        prompt_builder = PromptBuilderAdapter(),
     )
 
     # ── Agents ────────────────────────────────────────────────────────────────

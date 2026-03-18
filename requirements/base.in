@@ -1,0 +1,41 @@
+# requirements/base.in
+# ---------------------------------------------------------------------------
+# Tinker — direct production dependencies (loose version ranges).
+#
+# This is the SOURCE FILE.  Do not edit requirements/base.txt directly.
+# To regenerate the lock file run:
+#
+#   make deps          # or: pip-compile requirements/base.in -o requirements/base.txt
+#
+# The generated base.txt pins every transitive dependency to an exact
+# version so that every environment — developer laptop, CI, production —
+# runs the same code.
+# ---------------------------------------------------------------------------
+
+# ── LLM / Model Client ───────────────────────────────────────────────────────
+aiohttp>=3.9.0
+httpx>=0.27.0
+
+# ── Memory backends ──────────────────────────────────────────────────────────
+redis>=5.0.0
+duckdb>=0.10.0
+chromadb>=0.5.0
+aiosqlite>=0.20.0
+sentence-transformers>=3.0.0
+
+# ── Tools (web search / scraping / diagrams) ─────────────────────────────────
+trafilatura>=1.12.0
+playwright>=1.44.0
+anyio>=4.4.0
+graphviz>=0.20.3
+
+# ── Architecture state / validation ──────────────────────────────────────────
+pydantic>=2.0.0
+
+# ── Dashboard / TUI ──────────────────────────────────────────────────────────
+textual>=0.52.0
+rich>=13.7.0
+loguru>=0.7.0
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0

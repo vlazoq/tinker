@@ -9,64 +9,87 @@ description     = "Tinker — Autonomous Architecture Thinking Engine"
 readme          = "README.md"
 requires-python = ">=3.11"
 
+# ---------------------------------------------------------------------------
+# Dependency version strategy — two-layer pinning
+# ---------------------------------------------------------------------------
+# This file declares MINIMUM acceptable versions (>=) so that `pip install`
+# resolves a compatible set for the developer's environment.
+#
+# For reproducible production / CI installs, use the lock files instead:
+#
+#   pip install -r requirements/base.txt    # production (exact pins)
+#   pip install -r requirements/dev.txt     # development (exact pins + tools)
+#
+# To regenerate the lock files after editing any *.in source:
+#
+#   make deps          # regenerates requirements/base.txt
+#   make deps-dev      # regenerates requirements/dev.txt
+#
+# Lock files are committed to version control. Reviewers should scrutinise
+# lock-file diffs as carefully as source-code diffs.
+# ---------------------------------------------------------------------------
+
 dependencies = [
-    # ── LLM / Model Client ───────────────────────────────────────────
-    "aiohttp>=3.9.0",
-    "httpx>=0.27.0",
+    # ── LLM / Model Client ───────────────────────────────────────────────────
+    "aiohttp>=3.9.0",           # async HTTP; used by OllamaClient
+    "httpx>=0.27.0",            # sync + async HTTP; used by backup/tool layers
 
-    # ── Memory backends ──────────────────────────────────────────────
-    "redis>=5.0.0",
-    "duckdb>=0.10.0",
-    "chromadb>=0.5.0",
-    "aiosqlite>=0.20.0",
-    "sentence-transformers>=3.0.0",
+    # ── Memory backends ──────────────────────────────────────────────────────
+    "redis>=5.0.0",             # short-term working memory (async via redis.asyncio)
+    "duckdb>=0.10.0",           # session memory (in-process OLAP)
+    "chromadb>=0.5.0",          # semantic research archive (vector DB)
+    "aiosqlite>=0.20.0",        # task registry, dead-letter queue, audit log
+    "sentence-transformers>=3.0.0",  # local embeddings (MiniLM / nomic-embed)
 
-    # ── Tools (web search / scraping / diagrams) ─────────────────────
-    "trafilatura>=1.12.0",
-    "playwright>=1.44.0",
-    "anyio>=4.4.0",
-    "graphviz>=0.20.3",
+    # ── Tools (web search / scraping / diagrams) ─────────────────────────────
+    "trafilatura>=1.12.0",      # web content extraction
+    "playwright>=1.44.0",       # browser automation (run: playwright install chromium)
+    "anyio>=4.4.0",             # async compatibility shim
+    "graphviz>=0.20.3",         # .dot diagram rendering
 
-    # ── Architecture State ────────────────────────────────────────────
-    "pydantic>=2.0.0",
+    # ── Architecture State ────────────────────────────────────────────────────
+    "pydantic>=2.0.0",          # data models and validation
 
-    # ── Dashboard ────────────────────────────────────────────────────
-    "textual>=0.52.0",
-    "rich>=13.7.0",
-    "loguru>=0.7.0",
+    # ── Dashboard / TUI ───────────────────────────────────────────────────────
+    "textual>=0.52.0",          # terminal UI framework
+    "rich>=13.7.0",             # rich terminal output (pulled in by Textual)
+    "loguru>=0.7.0",            # structured logging
 
-    # ── Root ─────────────────────────────────────────────────────────
-    "python-dotenv>=1.0.0",
+    # ── Configuration ─────────────────────────────────────────────────────────
+    "python-dotenv>=1.0.0",     # .env file loader
 ]
 
 [project.optional-dependencies]
 # Install with: pip install -e ".[metrics]"
-# Enables Prometheus metrics on http://localhost:9090/metrics
+# Exposes a Prometheus /metrics endpoint on http://localhost:9090/metrics
 metrics = [
     "prometheus-client>=0.20.0",
 ]
+
+# Install with: pip install -e ".[dev]"
+# Adds all test runners, mocking libraries, and developer tooling.
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
-    "fakeredis[aioredis]>=2.23.0",
-    "textual-dev>=0.52.0",
+    "fakeredis[aioredis]>=2.23.0",  # in-process Redis mock for tests
+    "textual-dev>=0.52.0",           # Textual live-reload devtools
     "prometheus-client>=0.20.0",
+    "pip-tools>=7.0.0",              # pip-compile for lock-file regeneration
+]
+
+# Install with: pip install -e ".[enterprise]"
+# Enables all enterprise features: resilience, observability, health, security.
+# Most runtime deps are already in the base list; this group makes the intent
+# explicit and is used as a documentation / CI signal.
+enterprise = [
+    "aiosqlite>=0.20.0",   # dead letter queue, audit log, lineage tracker
+    "aiohttp>=3.9.0",      # alert webhooks (Slack, PagerDuty, custom)
+    "httpx>=0.27.0",       # backup manager HTTP operations
 ]
 
 [project.scripts]
 tinker      = "main:main"
 tinker-dash = "dashboard.__main__:main"
-
-[project.optional-dependencies.enterprise]
-# Install with: pip install -e ".[enterprise]"
-# Enables all enterprise features: resilience, observability, health, security
-# Most of these are already in the base dependencies; this group makes the
-# intent explicit and adds any extras not in the core install.
-enterprise = [
-    "aiosqlite>=0.20.0",   # dead letter queue, audit log, lineage tracker
-    "aiohttp>=3.9.0",      # alert webhooks (Slack, custom)
-    "httpx>=0.27.0",       # backup manager HTTP operations
-]
 
 [tool.setuptools.packages.find]
 where   = ["."]

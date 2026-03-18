@@ -1,16 +1,26 @@
-# Tinker Memory Manager — Dependencies
-# Install with: pip install -r requirements.txt
+# memory/requirements.txt
+# ---------------------------------------------------------------------------
+# Direct dependencies for the Memory Manager layer.
+#
+# These loose ranges are the CANONICAL source for this sub-package.
+# They are merged into requirements/base.in at the project level.
+#
+# For exact pinned installs, use:
+#   pip install -r ../requirements/base.txt          (production)
+#   pip install -r ../requirements/dev.txt           (development)
+# ---------------------------------------------------------------------------
 
-# Storage engines
-redis>=5.0.0                    # Redis client (async support via redis.asyncio)
-duckdb>=0.10.0                  # In-process OLAP DB for session memory
-chromadb>=0.5.0                 # Vector DB for semantic research archive
-aiosqlite>=0.20.0               # Async SQLite for task registry
+# ── Storage engines ─────────────────────────────────────────────────────────
+redis>=5.0.0                    # short-term working memory (async via redis.asyncio)
+duckdb>=0.10.0                  # session memory (in-process OLAP)
+chromadb>=0.5.0                 # semantic research archive (vector DB)
+aiosqlite>=0.20.0               # task registry, dead-letter queue, audit log
 
-# Embeddings
-sentence-transformers>=3.0.0    # Local embedding models (MiniLM, nomic-embed-text)
+# ── Embeddings ──────────────────────────────────────────────────────────────
+sentence-transformers>=3.0.0    # local embedding models (MiniLM, nomic-embed-text)
 
-# Test dependencies
+# ── Test dependencies ────────────────────────────────────────────────────────
+# These are included in requirements/dev.txt at the project level.
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
-fakeredis[aioredis]>=2.23.0     # In-process Redis mock for tests
+fakeredis[aioredis]>=2.23.0     # in-process Redis mock for unit tests

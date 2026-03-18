@@ -97,13 +97,11 @@ INJECTION_PATTERNS = [
 ]
 
 
-class ValidationError(ValueError):
-    """Raised when input fails validation."""
-    def __init__(self, field: str, value: Any, reason: str) -> None:
-        self.field = field
-        self.value = value
-        self.reason = reason
-        super().__init__(f"Validation failed for '{field}': {reason}")
+# ValidationError is defined in the central exceptions module (inheriting
+# from both TinkerError and ValueError for backwards compatibility) and
+# re-exported here so ``from validation.input_validator import ValidationError``
+# continues to work.
+from exceptions import ValidationError  # noqa: F401  (intentional re-export)
 
 
 # ---------------------------------------------------------------------------

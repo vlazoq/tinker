@@ -45,11 +45,14 @@ from .schema import Task, TaskStatus, TaskType, Subsystem
 
 # ── Core components ───────────────────────────────────────────────────────────
 # Each of these is a self-contained class; they collaborate through the engine.
-from .registry import TaskRegistry      # Persistent SQLite store for tasks
-from .generator import TaskGenerator    # Parses AI output → new Task objects
-from .scorer import PriorityScorer, ScorerWeights  # Computes numeric priority
-from .resolver import DependencyResolver, DependencyCycleError  # Dep tracking
-from .queue import TaskQueue            # Selects the next task to work on
+from .abstract_registry  import AbstractTaskRegistry  # Backend interface (ABC)
+from .registry           import SQLiteTaskRegistry, TaskRegistry  # SQLite store
+from .postgres_registry  import PostgresTaskRegistry  # PostgreSQL store
+from .registry_factory   import create_task_registry  # Backend factory
+from .generator          import TaskGenerator    # Parses AI output → new Tasks
+from .scorer             import PriorityScorer, ScorerWeights  # Priority score
+from .resolver           import DependencyResolver, DependencyCycleError  # Deps
+from .queue              import TaskQueue        # Selects the next task to run
 
 # ── Top-level façade ──────────────────────────────────────────────────────────
 # TaskEngine is the only thing the Orchestrator normally needs to touch.
@@ -66,8 +69,14 @@ __all__ = [
     "TaskType",       # Enum: DESIGN, RESEARCH, CRITIQUE, SYNTHESIS, …
     "Subsystem",      # Enum: which part of Tinker a task belongs to
 
+    # --- Registry backends ---------------------------------------------------
+    "AbstractTaskRegistry",   # ABC: contract every backend must implement
+    "SQLiteTaskRegistry",     # Default: single-file SQLite (zero dependencies)
+    "PostgresTaskRegistry",   # Optional: shared PostgreSQL store
+    "TaskRegistry",           # Alias for SQLiteTaskRegistry (backwards compat)
+    "create_task_registry",   # Factory: picks backend from env / argument
+
     # --- Components: the specialised workers ---------------------------------
-    "TaskRegistry",           # Read/write tasks to/from SQLite
     "TaskGenerator",          # Turn AI architect output into Task objects
     "PriorityScorer",         # Score a task → float in [0, 1]
     "ScorerWeights",          # Configuration knobs for the scorer
