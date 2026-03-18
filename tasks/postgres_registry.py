@@ -208,11 +208,22 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 )
 """
 
-_MIGRATIONS: list[tuple[int, str, list[str]]] = [
+_MIGRATIONS: list[tuple[int, str, list[str], list[str]]] = [
     (
         1,
         "Initial schema: tasks table and indexes",
+        # ── UP ────────────────────────────────────────────────────────────────
         [_CREATE_TABLE] + _CREATE_INDEXES,
+        # ── DOWN ──────────────────────────────────────────────────────────────
+        # Executed in reverse order by rollback_migration().  Drops indexes
+        # first (avoids constraint issues), then the table.
+        [
+            "DROP INDEX IF EXISTS idx_tasks_parent",
+            "DROP INDEX IF EXISTS idx_tasks_priority",
+            "DROP INDEX IF EXISTS idx_tasks_subsystem",
+            "DROP INDEX IF EXISTS idx_tasks_status",
+            "DROP TABLE IF EXISTS tasks",
+        ],
     ),
     # --------------------------------------------------------------------------
     # Future migrations go here.  Example:
@@ -220,9 +231,14 @@ _MIGRATIONS: list[tuple[int, str, list[str]]] = [
     # (
     #     2,
     #     "Add attempt_limit column to tasks",
+    #     # UP:
     #     [
     #         "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS "
     #         "attempt_limit INTEGER NOT NULL DEFAULT 5",
+    #     ],
+    #     # DOWN:
+    #     [
+    #         "ALTER TABLE tasks DROP COLUMN IF EXISTS attempt_limit",
     #     ],
     # ),
     # --------------------------------------------------------------------------
@@ -246,6 +262,10 @@ _TRANSIENT_FRAGMENTS: frozenset[str] = frozenset({
     "connection pool exhausted",
     "connection timed out",
     "remaining connection slots are reserved",
+    # Concurrency errors — safe to retry because PostgreSQL rolls back the
+    # transaction automatically and the client can simply restart it.
+    "deadlock detected",             # SQLSTATE 40P01: two txns waiting on each other
+    "could not serialize access",    # SQLSTATE 40001: serializable snapshot conflict
 })
 
 
@@ -514,7 +534,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
             applied = {row["version"] for row in cur.fetchall()}
 
         # Apply unapplied migrations in ascending version order.
-        for version, description, statements in sorted(_MIGRATIONS, key=lambda m: m[0]):
+        for version, description, statements, _down in sorted(_MIGRATIONS, key=lambda m: m[0]):
             if version in applied:
                 continue
 
@@ -556,6 +576,75 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
                 return [dict(r) for r in cur.fetchall()]
         except Exception:
             return []
+
+    def rollback_migration(self, version: int) -> None:
+        """Roll back a previously-applied migration.
+
+        Executes the DOWN SQL statements for *version* in order, then removes
+        the version from ``schema_migrations``.  This is the inverse of
+        ``_run_migrations()``.
+
+        When to use
+        -----------
+        After deploying a bad migration to production, operators can call
+        ``rollback_migration(N)`` to undo migration N without dropping the
+        entire database.  Roll back in reverse version order when undoing
+        multiple migrations::
+
+            registry.rollback_migration(3)
+            registry.rollback_migration(2)
+
+        Parameters
+        ----------
+        version : int
+            The migration version to roll back.  Must be in ``_MIGRATIONS``
+            and must already appear in ``schema_migrations``.
+
+        Raises
+        ------
+        ValueError
+            If *version* is not found in ``_MIGRATIONS``.
+        RuntimeError
+            If *version* has not been applied (not in ``schema_migrations``).
+        """
+        migration_map: dict[int, tuple[str, list[str], list[str]]] = {
+            m[0]: (m[1], m[2], m[3]) for m in _MIGRATIONS
+        }
+        if version not in migration_map:
+            raise ValueError(
+                f"Migration version {version} not found in _MIGRATIONS. "
+                f"Available: {sorted(migration_map)}"
+            )
+
+        description, _up, down_statements = migration_map[version]
+
+        # Verify the migration was actually applied.
+        with self._conn() as conn:
+            cur = self._cursor(conn)
+            cur.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = %s", (version,)
+            )
+            if cur.fetchone() is None:
+                raise RuntimeError(
+                    f"Migration {version} ('{description}') has not been applied; "
+                    "nothing to roll back."
+                )
+
+        log.warning(
+            "PostgresTaskRegistry: rolling back migration %d — %s",
+            version, description,
+        )
+        with self._conn() as conn:
+            cur = self._cursor(conn)
+            for sql in down_statements:
+                cur.execute(sql)
+            cur.execute(
+                "DELETE FROM schema_migrations WHERE version = %s", (version,)
+            )
+
+        log.info(
+            "PostgresTaskRegistry: migration %d rolled back successfully", version
+        )
 
     # ── Write ─────────────────────────────────────────────────────────────────
 
@@ -720,6 +809,64 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         if row is None:
             return None
         return Task.from_dict(_pg_row_to_dict(row))
+
+    def claim_next_pending(self) -> Task | None:
+        """
+        Atomically claim the highest-priority PENDING task.
+
+        Uses ``SELECT … FOR UPDATE SKIP LOCKED`` so that concurrent workers
+        each claim a *different* task with no blocking and no double-processing.
+
+        Why FOR UPDATE SKIP LOCKED?
+        ---------------------------
+        In a multi-worker deployment two workers calling ``pending_ordered()``
+        concurrently would both see the same top row, both read it, and then
+        both UPDATE it to ``active`` — causing the same task to be processed
+        twice.
+
+        ``FOR UPDATE SKIP LOCKED`` acquires a row-level write lock on the
+        chosen row *inside the same statement*.  Any concurrent transaction
+        that attempts to lock the same row with ``SKIP LOCKED`` will skip past
+        it and see the next-highest-priority unlocked row instead.  This gives
+        each worker an exclusive claim with a single round-trip.
+
+        The status transition (``pending`` → ``active``) and the
+        ``started_at`` timestamp are written in the same transaction as the
+        SELECT, so the claim is fully atomic.
+
+        Returns
+        -------
+        Task | None
+            The claimed task with ``status=active`` and ``started_at`` set,
+            or ``None`` if no PENDING tasks exist.
+        """
+        import datetime as _dt
+        now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+        with self._conn() as conn:
+            cur = self._cursor(conn)
+            cur.execute(
+                "SELECT * FROM tasks WHERE status = %s "
+                "ORDER BY priority_score DESC "
+                "LIMIT 1 FOR UPDATE SKIP LOCKED",
+                (TaskStatus.PENDING.value,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+
+            task = Task.from_dict(_pg_row_to_dict(row))
+            cur.execute(
+                "UPDATE tasks SET status = %s, updated_at = %s, started_at = %s "
+                "WHERE id = %s",
+                (TaskStatus.ACTIVE.value, now, now, task.id),
+            )
+
+        task.status     = TaskStatus.ACTIVE
+        task.updated_at = now
+        task.started_at = now
+        log.info("Claimed task %s → active", task.id)
+        return task
 
     # ── Operations ────────────────────────────────────────────────────────────
 

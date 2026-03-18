@@ -273,3 +273,118 @@ jobs:
             --progress-spinner=off \
             --output=columns
         continue-on-error: false
+
+  # ---------------------------------------------------------------------------
+  # Supply-chain — SBOM generation (CycloneDX)
+  # ---------------------------------------------------------------------------
+  sbom:
+    name: "SBOM (CycloneDX)"
+    runs-on: ubuntu-latest
+    # SBOM is advisory — surface it even if other jobs fail so it is always
+    # available for compliance audits.  Does NOT block merge.
+    if: always()
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies and CycloneDX tool
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements/base.txt
+          pip install cyclonedx-bom>=4.0.0
+
+      - name: Generate CycloneDX SBOM (JSON)
+        # cyclonedx-py generates a CycloneDX-format SBOM from the installed
+        # packages.  The JSON output can be uploaded to Dependency-Track,
+        # Grype, or any other SCA tool for vulnerability correlation.
+        run: |
+          cyclonedx-py environment \
+            --output-format json \
+            --output-file sbom.json
+          echo "✓ SBOM generated: $(wc -l < sbom.json) lines"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinker-sbom-${{ github.sha }}
+          path: sbom.json
+          # Keep SBOMs for 90 days for compliance / audit purposes
+          retention-days: 90
+
+  # ---------------------------------------------------------------------------
+  # Supply-chain — License compliance
+  # ---------------------------------------------------------------------------
+  license-compliance:
+    name: "License compliance"
+    runs-on: ubuntu-latest
+    # Blocks merge: GPL/AGPL/SSPL in production deps is a legal risk.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install base dependencies and pip-licenses
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements/base.txt
+          pip install pip-licenses>=4.3.0
+
+      - name: Check for disallowed licenses
+        # Blocked licenses (copyleft / commercial-restriction):
+        #   GPL-2.0, GPL-3.0  — viral copyleft: contaminates proprietary code
+        #   AGPL-3.0          — network-copyleft: applies even to SaaS use
+        #   SSPL-1.0          — MongoDB Server Side Public License
+        #   OSL-3.0           — Open Software License (very restrictive)
+        #
+        # If this check fails, the blocked package must be:
+        #   1. Removed and replaced with a permissively-licensed alternative, OR
+        #   2. Explicitly approved by legal and added to the allowlist below.
+        run: |
+          pip-licenses \
+            --format=csv \
+            --output-file /tmp/licenses.csv
+
+          echo "=== License summary ==="
+          pip-licenses --format=plain-vertical
+
+          echo ""
+          echo "=== Checking for blocked licenses ==="
+          BLOCKED="GPL-2.0,GPL-3.0,GNU General Public License v2,GNU General Public License v3,AGPL-3.0,GNU Affero General Public License v3,SSPL,OSL-3.0"
+          FOUND=0
+          for LIC in $(echo "$BLOCKED" | tr ',' '\n'); do
+            if grep -i "$LIC" /tmp/licenses.csv; then
+              echo "❌ BLOCKED LICENSE FOUND: $LIC"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "❌  Blocked license detected in production dependencies"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "Review the offending package and either:"
+            echo "  1. Replace it with a permissively-licensed alternative"
+            echo "  2. Get legal approval and add it to the allowlist"
+            exit 1
+          fi
+          echo "✓ No blocked licenses found in production dependencies"
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: tinker-licenses-${{ github.sha }}
+          path: /tmp/licenses.csv
+          retention-days: 90

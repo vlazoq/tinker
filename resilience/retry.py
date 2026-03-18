@@ -116,6 +116,22 @@ class RetryConfig:
     reraise_after_exhaustion : bool
         If ``True`` (default), re-raise the last exception after all attempts
         are exhausted.  If ``False``, return ``None`` (use with care).
+    idempotent : bool
+        If ``False``, the wrapped operation is *not* idempotent (e.g. a
+        ``save_artifact`` call that may have partially written data before
+        failing).  Non-idempotent operations are only retried on the first
+        attempt failure and never after that — i.e. ``max_attempts`` is
+        effectively capped at 2 when ``idempotent=False``.
+
+        When ``True`` (default), retries are unrestricted up to
+        ``max_attempts`` because re-running the same operation is safe.
+
+        Rule of thumb:
+          * Pure reads  (SELECT, GET)           → idempotent=True
+          * Conditional writes (INSERT OR IGNORE, upsert) → idempotent=True
+          * Append / create-only operations     → idempotent=False
+          * Anything that sends an external side-effect (email, webhook)
+                                                → idempotent=False
     """
     max_attempts:            int   = 3
     base_delay:              float = 1.0
@@ -123,6 +139,7 @@ class RetryConfig:
     jitter:                  bool  = True
     only_if_retryable:       bool  = True
     reraise_after_exhaustion: bool = True
+    idempotent:              bool  = True
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1:
@@ -212,6 +229,20 @@ async def retry_async(
                     type(exc).__name__,
                 )
                 raise
+
+            # Non-idempotent operations are unsafe to retry after the first
+            # failure: the operation may have partially committed side effects
+            # (e.g. a row was written before the connection dropped).  Allow
+            # exactly one retry attempt (attempt == 1 means the first call
+            # just failed) so transient blips at the TCP level are tolerated,
+            # but cap further retries to avoid double-processing.
+            if not config.idempotent and attempt > 1:
+                log.warning(
+                    "retry: aborting further retries for non-idempotent operation "
+                    "after attempt %d — partial side effects may exist: %s",
+                    attempt, type(exc).__name__,
+                )
+                break
 
             if attempt >= config.max_attempts:
                 # All attempts exhausted
