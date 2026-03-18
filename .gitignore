@@ -25,8 +25,8 @@ tinker_backups/
 tinker_flags.json
 tinker_webui_config.json
 
-# Orchestrator state snapshot (written at runtime)
-/tmp/tinker_orchestrator_state.json
+# Orchestrator state snapshot (written at runtime, relative to working dir)
+tinker_state.json
 
 # Environment
 .env
