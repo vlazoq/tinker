@@ -23,7 +23,7 @@ tinker/orchestrator/
 
 **Dependency injection everywhere.** The Orchestrator takes all 8 components as constructor args and never imports them. You swap stubs for real ones at the call site — zero test pollution.
 
-**Sync/async transparency.** `asyncio.coroutine_if_needed` wraps any sync component method so the orchestrator can `await` it uniformly. Your real components can be sync or async without touching orchestrator code.
+**Sync/async transparency.** `orchestrator.compat.coroutine_if_needed` wraps any sync component method so the orchestrator can `await` it uniformly. Your real components can be sync or async without touching orchestrator code. (This helper was previously monkey-patched onto `asyncio` as `asyncio.coroutine_if_needed`; it now lives in `orchestrator/compat.py` to avoid patching the standard library.)
 
 **Loop escalation is additive, not exclusive.** The meso check runs *after* a successful micro loop, on the same event-loop turn. The macro check fires *before* the micro loop, acting as a pre-emption gate. Neither blocks the other.
 
