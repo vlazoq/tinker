@@ -45,6 +45,7 @@ Build the chapters in order. Each one depends on the previous.
 | [06](./06-task-engine.md) | The Task Engine | Task database, priority scoring, task generation |
 | [06b](./06b-postgres-backend.md) | **PostgreSQL Backend** | Enterprise registry: connection pool, retry, migrations, health check, bulk writes |
 | [07](./07-context-assembler.md) | The Context Assembler | Token budgets, assembling context for the AI |
+| [07b](./07b-agent-wiring.md) | **Agent Wiring** | PromptBuilder integration, retry, `AgentRole` unification, two-phase memory |
 | [08](./08-orchestrator.md) | The Orchestrator | The three reasoning loops, state machine, shutdown |
 | [09](./09-resilience.md) | Resilience | Circuit breakers, dead letter queues, rate limiting |
 | [10](./10-stagnation.md) | Anti-Stagnation | Detecting and escaping stuck reasoning patterns |

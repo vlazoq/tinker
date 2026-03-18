@@ -12,13 +12,29 @@ not exactly match the real ``MemoryManager`` API.  Rather than coupling
 either component to the other's API, we keep them independent and bridge
 the gap here using the *Adapter* design pattern.
 
+Session memory retrieval strategy
+----------------------------------
+``semantic_search_session`` uses a two-phase strategy for relevance:
+
+1. **Task-based lookup first** — if the query contains a task-like substring
+   (e.g. starts with a UUID or matches "task:..."), call
+   ``MemoryManager.get_artifacts_by_task(query, limit=top_k)`` which returns
+   artifacts directly associated with that task.  These have score=1.0.
+
+2. **Recency fallback** — for general queries, call
+   ``MemoryManager.get_recent_artifacts(limit=top_k * 2)`` and return the
+   top-k most recent ones with score=0.8.  This is an approximation (true
+   semantic session search would require DuckDB + embeddings), but it is
+   correct and fast for Tinker's usage pattern where recent context is almost
+   always the most relevant context.
+
 Using this in production
 ------------------------
 ::
 
     from memory.manager import MemoryManager
     from context.memory_adapter import MemoryAdaptor
-    from context.assembler import ContextAssembler, AgentRole
+    from context.assembler import ContextAssembler
 
     memory_manager = MemoryManager(...)
     await memory_manager.connect()
@@ -96,19 +112,56 @@ class MemoryAdaptor(_MemoryManagerProtocol):
         self, query: str, top_k: int = 5
     ) -> list[MemoryItem]:
         """
-        Return the most recent DuckDB session artifacts relevant to *query*.
+        Return DuckDB session artifacts relevant to *query*.
 
-        Uses ``MemoryManager.get_recent_artifacts(limit=top_k * 2)`` and
-        takes the top *top_k* results.  Score is fixed at ``0.8`` because
-        this is a recency-based retrieval, not a vector similarity search.
+        Strategy (see module docstring):
+        1. If *query* looks like a task ID (UUID prefix or ``"task:..."`` prefix),
+           attempt a direct task-based lookup with score=1.0 (exact relevance).
+        2. Otherwise fall back to recency-based retrieval (most recent
+           ``top_k * 2`` artifacts, scored at 0.8).
+
+        All errors are caught and logged; returns [] on failure so the
+        orchestrator always has a usable (possibly empty) context bundle.
         """
+        import re as _re
+
         try:
+            # Phase 1: task-ID based lookup for precise artifact retrieval.
+            # UUID v4 format: 8-4-4-4-12 hex digits.
+            uuid_pattern = _re.compile(
+                r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                _re.IGNORECASE,
+            )
+            task_id: str | None = None
+            stripped = query.strip()
+            if uuid_pattern.match(stripped):
+                task_id = stripped
+            elif stripped.lower().startswith("task:"):
+                task_id = stripped[5:].strip()
+
+            if task_id:
+                try:
+                    artifacts = await self._mm.get_artifacts_by_task(task_id, limit=top_k)
+                    if artifacts:
+                        return [
+                            MemoryItem(
+                                id      = a.id,
+                                content = a.content[: self._limit],
+                                score   = 1.0,   # exact task match
+                                source  = "session",
+                            )
+                            for a in artifacts[:top_k]
+                        ]
+                except Exception:
+                    pass  # fall through to recency retrieval
+
+            # Phase 2: recency-based fallback for general queries.
             artifacts = await self._mm.get_recent_artifacts(limit=top_k * 2)
             return [
                 MemoryItem(
                     id      = a.id,
                     content = a.content[: self._limit],
-                    score   = 0.8,
+                    score   = 0.8,   # approximate relevance (recency-based)
                     source  = "session",
                 )
                 for a in artifacts[:top_k]
