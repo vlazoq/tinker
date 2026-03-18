@@ -905,11 +905,11 @@ class TestSchemaMigrations:
         assert versions == list(range(1, len(versions) + 1)), "Versions must start at 1"
 
     def test_migrations_have_non_empty_descriptions(self):
-        for version, description, statements in _MIGRATIONS:
+        for version, description, statements, _down in _MIGRATIONS:
             assert description.strip(), f"Migration {version} has empty description"
 
     def test_migrations_have_non_empty_sql_lists(self):
-        for version, description, statements in _MIGRATIONS:
+        for version, description, statements, _down in _MIGRATIONS:
             assert statements, f"Migration {version} has no SQL statements"
 
     def test_create_migrations_table_executed_on_init(self):

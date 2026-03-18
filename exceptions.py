@@ -66,6 +66,7 @@ stable when implementation files are reorganised.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 
@@ -113,12 +114,24 @@ class TinkerError(Exception):
         *,
         context: dict[str, Any] | None = None,
         retryable: bool | None = None,
+        trace_id: str | None = None,
     ) -> None:
         super().__init__(message)
         self.context: dict[str, Any] = context or {}
         # Allow per-instance override of the class-level default
         if retryable is not None:
             self.retryable = retryable  # type: ignore[assignment]
+        # Correlation ID for distributed tracing.  When an exception crosses
+        # a process boundary (e.g. a task fails on a Grub worker and the
+        # exception is re-raised on the Tinker side) the same trace_id
+        # allows log aggregators (Loki, CloudWatch, Datadog) to correlate
+        # all log lines belonging to the same top-level operation.
+        #
+        # Callers can inject a trace_id they received from an upstream request
+        # (e.g. an X-Trace-ID HTTP header).  When none is provided a random
+        # UUID is generated so every exception is always traceable.
+        self.trace_id: str = trace_id or str(uuid.uuid4())
+        self.context.setdefault("trace_id", self.trace_id)
 
     def __str__(self) -> str:
         base = super().__str__()
@@ -377,13 +390,21 @@ class ValidationError(TinkerError, ValueError):
     """
     retryable = False
 
-    def __init__(self, field: str, value: Any, reason: str) -> None:
+    def __init__(
+        self,
+        field: str,
+        value: Any,
+        reason: str,
+        *,
+        trace_id: str | None = None,
+    ) -> None:
         self.field = field
         self.value = value
         self.reason = reason
         super().__init__(
             f"Validation failed for '{field}': {reason}",
             context={"field": field, "reason": reason},
+            trace_id=trace_id,
         )
 
 

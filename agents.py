@@ -74,11 +74,33 @@ from __future__ import annotations
 import json
 import logging
 import re
+import uuid
+from contextvars import ContextVar
 from typing import Any
 
 # Standard Python logging — any message from this module will appear with
 # the prefix "tinker.agents" in the log output.
 logger = logging.getLogger("tinker.agents")
+
+# ---------------------------------------------------------------------------
+# Lightweight distributed tracing via contextvars
+# ---------------------------------------------------------------------------
+# Each agent call runs in an async context.  We store a trace_id in a
+# ContextVar so that every log message emitted from within that call
+# automatically carries the same correlation ID.  This makes it possible to
+# find all log lines for a single Architect→Critic→Synthesizer chain in any
+# log aggregator (Loki, CloudWatch, Datadog) by filtering on trace_id.
+#
+# Usage:
+#   _current_trace_id.set("abc-123")
+#   logger.info("msg [trace_id=%s]", _current_trace_id.get())
+#
+# For full OpenTelemetry support, replace this with:
+#   from opentelemetry import trace
+#   tracer = trace.get_tracer(__name__)
+#   with tracer.start_as_current_span("architect.call") as span:
+#       span.set_attribute("task.id", task_id)
+_current_trace_id: ContextVar[str] = ContextVar("trace_id", default="")
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +128,70 @@ def _get_retry_async():
     except Exception as exc:
         logger.debug("agents: resilience.retry not available — calls are not retried: %s", exc)
         return None, None
+
+
+def _get_rate_limiter_registry():
+    """Return the default RateLimiterRegistry, or None if unavailable."""
+    try:
+        from resilience.rate_limiter import build_default_rate_limiters
+        return build_default_rate_limiters()
+    except Exception as exc:
+        logger.debug("agents: rate_limiter not available — token tracking disabled: %s", exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Response schema validation
+# ---------------------------------------------------------------------------
+# Each agent defines the keys it requires in the LLM's JSON response.
+# _validate_agent_response() raises ResponseParseError when required keys are
+# missing so the retry decorator can handle the failure rather than silently
+# producing empty/garbage artifacts.
+#
+# This is deliberately a strict key-presence check rather than a full JSON
+# Schema validation.  For stronger enforcement, replace with:
+#   import jsonschema; jsonschema.validate(d, ARCHITECT_SCHEMA)
+
+_ARCHITECT_REQUIRED_KEYS: frozenset[str] = frozenset({
+    "content",
+})
+_ARCHITECT_PROMPTBUILDER_REQUIRED_KEYS: frozenset[str] = frozenset({
+    "artifact_type", "title", "design",
+})
+_CRITIC_REQUIRED_KEYS: frozenset[str] = frozenset({
+    "content", "score",
+})
+
+
+def _validate_agent_response(
+    d: dict,
+    required_keys: frozenset[str],
+    agent_name: str,
+) -> None:
+    """Raise ResponseParseError if any required key is absent from *d*.
+
+    Parameters
+    ----------
+    d             : The parsed JSON dict from the LLM.
+    required_keys : Keys that MUST be present.
+    agent_name    : Human label for error messages (e.g. "Architect").
+
+    Raises
+    ------
+    ResponseParseError
+        When one or more required keys are missing.  The exception has
+        ``retryable=False`` because a retry would likely produce the same
+        malformed response — the caller should log the issue and use the
+        fallback path instead.
+    """
+    from exceptions import ResponseParseError
+    missing = required_keys - d.keys()
+    if missing:
+        trace_id = _current_trace_id.get() or "?"
+        raise ResponseParseError(
+            f"{agent_name} response missing required keys: {sorted(missing)} "
+            f"(got keys: {sorted(d.keys())}) [trace_id={trace_id}]",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -210,10 +296,14 @@ def _parse_architect_structured(d: dict) -> tuple[str, list, list, list, list]:
     fields: design.summary, open_questions, candidate_next_tasks) AND the
     legacy schema (fields: content, knowledge_gaps, decisions, candidate_tasks).
 
+    Validates that the required keys for each schema are present and raises
+    ResponseParseError if not.
+
     Returns (content, knowledge_gaps, decisions, open_questions, candidate_tasks).
     """
     # ── PromptBuilder schema (design_proposal) ──────────────────────────────
     if d.get("artifact_type") == "design_proposal":
+        _validate_agent_response(d, _ARCHITECT_PROMPTBUILDER_REQUIRED_KEYS, "Architect(PromptBuilder)")
         design   = d.get("design", {})
         summary  = design.get("summary", "")
         # Reconstruct a readable narrative from structured fields
@@ -257,6 +347,7 @@ def _parse_architect_structured(d: dict) -> tuple[str, list, list, list, list]:
         return content, open_qs, decisions, open_qs, candidate_tasks
 
     # ── Legacy schema ────────────────────────────────────────────────────────
+    _validate_agent_response(d, _ARCHITECT_REQUIRED_KEYS, "Architect(legacy)")
     content    = d.get("content", "")
     gaps       = d.get("knowledge_gaps", [])
     decisions  = d.get("decisions", [])
@@ -508,8 +599,22 @@ class ArchitectAgent:
             'decisions'       — list of strings: design choices made
             'open_questions'  — list of strings: unresolved questions
             'candidate_tasks' — list of dicts: follow-up tasks to create
+            'trace_id'        — correlation ID for this agent call
         """
         from llm.types import AgentRole, Message, ModelRequest
+
+        # Assign a trace ID for this call.  If the task carries a trace_id
+        # (e.g. from an upstream HTTP request) propagate it; otherwise
+        # generate a fresh one.  Stored in a ContextVar so helper functions
+        # and log messages can reference it without being threaded through
+        # every call site.
+        trace_id = task.get("trace_id") or str(uuid.uuid4())
+        _current_trace_id.set(trace_id)
+        task_id = task.get("id", "?")
+
+        logger.info(
+            "ArchitectAgent.call start [task=%s trace_id=%s]", task_id, trace_id
+        )
 
         # Pull the most useful fields out of the task dict.
         # .get() with a default means we won't crash if a field is missing.
@@ -593,14 +698,38 @@ class ArchitectAgent:
         else:
             resp = await self._router.complete(req)
 
+        # Record token cost against the architect rate limiter.
+        try:
+            _rl = _get_rate_limiter_registry()
+            if _rl is not None:
+                lim = _rl.get("architect")
+                if lim is not None:
+                    lim.record_tokens(resp.total_tokens)
+        except Exception:
+            pass  # cost tracking must never crash the agent
+
         # Parse the response: try structured JSON first, fall back to regex
         if resp.structured and isinstance(resp.structured, dict):
             # Happy path: the AI returned valid JSON and the router parsed it.
             # _parse_architect_structured handles both the PromptBuilder schema
             # (artifact_type="design_proposal") and the legacy schema.
-            content, gaps, decisions, questions, candidates = (
-                _parse_architect_structured(resp.structured)
-            )
+            try:
+                content, gaps, decisions, questions, candidates = (
+                    _parse_architect_structured(resp.structured)
+                )
+            except Exception as parse_exc:
+                # Schema validation failed — fall back to raw text so the loop
+                # can make progress, but log the failure for diagnosis.
+                logger.warning(
+                    "ArchitectAgent: schema validation failed (%s) — "
+                    "falling back to raw text [trace_id=%s]",
+                    parse_exc, trace_id,
+                )
+                content    = resp.raw_text
+                gaps       = _extract_knowledge_gaps(content)
+                decisions  = []
+                questions  = []
+                candidates = _extract_candidate_tasks(content)
         else:
             # Fallback: the AI returned plain text — extract what we can.
             content    = resp.raw_text
@@ -608,6 +737,11 @@ class ArchitectAgent:
             decisions  = []
             questions  = []
             candidates = _extract_candidate_tasks(content)
+
+        logger.info(
+            "ArchitectAgent.call complete [task=%s tokens=%d trace_id=%s]",
+            task_id, resp.total_tokens, trace_id,
+        )
 
         # Return a normalised dict that the Orchestrator's micro loop expects.
         # Every field has a safe default so callers don't need to handle None.
@@ -618,6 +752,7 @@ class ArchitectAgent:
             "decisions":      decisions,
             "open_questions": questions,
             "candidate_tasks": candidates,  # TaskGenerator reads this field
+            "trace_id":       trace_id,
         }
 
 
@@ -666,8 +801,23 @@ class CriticAgent:
             'tokens_used' — token consumption for monitoring
             'score'       — float 0.0–1.0; higher is better
             'flags'       — list of specific issues to fix
+            'trace_id'    — correlation ID for this agent call
         """
         from llm.types import AgentRole, Message, ModelRequest
+
+        # Propagate trace_id from the Architect's result so all three agents
+        # in a single micro loop share the same correlation ID.
+        trace_id = (
+            architect_result.get("trace_id")
+            or task.get("trace_id")
+            or str(uuid.uuid4())
+        )
+        _current_trace_id.set(trace_id)
+        task_id = task.get("id", "?")
+
+        logger.info(
+            "CriticAgent.call start [task=%s trace_id=%s]", task_id, trace_id
+        )
 
         # Truncate the design content to avoid exceeding the model's context window.
         # 3000 chars is usually enough to convey the key ideas.
@@ -701,11 +851,32 @@ class CriticAgent:
         else:
             resp = await self._router.complete(req)
 
-        # Parse the response, with regex fallback
+        # Record token cost against the critic rate limiter.
+        try:
+            _rl = _get_rate_limiter_registry()
+            if _rl is not None:
+                lim = _rl.get("critic")
+                if lim is not None:
+                    lim.record_tokens(resp.total_tokens)
+        except Exception:
+            pass
+
+        # Parse the response, with schema validation and regex fallback
         if resp.structured and isinstance(resp.structured, dict):
-            content = resp.structured.get("content", resp.raw_text)
-            score   = float(resp.structured.get("score", 0.7))
-            flags   = resp.structured.get("flags", [])
+            try:
+                _validate_agent_response(resp.structured, _CRITIC_REQUIRED_KEYS, "Critic")
+                content = resp.structured.get("content", resp.raw_text)
+                score   = float(resp.structured.get("score", 0.7))
+                flags   = resp.structured.get("flags", [])
+            except Exception as parse_exc:
+                logger.warning(
+                    "CriticAgent: schema validation failed (%s) — "
+                    "falling back to raw text [trace_id=%s]",
+                    parse_exc, trace_id,
+                )
+                content = resp.raw_text
+                score   = _extract_score(content)
+                flags   = []
         else:
             content = resp.raw_text
             score   = _extract_score(content)
@@ -715,11 +886,17 @@ class CriticAgent:
         # outside that range (e.g. "1.2" or "-0.1").
         score = max(0.0, min(1.0, score))
 
+        logger.info(
+            "CriticAgent.call complete [task=%s score=%.2f tokens=%d trace_id=%s]",
+            task_id, score, resp.total_tokens, trace_id,
+        )
+
         return {
             "content":     content,
             "tokens_used": resp.total_tokens,
             "score":       score,
             "flags":       flags,
+            "trace_id":    trace_id,
         }
 
 
@@ -773,6 +950,13 @@ class SynthesizerAgent:
         """
         from llm.types import AgentRole, Message, ModelRequest
 
+        trace_id = kwargs.pop("trace_id", None) or str(uuid.uuid4())
+        _current_trace_id.set(trace_id)
+
+        logger.info(
+            "SynthesizerAgent.call start [level=%s trace_id=%s]", level, trace_id
+        )
+
         # Build (system, user) prompts using PromptBuilder when available.
         system_prompt, user_prompt = _build_synthesizer_prompts(level, **kwargs)
 
@@ -797,8 +981,24 @@ class SynthesizerAgent:
         else:
             resp = await self._router.complete(req)
 
+        # Record token cost against the synthesizer rate limiter.
+        try:
+            _rl = _get_rate_limiter_registry()
+            if _rl is not None:
+                lim = _rl.get("synthesizer")
+                if lim is not None:
+                    lim.record_tokens(resp.total_tokens)
+        except Exception:
+            pass
+
+        logger.info(
+            "SynthesizerAgent.call complete [level=%s tokens=%d trace_id=%s]",
+            level, resp.total_tokens, trace_id,
+        )
+
         return {
             "content":     resp.raw_text,
             "tokens_used": resp.total_tokens,
             "level":       level,
+            "trace_id":    trace_id,
         }
