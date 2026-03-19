@@ -74,6 +74,7 @@ from typing import Any
 # Base
 # ===========================================================================
 
+
 class TinkerError(Exception):
     """
     Root of the Tinker exception hierarchy.
@@ -145,6 +146,7 @@ class TinkerError(Exception):
 # LLM / Model Client
 # ===========================================================================
 
+
 class LLMError(TinkerError):
     """Base for all errors from the LLM and prompt-building subsystems."""
 
@@ -165,6 +167,7 @@ class ModelConnectionError(ModelClientError):
     Common causes: Ollama is not running, wrong base URL, firewall rules.
     This error is retryable — the server may come back up shortly.
     """
+
     retryable = True
 
 
@@ -174,6 +177,7 @@ class ModelTimeoutError(ModelClientError):
 
     Retryable — the server may be under temporary heavy load.
     """
+
     retryable = True
 
 
@@ -183,6 +187,7 @@ class ModelRateLimitError(ModelClientError):
 
     Retryable — the retry logic backs off and tries again after a delay.
     """
+
     retryable = True
 
 
@@ -192,6 +197,7 @@ class ModelServerError(ModelClientError):
 
     Retryable — the server may recover quickly.
     """
+
     retryable = True
 
 
@@ -202,6 +208,7 @@ class ResponseParseError(ModelClientError):
 
     Not retryable — retrying will produce the same malformed response.
     """
+
     retryable = False
 
 
@@ -212,6 +219,7 @@ class ModelRouterError(LLMError):
 
     Not retryable — configuration or lifecycle issue.
     """
+
     retryable = False
 
 
@@ -222,12 +230,14 @@ class PromptBuilderError(LLMError):
     Causes: missing template, conflicting variants, incomplete context dict.
     Not retryable — these are programmer / configuration errors.
     """
+
     retryable = False
 
 
 # ===========================================================================
 # Orchestrator
 # ===========================================================================
+
 
 class OrchestratorError(TinkerError):
     """Base for all errors raised by the orchestrator and its loops."""
@@ -243,6 +253,7 @@ class MicroLoopError(OrchestratorError):
 
     Retryable by default — the next iteration may succeed.
     """
+
     retryable = True
 
 
@@ -252,12 +263,14 @@ class ConfigurationError(OrchestratorError):
 
     Not retryable — operator intervention is required.
     """
+
     retryable = False
 
 
 # ===========================================================================
 # Memory
 # ===========================================================================
+
 
 class MemoryStoreError(TinkerError):
     """
@@ -266,12 +279,14 @@ class MemoryStoreError(TinkerError):
     Retryable by default — storage backends often recover from transient
     connection or lock errors.
     """
+
     retryable = True
 
 
 # ===========================================================================
 # Tasks
 # ===========================================================================
+
 
 class TaskError(TinkerError):
     """Base for task management errors."""
@@ -285,12 +300,14 @@ class DependencyCycleError(TaskError):
     cannot be fully ordered.  Not retryable — the cycle must be resolved
     in the task data.
     """
+
     retryable = False
 
 
 # ===========================================================================
 # Resilience
 # ===========================================================================
+
 
 class ResilienceError(TinkerError):
     """Base for resilience-layer errors (circuit breakers, rate limiters, …)."""
@@ -308,10 +325,12 @@ class CircuitBreakerOpenError(ResilienceError):
 
     Retryable — but only after the recovery window has elapsed.
     """
+
     retryable = True
 
     def __init__(self, name: str, recovery_at: float) -> None:
         import time
+
         self.name = name
         self.recovery_at = recovery_at
         remaining = max(0.0, recovery_at - time.monotonic())
@@ -326,6 +345,7 @@ class CircuitBreakerOpenError(ResilienceError):
 # Tool Layer
 # ===========================================================================
 
+
 class ToolError(TinkerError):
     """
     Base for errors raised by the Tool Layer (web search, scraping, diagrams,
@@ -334,17 +354,20 @@ class ToolError(TinkerError):
     Retryable by default — many tool failures (network, process timeout) are
     transient.
     """
+
     retryable = True
 
 
 class ToolNotFoundError(ToolError):
     """A tool with the requested name is not registered."""
+
     retryable = False
 
 
 # ===========================================================================
 # Context Assembly
 # ===========================================================================
+
 
 class ContextError(TinkerError):
     """
@@ -353,6 +376,7 @@ class ContextError(TinkerError):
     Not retryable — context assembly failures indicate a data or
     configuration problem that must be resolved.
     """
+
     retryable = False
 
 
@@ -360,17 +384,20 @@ class ContextError(TinkerError):
 # Architecture State
 # ===========================================================================
 
+
 class ArchitectureError(TinkerError):
     """
     The Architecture Manager encountered an invalid state transition,
     missing snapshot, or diagram render failure.
     """
+
     retryable = False
 
 
 # ===========================================================================
 # Validation
 # ===========================================================================
+
 
 class ValidationError(TinkerError, ValueError):
     """
@@ -388,6 +415,7 @@ class ValidationError(TinkerError, ValueError):
     value  : Any  — the offending value (truncated in __str__ if large)
     reason : str  — human-readable explanation of why validation failed
     """
+
     retryable = False
 
     def __init__(
@@ -412,6 +440,7 @@ class ValidationError(TinkerError, ValueError):
 # Experiments / A/B Testing
 # ===========================================================================
 
+
 class ExperimentError(TinkerError):
     """
     An A/B experiment is misconfigured or referenced by a name that does not
@@ -419,6 +448,7 @@ class ExperimentError(TinkerError):
 
     Not retryable — experiment configuration errors require operator action.
     """
+
     retryable = False
 
 

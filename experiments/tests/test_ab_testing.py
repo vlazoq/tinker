@@ -5,11 +5,13 @@ Tests for experiments/ab_testing.py
 Verifies experiment creation, deterministic assignment, outcome recording,
 and statistical analysis.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from experiments.ab_testing import ABTestingFramework, Experiment
+from experiments.ab_testing import ABTestingFramework
+from exceptions import ExperimentError
 
 
 @pytest.fixture
@@ -29,11 +31,11 @@ class TestExperimentCreation:
 
     def test_duplicate_name_raises(self, ab):
         ab.create_experiment("dup", {"a": 1, "b": 2})
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(ExperimentError):
             ab.create_experiment("dup", {"a": 1, "b": 2})
 
     def test_single_variant_raises(self, ab):
-        with pytest.raises(ValueError, match="at least 2"):
+        with pytest.raises(ExperimentError, match="at least 2"):
             ab.create_experiment("single", {"only_one": 1})
 
 
@@ -42,7 +44,7 @@ class TestVariantAssignment:
         ab.create_experiment("det", {"A": 1, "B": 2})
         v1, _ = ab.get_variant("det", "task-123")
         v2, _ = ab.get_variant("det", "task-123")
-        assert v1 == v2   # same unit always gets same variant
+        assert v1 == v2  # same unit always gets same variant
 
     def test_different_units_may_differ(self, ab):
         ab.create_experiment("diff", {"A": 1, "B": 2})
@@ -61,7 +63,7 @@ class TestVariantAssignment:
         assert val == 0.7
 
     def test_unknown_experiment_raises(self, ab):
-        with pytest.raises(KeyError):
+        with pytest.raises(ExperimentError):
             ab.get_variant("nope", "unit-1")
 
 
@@ -100,7 +102,7 @@ class TestAnalysis:
         assert report["significant"] is True
 
     def test_analyse_unknown_raises(self, ab):
-        with pytest.raises(KeyError):
+        with pytest.raises(ExperimentError):
             ab.analyse("nope")
 
 

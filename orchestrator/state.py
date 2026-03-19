@@ -57,10 +57,12 @@ You'll notice two kinds of timestamps here:
 We use monotonic for all internal timing and convert to wall-clock only when
 producing output for human consumption in ``to_dict()``.
 """
+
 from __future__ import annotations
 
 import json
 import time
+
 # ``asdict`` converts a dataclass instance into a plain Python dict, which
 # we need before we can call ``json.dumps()``.
 from dataclasses import dataclass, field, asdict
@@ -83,6 +85,7 @@ class LoopLevel(str, Enum):
     ``LoopLevel.MICRO == "micro"`` is True, so the value serialises to plain
     JSON without any special handling.
     """
+
     MICRO = "micro"
     MESO = "meso"
     MACRO = "macro"
@@ -99,6 +102,7 @@ class LoopStatus(str, Enum):
     SHUTDOWN — the orchestrator is shutting down cleanly (used on the top-level
                OrchestratorState, not on individual loop records)
     """
+
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
@@ -134,6 +138,7 @@ class MicroLoopRecord:
                          fill knowledge gaps the Architect flagged.
     error              : The error message if status == FAILED.
     """
+
     # The sequential number of this micro loop since the orchestrator started.
     iteration: int
     # Unique identifier for the task that was processed.
@@ -200,6 +205,7 @@ class MesoLoopRecord:
                            memory on success.
     error                : Error message if status == FAILED.
     """
+
     subsystem: str
     # The micro-loop iteration count at the moment this meso run was triggered.
     trigger_iteration: int
@@ -236,6 +242,7 @@ class MacroLoopRecord:
                         the architecture state manager.  None on failure.
     error             : Error message if status == FAILED.
     """
+
     # Sequential version number for this architectural snapshot (1-based).
     snapshot_version: int
     # The total micro-loop count when this snapshot was triggered.
@@ -461,7 +468,9 @@ class OrchestratorState:
             # ``started_at`` is a monotonic value; convert it to a wall-clock
             # Unix timestamp by finding how far it is from our reference point.
             if "started_at" in d:
-                d["started_at_wall"] = self.wall_start + (d["started_at"] - self.started_at)
+                d["started_at_wall"] = self.wall_start + (
+                    d["started_at"] - self.started_at
+                )
             return d
 
         return {
@@ -515,7 +524,9 @@ class OrchestratorState:
         """
         # Imported here (not at the top) to keep the import visible next to
         # the code that uses it, which aids readability in a long file.
-        import os, tempfile
+        import os
+        import tempfile
+
         # Serialise the state to a JSON string with pretty-printing.
         data = json.dumps(self.to_dict(), indent=2)
         # We must create the temp file in the *same directory* as the target

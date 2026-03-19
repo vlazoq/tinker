@@ -55,7 +55,7 @@ from pathlib import Path
 from typing import Generator
 
 from .abstract_registry import AbstractTaskRegistry
-from .schema import Task, TaskStatus, TaskType, Subsystem
+from .schema import Task, TaskStatus, Subsystem
 
 log = logging.getLogger(__name__)
 
@@ -111,18 +111,36 @@ CREATE INDEX IF NOT EXISTS idx_tasks_parent    ON tasks(parent_id);
 # The list of column names in the same order they appear in the table.
 # Used to build parameterised INSERT/SELECT SQL without typos.
 _COLUMNS = [
-    "id", "parent_id", "title", "description", "type", "subsystem",
-    "status", "dependencies", "outputs", "confidence_gap",
-    "staleness_hours", "dependency_depth", "last_subsystem_work_hours",
-    "priority_score", "tags", "metadata", "is_exploration",
-    "created_at", "updated_at", "started_at", "completed_at",
-    "critique_notes", "attempt_count",
+    "id",
+    "parent_id",
+    "title",
+    "description",
+    "type",
+    "subsystem",
+    "status",
+    "dependencies",
+    "outputs",
+    "confidence_gap",
+    "staleness_hours",
+    "dependency_depth",
+    "last_subsystem_work_hours",
+    "priority_score",
+    "tags",
+    "metadata",
+    "is_exploration",
+    "created_at",
+    "updated_at",
+    "started_at",
+    "completed_at",
+    "critique_notes",
+    "attempt_count",
 ]
 
 
 # =============================================================================
 # Row conversion helper
 # =============================================================================
+
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
     """Convert a raw SQLite row to a plain Python dictionary.
@@ -143,6 +161,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 # =============================================================================
 # TaskRegistry class
 # =============================================================================
+
 
 class SQLiteTaskRegistry(AbstractTaskRegistry):
     """
@@ -223,10 +242,10 @@ class SQLiteTaskRegistry(AbstractTaskRegistry):
         """
         try:
             yield self._conn
-            self._conn.commit()   # All went well — make the changes permanent
+            self._conn.commit()  # All went well — make the changes permanent
         except Exception:
-            self._conn.rollback() # Something broke — undo all changes in this tx
-            raise                 # Re-raise so the caller knows something went wrong
+            self._conn.rollback()  # Something broke — undo all changes in this tx
+            raise  # Re-raise so the caller knows something went wrong
 
     # =========================================================================
     # Serialisation helper
@@ -432,7 +451,7 @@ class SQLiteTaskRegistry(AbstractTaskRegistry):
         # for every row (the ``?`` placeholders are re-bound per row).
         placeholders = ", ".join(f":{c}" for c in _COLUMNS)
         cols = ", ".join(_COLUMNS)
-        sql  = f"INSERT OR REPLACE INTO tasks ({cols}) VALUES ({placeholders})"
+        sql = f"INSERT OR REPLACE INTO tasks ({cols}) VALUES ({placeholders})"
 
         rows = [self._task_to_row(t) for t in tasks]
         with self._tx() as conn:

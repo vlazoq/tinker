@@ -56,6 +56,7 @@ from typing import Any
 # raised when someone actually tries to make a request, not at import time.
 try:
     import aiohttp
+
     _AIOHTTP_AVAILABLE = True
 except ImportError:  # pragma: no cover
     # ``pragma: no cover`` tells the test-coverage tool to ignore this branch
@@ -82,10 +83,10 @@ from exceptions import (
 # Backwards-compatibility aliases: older code that did
 #   from llm.client import ConnectionError, TimeoutError, RateLimitError, ServerError
 # still works — these names are intentional re-exports, NOT new definitions.
-ConnectionError  = ModelConnectionError   # noqa: A001  (intentional shadowing alias)
-TimeoutError     = ModelTimeoutError      # noqa: A001
-RateLimitError   = ModelRateLimitError
-ServerError      = ModelServerError
+ConnectionError = ModelConnectionError  # noqa: A001  (intentional shadowing alias)
+TimeoutError = ModelTimeoutError  # noqa: A001
+RateLimitError = ModelRateLimitError
+ServerError = ModelServerError
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ logger = logging.getLogger(__name__)
 # the LLM client works even when the resilience package is not installed.
 try:
     from resilience.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+
     _CIRCUIT_BREAKER_AVAILABLE = True
 except ImportError:
     CircuitBreaker = None  # type: ignore[assignment,misc]
@@ -103,6 +105,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Low-level client
 # ---------------------------------------------------------------------------
+
 
 class OllamaClient:
     """
@@ -157,9 +160,9 @@ class OllamaClient:
                     circuit_breaker=registry.get("ollama_server"),
                 )
         """
-        self.config  = config
+        self.config = config
         # Use provided retry config, or fall back to sensible defaults
-        self.retry   = retry or RetryConfig()
+        self.retry = retry or RetryConfig()
         # Optional circuit breaker — None means "no protection" (legacy mode)
         self._circuit_breaker = circuit_breaker
         # The aiohttp session is created lazily on first use (see _get_session)
@@ -184,9 +187,9 @@ class OllamaClient:
         if self._session is None or self._session.closed:
             # limit=10: allow at most 10 simultaneous TCP connections to this host
             connector = aiohttp.TCPConnector(limit=10)
-            timeout   = aiohttp.ClientTimeout(
-                total=self.config.request_timeout,   # entire request must finish in N seconds
-                connect=self.config.connect_timeout, # just the TCP handshake
+            timeout = aiohttp.ClientTimeout(
+                total=self.config.request_timeout,  # entire request must finish in N seconds
+                connect=self.config.connect_timeout,  # just the TCP handshake
             )
             self._session = aiohttp.ClientSession(
                 connector=connector,
@@ -278,17 +281,19 @@ class OllamaClient:
         ModelClientError (or a subclass) if all retry attempts fail.
         """
         # Fall back to config defaults if caller didn't specify these
-        model      = model or self.config.model
+        model = model or self.config.model
         max_tokens = max_tokens or self.config.max_output_tokens
-        url        = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
+        url = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
 
         # Build the request body in the OpenAI chat-completions format
         payload: dict[str, Any] = {
-            "model":       model,
-            "messages":    [m.to_dict() for m in messages],  # list of {"role":…,"content":…}
+            "model": model,
+            "messages": [
+                m.to_dict() for m in messages
+            ],  # list of {"role":…,"content":…}
             "temperature": temperature,
-            "max_tokens":  max_tokens,
-            "stream":      stream,
+            "max_tokens": max_tokens,
+            "stream": stream,
         }
 
         # ── Circuit breaker fast-fail ────────────────────────────────────────
@@ -302,9 +307,7 @@ class OllamaClient:
             # breaker counts the whole logical operation as one failure, not
             # each individual retry attempt.  This avoids nuking the breaker
             # on expected transient errors that the retry logic handles fine.
-            return await self._circuit_breaker.call(
-                self._chat_inner, url, payload
-            )
+            return await self._circuit_breaker.call(self._chat_inner, url, payload)
 
         return await self._chat_inner(url, payload)
 
@@ -343,9 +346,12 @@ class OllamaClient:
                     break  # no more retries — fall through to raise
                 logger.warning(
                     "Retryable error on attempt %d/%d: %s — waiting %.1fs",
-                    attempt, self.retry.max_attempts, exc, delay,
+                    attempt,
+                    self.retry.max_attempts,
+                    exc,
+                    delay,
                 )
-                await asyncio.sleep(delay)   # pause before retrying
+                await asyncio.sleep(delay)  # pause before retrying
                 # Exponential back-off: double the delay, but cap at max_delay
                 delay = min(delay * self.retry.backoff_factor, self.retry.max_delay)
             except (ModelConnectionError, ModelTimeoutError) as exc:
@@ -355,7 +361,10 @@ class OllamaClient:
                     break
                 logger.warning(
                     "Connection/timeout error on attempt %d/%d: %s — waiting %.1fs",
-                    attempt, self.retry.max_attempts, exc, delay,
+                    attempt,
+                    self.retry.max_attempts,
+                    exc,
+                    delay,
                 )
                 await asyncio.sleep(delay)
                 delay = min(delay * self.retry.backoff_factor, self.retry.max_delay)
@@ -393,7 +402,7 @@ class OllamaClient:
         ModelConnectionError : TCP connection failed
         ModelTimeoutError    : Request timed out
         """
-        t0 = time.monotonic()   # record start time for elapsed logging
+        t0 = time.monotonic()  # record start time for elapsed logging
         session = await self._get_session()
         try:
             # ``data=json.dumps(payload)`` manually serialises to JSON string
@@ -401,10 +410,13 @@ class OllamaClient:
             # sets Content-Type automatically, but we already set it in headers.
             async with session.post(url, data=json.dumps(payload)) as resp:
                 elapsed = time.monotonic() - t0
-                body    = await resp.text()   # read the full response body as a string
+                body = await resp.text()  # read the full response body as a string
                 logger.debug(
                     "POST %s  status=%d  attempt=%d  elapsed=%.2fs",
-                    url, resp.status, attempt, elapsed,
+                    url,
+                    resp.status,
+                    attempt,
+                    elapsed,
                 )
 
                 # --- Map HTTP status codes to our exception hierarchy ---

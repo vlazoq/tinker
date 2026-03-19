@@ -19,14 +19,14 @@ Usage:
 """
 
 import json
-import textwrap
 import uuid
 from typing import Any
 
 from .templates import TEMPLATE_REGISTRY, PromptTemplate, Role, LoopLevel
 from .variants import (
-    VARIANT_REGISTRY, VariantKey,
-    validate_variant_combination, get_variant
+    VariantKey,
+    validate_variant_combination,
+    get_variant,
 )
 
 
@@ -50,20 +50,62 @@ class PromptBuilder:
 
     # Required context keys per (role, loop_level) combination
     REQUIRED_CONTEXT: dict[str, list[str]] = {
-        "architect.micro":   ["architecture_state", "task_description", "constraints", "context"],
-        "architect.meso":    ["micro_artifacts_json", "architecture_state", "synthesis_directive", "constraints"],
-        "architect.macro":   ["prior_version", "prior_architecture", "meso_artifacts_json",
-                              "evolution_directive", "constraints", "research_notes"],
-        "critic.micro":      ["target_artifact_json", "architecture_state", "focus_areas"],
-        "critic.meso":       ["target_artifact_json", "source_micro_artifacts_json",
-                              "architecture_state", "focus_areas"],
-        "critic.macro":      ["target_artifact_json", "prior_architecture",
-                              "accumulated_critiques", "focus_areas"],
-        "researcher.micro":  ["research_question", "tool_results", "architecture_context"],
-        "researcher.meso":   ["research_question", "tool_results", "architecture_context"],
-        "synthesizer.meso":  ["source_artifacts_json", "prior_meso_synthesis", "synthesis_directive"],
-        "synthesizer.macro": ["meso_syntheses_json", "macro_architect_json", "macro_critic_json",
-                              "prior_version", "prior_canonical_json", "research_notes_json"],
+        "architect.micro": [
+            "architecture_state",
+            "task_description",
+            "constraints",
+            "context",
+        ],
+        "architect.meso": [
+            "micro_artifacts_json",
+            "architecture_state",
+            "synthesis_directive",
+            "constraints",
+        ],
+        "architect.macro": [
+            "prior_version",
+            "prior_architecture",
+            "meso_artifacts_json",
+            "evolution_directive",
+            "constraints",
+            "research_notes",
+        ],
+        "critic.micro": ["target_artifact_json", "architecture_state", "focus_areas"],
+        "critic.meso": [
+            "target_artifact_json",
+            "source_micro_artifacts_json",
+            "architecture_state",
+            "focus_areas",
+        ],
+        "critic.macro": [
+            "target_artifact_json",
+            "prior_architecture",
+            "accumulated_critiques",
+            "focus_areas",
+        ],
+        "researcher.micro": [
+            "research_question",
+            "tool_results",
+            "architecture_context",
+        ],
+        "researcher.meso": [
+            "research_question",
+            "tool_results",
+            "architecture_context",
+        ],
+        "synthesizer.meso": [
+            "source_artifacts_json",
+            "prior_meso_synthesis",
+            "synthesis_directive",
+        ],
+        "synthesizer.macro": [
+            "meso_syntheses_json",
+            "macro_architect_json",
+            "macro_critic_json",
+            "prior_version",
+            "prior_canonical_json",
+            "research_notes_json",
+        ],
     }
 
     def __init__(self, add_build_metadata: bool = True):
@@ -131,7 +173,8 @@ class PromptBuilder:
         conflicts = validate_variant_combination(variants)
         if conflicts:
             raise PromptBuilderError(
-                "Variant conflicts detected:\n" + "\n".join(f"  - {c}" for c in conflicts)
+                "Variant conflicts detected:\n"
+                + "\n".join(f"  - {c}" for c in conflicts)
             )
         # Check applicability
         for vk in variants:
@@ -227,9 +270,9 @@ class PromptBuilder:
             loop_level="micro",
             context={
                 "architecture_state": architecture_state,
-                "task_description":   task_description,
-                "constraints":        constraints,
-                "context":            context,
+                "task_description": task_description,
+                "constraints": constraints,
+                "context": context,
             },
             variants=variants,
         )
@@ -249,8 +292,8 @@ class PromptBuilder:
             loop_level="micro",
             context={
                 "target_artifact_json": json.dumps(target_artifact, indent=2),
-                "architecture_state":   architecture_state,
-                "focus_areas":          focus_areas,
+                "architecture_state": architecture_state,
+                "focus_areas": focus_areas,
             },
             variants=variants,
         )
@@ -268,8 +311,8 @@ class PromptBuilder:
             role="researcher",
             loop_level=loop_level,
             context={
-                "research_question":    research_question,
-                "tool_results":         tool_results,
+                "research_question": research_question,
+                "tool_results": tool_results,
                 "architecture_context": architecture_context,
             },
         )
@@ -286,9 +329,9 @@ class PromptBuilder:
             role="synthesizer",
             loop_level="meso",
             context={
-                "source_artifacts_json":  json.dumps(source_artifacts, indent=2),
-                "synthesis_directive":    synthesis_directive,
-                "prior_meso_synthesis":   prior_meso_synthesis,
+                "source_artifacts_json": json.dumps(source_artifacts, indent=2),
+                "synthesis_directive": synthesis_directive,
+                "prior_meso_synthesis": prior_meso_synthesis,
             },
         )
 
@@ -296,6 +339,7 @@ class PromptBuilder:
 # ---------------------------------------------------------------------------
 # Token estimation (rough — for observability/trimming)
 # ---------------------------------------------------------------------------
+
 
 def estimate_tokens(text: str) -> int:
     """Rough token estimate: ~4 chars per token (GPT/Qwen approximation)."""
@@ -307,9 +351,9 @@ def build_context_summary(system: str, user: str) -> dict[str, int]:
     st = estimate_tokens(system)
     ut = estimate_tokens(user)
     return {
-        "system_tokens":  st,
-        "user_tokens":    ut,
-        "total_tokens":   st + ut,
-        "system_chars":   len(system),
-        "user_chars":     len(user),
+        "system_tokens": st,
+        "user_tokens": ut,
+        "total_tokens": st + ut,
+        "system_chars": len(system),
+        "user_chars": len(user),
     }

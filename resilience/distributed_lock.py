@@ -90,7 +90,7 @@ class DistributedLock:
     ) -> None:
         self._redis_url = redis_url
         self._key_prefix = key_prefix
-        self._client = None      # Lazy Redis client
+        self._client = None  # Lazy Redis client
         self._available: Optional[bool] = None  # None = unknown, True/False = tested
 
     # ------------------------------------------------------------------
@@ -99,7 +99,11 @@ class DistributedLock:
 
     @asynccontextmanager
     async def acquire(
-        self, resource: str, ttl: int = 30, wait: bool = False, wait_timeout: float = 10.0
+        self,
+        resource: str,
+        ttl: int = 30,
+        wait: bool = False,
+        wait_timeout: float = 10.0,
     ) -> AsyncIterator[bool]:
         """
         Async context manager that acquires ``resource`` and yields True/False.
@@ -175,11 +179,13 @@ class DistributedLock:
         client = await self._get_client()
         if client is None:
             # Redis unavailable — return a dummy token (advisory-only mode)
-            logger.debug("DistributedLock: Redis unavailable — using advisory-only mode")
+            logger.debug(
+                "DistributedLock: Redis unavailable — using advisory-only mode"
+            )
             return f"advisory:{secrets.token_hex(8)}"
 
         key = self._key_prefix + resource
-        token = secrets.token_hex(16)   # 32-char random hex — hard to guess
+        token = secrets.token_hex(16)  # 32-char random hex — hard to guess
 
         try:
             # SET key token NX EX ttl
@@ -193,7 +199,9 @@ class DistributedLock:
                 logger.debug("Lock '%s' already held — skipping", resource)
                 return None
         except Exception as exc:
-            logger.warning("DistributedLock.try_lock failed for '%s': %s", resource, exc)
+            logger.warning(
+                "DistributedLock.try_lock failed for '%s': %s", resource, exc
+            )
             # On Redis error, fall through (advisory mode)
             return f"advisory:{secrets.token_hex(8)}"
 
@@ -215,11 +223,11 @@ class DistributedLock:
         False : Lock had already expired or token didn't match (no-op).
         """
         if token.startswith("advisory:"):
-            return True   # Advisory mode — nothing to release
+            return True  # Advisory mode — nothing to release
 
         client = await self._get_client()
         if client is None:
-            return True   # Nothing to release
+            return True  # Nothing to release
 
         key = self._key_prefix + resource
         # Lua script: only delete if the stored value matches our token.
@@ -237,7 +245,9 @@ class DistributedLock:
                 logger.debug("Released lock '%s'", resource)
                 return True
             else:
-                logger.debug("Lock '%s' had already expired or token mismatch", resource)
+                logger.debug(
+                    "Lock '%s' had already expired or token mismatch", resource
+                )
                 return False
         except Exception as exc:
             logger.warning("DistributedLock.unlock failed for '%s': %s", resource, exc)
@@ -335,6 +345,7 @@ class DistributedLock:
         # Try to connect
         try:
             import redis.asyncio as aioredis  # type: ignore
+
             client = aioredis.from_url(
                 self._redis_url,
                 decode_responses=True,
@@ -348,12 +359,16 @@ class DistributedLock:
             return self._client
         except ImportError:
             if self._available is None:
-                logger.info("DistributedLock: redis package not installed — advisory-only mode")
+                logger.info(
+                    "DistributedLock: redis package not installed — advisory-only mode"
+                )
             self._available = False
             return None
         except Exception as exc:
             if self._available is not False:
-                logger.warning("DistributedLock: Redis unavailable (%s) — advisory-only mode", exc)
+                logger.warning(
+                    "DistributedLock: Redis unavailable (%s) — advisory-only mode", exc
+                )
             self._available = False
             return None
 

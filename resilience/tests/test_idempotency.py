@@ -5,9 +5,9 @@ Tests for resilience/idempotency.py
 Verifies SHA-256 key generation, in-memory cache set/get/exists/invalidate,
 and TTL expiry behaviour.
 """
+
 from __future__ import annotations
 
-import asyncio
 import pytest
 
 from resilience.idempotency import IdempotencyCache, idempotency_key
@@ -32,8 +32,11 @@ class TestIdempotencyKey:
     def test_key_is_hex_string(self):
         key = idempotency_key("op", x=1)
         assert isinstance(key, str)
-        # SHA-256 produces 64 hex chars (we may use a prefix)
-        int(key[:16], 16)  # should be valid hex
+        # Format: "<operation>:<16 hex chars>"
+        assert ":" in key
+        prefix, hex_part = key.split(":", 1)
+        assert prefix == "op"
+        int(hex_part[:16], 16)  # hex part should be valid hex
 
 
 class TestIdempotencyCache:

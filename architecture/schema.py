@@ -66,7 +66,7 @@ won't work with those unions on 3.9.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict, fields
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
@@ -83,6 +83,7 @@ from uuid import uuid4
 # The `(str, Enum)` pattern means the enum values also behave like strings,
 # so they serialise naturally to/from JSON.
 
+
 class ConfidenceTier(str, Enum):
     """
     Human-readable buckets for confidence scores.
@@ -95,10 +96,11 @@ class ConfidenceTier(str, Enum):
     CONFIDENT    — Solidly supported by multiple observations.
     ESTABLISHED  — Well-proven; extremely unlikely to change.
     """
-    SPECULATIVE = "speculative"   # 0.00–0.39
-    TENTATIVE   = "tentative"     # 0.40–0.64
-    CONFIDENT   = "confident"     # 0.65–0.84
-    ESTABLISHED = "established"   # 0.85–1.00
+
+    SPECULATIVE = "speculative"  # 0.00–0.39
+    TENTATIVE = "tentative"  # 0.40–0.64
+    CONFIDENT = "confident"  # 0.65–0.84
+    ESTABLISHED = "established"  # 0.85–1.00
 
 
 class RelationshipKind(str, Enum):
@@ -115,12 +117,13 @@ class RelationshipKind(str, Enum):
     DEPENDS_ON   — A needs B to exist/run but the exact interaction is unclear.
     OWNS         — A is responsible for / contains B.
     """
-    CALLS        = "calls"
+
+    CALLS = "calls"
     PUBLISHES_TO = "publishes_to"
-    READS_FROM   = "reads_from"
-    WRITES_TO    = "writes_to"
-    DEPENDS_ON   = "depends_on"
-    OWNS         = "owns"
+    READS_FROM = "reads_from"
+    WRITES_TO = "writes_to"
+    DEPENDS_ON = "depends_on"
+    OWNS = "owns"
 
 
 class DecisionStatus(str, Enum):
@@ -134,15 +137,17 @@ class DecisionStatus(str, Enum):
     Tracking status lets us distinguish "we definitely chose this" from
     "we're still thinking about it".
     """
-    PROPOSED  = "proposed"
-    ACCEPTED  = "accepted"
-    REJECTED  = "rejected"
+
+    PROPOSED = "proposed"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
     REVISITED = "revisited"
 
 
 # ──────────────────────────────────────────────
 # Confidence
 # ──────────────────────────────────────────────
+
 
 @dataclass
 class ConfidenceScore:
@@ -171,13 +176,16 @@ class ConfidenceScore:
     reach 0.75 (confident).  If the AI then starts expressing doubt, the
     score will slowly drift back down.
     """
-    value: float = 0.5           # default to "uncertain" — not yes, not no
-    evidence_count: int = 0      # starts at zero; goes up every time absorb() is called
+
+    value: float = 0.5  # default to "uncertain" — not yes, not no
+    evidence_count: int = 0  # starts at zero; goes up every time absorb() is called
     last_updated: str = field(
         # auto-fill with the current UTC time when the object is created
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
-    notes: list[str] = field(default_factory=list)  # recent commentary on why confidence changed
+    notes: list[str] = field(
+        default_factory=list
+    )  # recent commentary on why confidence changed
 
     def __post_init__(self):
         # Clamp value to [0, 1] immediately after construction.
@@ -240,7 +248,7 @@ class ConfidenceScore:
             value=blended,
             evidence_count=self.evidence_count + 1,
             last_updated=datetime.now(timezone.utc).isoformat(),
-            notes=notes[-10:],   # keep only the 10 most recent notes to save space
+            notes=notes[-10:],  # keep only the 10 most recent notes to save space
         )
 
 
@@ -251,6 +259,7 @@ class ConfidenceScore:
 # architecture document.  They're kept separate so you can work with each
 # type independently (e.g. "give me all Components" without caring about
 # DesignDecisions).
+
 
 @dataclass
 class Component:
@@ -279,16 +288,21 @@ class Component:
     last_updated_loop : The most recent loop that modified this component.
     metadata          : Catch-all dict for any extra information.
     """
+
     name: str
     # str(uuid4())[:8] generates a short random ID like "a3f9c1b2"
     # We only use 8 chars because full UUIDs are visually noisy in diffs
     id: str = field(default_factory=lambda: str(uuid4())[:8])
     description: str = ""
-    responsibilities: list[str] = field(default_factory=list)  # grows as new responsibilities are discovered
-    subsystem: str | None = None     # None if we haven't grouped it yet
-    confidence: ConfidenceScore = field(default_factory=ConfidenceScore)  # starts at 0.5 (uncertain)
+    responsibilities: list[str] = field(
+        default_factory=list
+    )  # grows as new responsibilities are discovered
+    subsystem: str | None = None  # None if we haven't grouped it yet
+    confidence: ConfidenceScore = field(
+        default_factory=ConfidenceScore
+    )  # starts at 0.5 (uncertain)
     tags: list[str] = field(default_factory=list)
-    first_seen_loop: int = 0         # 0 means "initialised before any loop ran"
+    first_seen_loop: int = 0  # 0 means "initialised before any loop ran"
     last_updated_loop: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -315,12 +329,13 @@ class Relationship:
     first_seen_loop   : Loop where this link was first identified.
     last_updated_loop : Loop where this link was most recently updated.
     """
+
     source_id: str = ""
     target_id: str = ""
     id: str = field(default_factory=lambda: str(uuid4())[:8])
     kind: str = RelationshipKind.DEPENDS_ON.value  # default to generic "depends on"
     description: str = ""
-    interface_contract: str = ""    # empty until Tinker learns what the API looks like
+    interface_contract: str = ""  # empty until Tinker learns what the API looks like
     confidence: ConfidenceScore = field(default_factory=ConfidenceScore)
     first_seen_loop: int = 0
     last_updated_loop: int = 0
@@ -352,14 +367,19 @@ class DesignDecision:
     first_seen_loop        : When this decision first appeared.
     last_updated_loop      : When it was last changed.
     """
+
     title: str = ""
     id: str = field(default_factory=lambda: str(uuid4())[:8])
     description: str = ""
-    rationale: str = ""                          # the "why" — often the most important field
-    status: str = DecisionStatus.PROPOSED.value  # starts as proposed; must be explicitly accepted
+    rationale: str = ""  # the "why" — often the most important field
+    status: str = (
+        DecisionStatus.PROPOSED.value
+    )  # starts as proposed; must be explicitly accepted
     subsystem: str | None = None
     confidence: ConfidenceScore = field(default_factory=ConfidenceScore)
-    alternatives_considered: list[str] = field(default_factory=list)  # what else was on the table
+    alternatives_considered: list[str] = field(
+        default_factory=list
+    )  # what else was on the table
     tags: list[str] = field(default_factory=list)
     first_seen_loop: int = 0
     last_updated_loop: int = 0
@@ -385,10 +405,11 @@ class RejectedAlternative:
                           rejected in favour of.
     loop_rejected       : Which AI loop made the rejection call.
     """
+
     title: str = ""
     id: str = field(default_factory=lambda: str(uuid4())[:8])
     description: str = ""
-    rejection_reason: str = ""       # the key field — never leave this empty
+    rejection_reason: str = ""  # the key field — never leave this empty
     related_decision_id: str | None = None  # links back to the winning decision
     loop_rejected: int = 0
 
@@ -417,15 +438,16 @@ class OpenQuestion:
     resolution   : The answer (filled in when resolved=True).
     resolved_loop: Which loop provided the answer.
     """
+
     question: str = ""
     id: str = field(default_factory=lambda: str(uuid4())[:8])
     context: str = ""
     subsystem: str | None = None
-    priority: float = 0.5       # 0.5 = medium priority by default
+    priority: float = 0.5  # 0.5 = medium priority by default
     raised_loop: int = 0
-    resolved: bool = False      # starts unresolved; only becomes True when answered
-    resolution: str | None = None    # empty until the question is answered
-    resolved_loop: int | None = None # which loop provided the answer
+    resolved: bool = False  # starts unresolved; only becomes True when answered
+    resolution: str | None = None  # empty until the question is answered
+    resolved_loop: int | None = None  # which loop provided the answer
 
 
 @dataclass
@@ -448,9 +470,10 @@ class SubsystemSummary:
     confidence       : How sure Tinker is about this subsystem's boundaries.
     last_updated_loop: Most recent loop that touched this subsystem.
     """
+
     name: str = ""
     purpose: str = ""
-    components: list[str] = field(default_factory=list)   # component names, not IDs
+    components: list[str] = field(default_factory=list)  # component names, not IDs
     design_notes: str = ""
     confidence: ConfidenceScore = field(default_factory=ConfidenceScore)
     last_updated_loop: int = 0
@@ -468,6 +491,7 @@ class SubsystemSummary:
 #
 # Functions that start with an underscore (_) are "private" — they're
 # internal helpers not meant to be called from outside this file.
+
 
 def _to_dict(obj: Any) -> Any:
     """
@@ -505,8 +529,7 @@ def _to_dict(obj: Any) -> Any:
         return {k: _to_dict(v) for k, v in obj.items()}
     if hasattr(obj, "__dataclass_fields__"):
         # This is a dataclass — convert each field by name
-        return {f.name: _to_dict(getattr(obj, f.name))
-                for f in fields(obj)}
+        return {f.name: _to_dict(getattr(obj, f.name)) for f in fields(obj)}
     # Fallback: return unchanged (handles unexpected types gracefully)
     return obj
 
@@ -536,10 +559,10 @@ def _from_dict_component(d: dict) -> Component:
     """
     c = Component(
         name=d.get("name", ""),
-        id=d.get("id", str(uuid4())[:8]),   # generate a new ID if missing
+        id=d.get("id", str(uuid4())[:8]),  # generate a new ID if missing
         description=d.get("description", ""),
         responsibilities=d.get("responsibilities", []),
-        subsystem=d.get("subsystem"),        # None if not present
+        subsystem=d.get("subsystem"),  # None if not present
         confidence=_from_dict_confidence(d.get("confidence")),
         tags=d.get("tags", []),
         first_seen_loop=d.get("first_seen_loop", 0),
@@ -555,7 +578,9 @@ def _from_dict_relationship(d: dict) -> Relationship:
         id=d.get("id", str(uuid4())[:8]),
         source_id=d.get("source_id", ""),
         target_id=d.get("target_id", ""),
-        kind=d.get("kind", RelationshipKind.DEPENDS_ON.value),  # default to generic link
+        kind=d.get(
+            "kind", RelationshipKind.DEPENDS_ON.value
+        ),  # default to generic link
         description=d.get("description", ""),
         interface_contract=d.get("interface_contract", ""),
         confidence=_from_dict_confidence(d.get("confidence")),
@@ -600,10 +625,10 @@ def _from_dict_question(d: dict) -> OpenQuestion:
         question=d.get("question", ""),
         context=d.get("context", ""),
         subsystem=d.get("subsystem"),
-        priority=d.get("priority", 0.5),    # default to medium priority
+        priority=d.get("priority", 0.5),  # default to medium priority
         raised_loop=d.get("raised_loop", 0),
         resolved=d.get("resolved", False),  # default to unresolved
-        resolution=d.get("resolution"),     # None until answered
+        resolution=d.get("resolution"),  # None until answered
         resolved_loop=d.get("resolved_loop"),
     )
 
@@ -623,6 +648,7 @@ def _from_dict_subsystem(d: dict) -> SubsystemSummary:
 # ──────────────────────────────────────────────
 # Root document
 # ──────────────────────────────────────────────
+
 
 @dataclass
 class ArchitectureState:
@@ -660,6 +686,7 @@ class ArchitectureState:
     overall_confidence : A single confidence score for the whole document.
     loop_notes      : Free-text notes, one per loop, for human reading.
     """
+
     schema_version: str = "1.0"
     # Full UUID (not shortened) because this is the document's unique identity
     state_id: str = field(default_factory=lambda: str(uuid4()))
@@ -667,7 +694,7 @@ class ArchitectureState:
     system_purpose: str = ""
     system_scope: str = ""
 
-    macro_loop: int = 0   # starts at 0 and increments with each update
+    macro_loop: int = 0  # starts at 0 and increments with each update
     created_at: str = field(
         # The creation timestamp never changes after the first save
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
@@ -729,11 +756,16 @@ class ArchitectureState:
         """
         # Reconstruct each collection by calling the appropriate helper
         comps = {k: _from_dict_component(v) for k, v in d.get("components", {}).items()}
-        rels  = {k: _from_dict_relationship(v) for k, v in d.get("relationships", {}).items()}
-        decs  = {k: _from_dict_decision(v) for k, v in d.get("decisions", {}).items()}
-        rejas = {k: _from_dict_rejected(v) for k, v in d.get("rejected_alternatives", {}).items()}
-        qs    = {k: _from_dict_question(v) for k, v in d.get("open_questions", {}).items()}
-        subs  = {k: _from_dict_subsystem(v) for k, v in d.get("subsystems", {}).items()}
+        rels = {
+            k: _from_dict_relationship(v) for k, v in d.get("relationships", {}).items()
+        }
+        decs = {k: _from_dict_decision(v) for k, v in d.get("decisions", {}).items()}
+        rejas = {
+            k: _from_dict_rejected(v)
+            for k, v in d.get("rejected_alternatives", {}).items()
+        }
+        qs = {k: _from_dict_question(v) for k, v in d.get("open_questions", {}).items()}
+        subs = {k: _from_dict_subsystem(v) for k, v in d.get("subsystems", {}).items()}
         return cls(
             schema_version=d.get("schema_version", "1.0"),
             state_id=d.get("state_id", str(uuid4())),
@@ -787,8 +819,11 @@ class ArchitectureState:
         Return all design decisions that belong to a specific subsystem.
         Useful for understanding all the choices made for, say, the "auth" layer.
         """
-        return [d for d in self.decisions.values()
-                if d.subsystem and d.subsystem.lower() == subsystem.lower()]
+        return [
+            d
+            for d in self.decisions.values()
+            if d.subsystem and d.subsystem.lower() == subsystem.lower()
+        ]
 
     def low_confidence_components(self, threshold: float = 0.5) -> list[Component]:
         """
@@ -815,5 +850,5 @@ class ArchitectureState:
         """
         return sorted(
             [q for q in self.open_questions.values() if not q.resolved],
-            key=lambda q: -q.priority,   # negate priority so highest comes first
+            key=lambda q: -q.priority,  # negate priority so highest comes first
         )

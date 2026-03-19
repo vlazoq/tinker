@@ -62,15 +62,14 @@ import json
 import logging
 import sqlite3
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .contracts.task   import GrubTask, TaskPriority
+from .contracts.task import GrubTask
 from .contracts.result import MinionResult, ResultStatus
 
 if TYPE_CHECKING:
     from .registry import MinionRegistry
-    from .config   import GrubConfig
+    from .config import GrubConfig
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +78,9 @@ logger = logging.getLogger(__name__)
 # MODE A — Sequential
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 async def run_sequential(
-    tasks:    list[GrubTask],
+    tasks: list[GrubTask],
     pipeline: "PipelineRunner",
 ) -> list[MinionResult]:
     """
@@ -99,7 +99,7 @@ async def run_sequential(
     List of final MinionResults (one per task).
     """
     results = []
-    total   = len(tasks)
+    total = len(tasks)
 
     for i, task in enumerate(tasks, 1):
         logger.info("Sequential mode: task %d/%d — %s", i, total, task.title)
@@ -107,7 +107,10 @@ async def run_sequential(
         results.append(result)
         logger.info(
             "Sequential mode: task %d/%d done — status=%s score=%.2f",
-            i, total, result.status.value, result.score
+            i,
+            total,
+            result.status.value,
+            result.score,
         )
 
     return results
@@ -117,9 +120,10 @@ async def run_sequential(
 # MODE B — Parallel
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 async def run_parallel(
-    tasks:       list[GrubTask],
-    pipeline:    "PipelineRunner",
+    tasks: list[GrubTask],
+    pipeline: "PipelineRunner",
     max_workers: int = 3,
 ) -> list[MinionResult]:
     """
@@ -148,7 +152,9 @@ async def run_parallel(
             result = await pipeline.run_pipeline(task)
             logger.info(
                 "Parallel mode: done — %s (status=%s score=%.2f)",
-                task.title, result.status.value, result.score
+                task.title,
+                result.status.value,
+                result.score,
             )
             return result
 
@@ -160,6 +166,7 @@ async def run_parallel(
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODE C — Queue (SQLite-backed)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class GrubQueue:
     """
@@ -228,8 +235,8 @@ class GrubQueue:
 
         Returns True on success.
         """
-        import uuid
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).isoformat()
         try:
             con = sqlite3.connect(self._db_path, timeout=10)
@@ -237,8 +244,13 @@ class GrubQueue:
                 "INSERT OR IGNORE INTO grub_tasks "
                 "(id, title, priority, status, payload, created_at) "
                 "VALUES (?, ?, ?, 'pending', ?, ?)",
-                (task.id, task.title, task.priority.value,
-                 json.dumps(task.to_dict()), now)
+                (
+                    task.id,
+                    task.title,
+                    task.priority.value,
+                    json.dumps(task.to_dict()),
+                    now,
+                ),
             )
             con.commit()
             con.close()
@@ -256,14 +268,17 @@ class GrubQueue:
         Uses a SQLite transaction to prevent two workers claiming the same task.
         """
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).isoformat()
         try:
             con = sqlite3.connect(self._db_path, timeout=10)
-            con.isolation_level = None   # autocommit off
-            con.execute("BEGIN EXCLUSIVE")   # exclusive lock on the DB file
+            con.isolation_level = None  # autocommit off
+            con.execute("BEGIN EXCLUSIVE")  # exclusive lock on the DB file
 
             # Find the next pending task (HIGH priority first, then FIFO)
-            priority_order = "CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END"
+            priority_order = (
+                "CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END"
+            )
             row = con.execute(
                 f"SELECT id, payload FROM grub_tasks "
                 f"WHERE status = 'pending' "
@@ -280,7 +295,7 @@ class GrubQueue:
             con.execute(
                 "UPDATE grub_tasks SET status='in_progress', "
                 "claimed_by=?, claimed_at=?, updated_at=? WHERE id=?",
-                (worker_id, now, now, task_id)
+                (worker_id, now, now, task_id),
             )
             con.execute("COMMIT")
             con.close()
@@ -296,19 +311,26 @@ class GrubQueue:
         """Mark a task as completed and store the result."""
         import uuid
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).isoformat()
         try:
             con = sqlite3.connect(self._db_path, timeout=10)
             con.execute(
                 "UPDATE grub_tasks SET status='completed', updated_at=? WHERE id=?",
-                (now, task_id)
+                (now, task_id),
             )
             con.execute(
                 "INSERT INTO grub_results (id, task_id, worker_id, status, score, payload, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (str(uuid.uuid4()), task_id, worker_id,
-                 result.status.value, result.score,
-                 json.dumps(result.to_dict()), now)
+                (
+                    str(uuid.uuid4()),
+                    task_id,
+                    worker_id,
+                    result.status.value,
+                    result.score,
+                    json.dumps(result.to_dict()),
+                    now,
+                ),
             )
             con.commit()
             con.close()
@@ -318,12 +340,13 @@ class GrubQueue:
     def fail(self, task_id: str, reason: str) -> None:
         """Mark a task as failed (will not be retried by workers)."""
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).isoformat()
         try:
             con = sqlite3.connect(self._db_path, timeout=10)
             con.execute(
                 "UPDATE grub_tasks SET status='failed', updated_at=? WHERE id=?",
-                (now, task_id)
+                (now, task_id),
             )
             con.commit()
             con.close()
@@ -333,8 +356,8 @@ class GrubQueue:
     def pending_count(self) -> int:
         """Return number of pending tasks."""
         try:
-            con  = sqlite3.connect(self._db_path, timeout=5)
-            n    = con.execute(
+            con = sqlite3.connect(self._db_path, timeout=5)
+            n = con.execute(
                 "SELECT COUNT(*) FROM grub_tasks WHERE status='pending'"
             ).fetchone()[0]
             con.close()
@@ -345,10 +368,10 @@ class GrubQueue:
     def get_results(self, limit: int = 100) -> list[dict]:
         """Fetch recent completed results."""
         try:
-            con  = sqlite3.connect(self._db_path, timeout=5)
+            con = sqlite3.connect(self._db_path, timeout=5)
             rows = con.execute(
-                "SELECT payload FROM grub_results "
-                "ORDER BY created_at DESC LIMIT ?", (limit,)
+                "SELECT payload FROM grub_results ORDER BY created_at DESC LIMIT ?",
+                (limit,),
             ).fetchall()
             con.close()
             return [json.loads(r[0]) for r in rows]
@@ -358,8 +381,8 @@ class GrubQueue:
 
 async def run_queue_worker(
     worker_id: str,
-    queue:     GrubQueue,
-    pipeline:  "PipelineRunner",
+    queue: GrubQueue,
+    pipeline: "PipelineRunner",
     poll_interval: float = 2.0,
 ) -> None:
     """
@@ -388,23 +411,32 @@ async def run_queue_worker(
             await asyncio.sleep(poll_interval)
             continue
 
-        logger.info("Queue worker '%s': claimed task %s — %s",
-                    worker_id, task.id[:8], task.title)
+        logger.info(
+            "Queue worker '%s': claimed task %s — %s",
+            worker_id,
+            task.id[:8],
+            task.title,
+        )
         try:
             result = await pipeline.run_pipeline(task)
             queue.complete(task.id, result, worker_id)
             logger.info(
                 "Queue worker '%s': task done — status=%s score=%.2f",
-                worker_id, result.status.value, result.score
+                worker_id,
+                result.status.value,
+                result.score,
             )
         except Exception as exc:
-            logger.error("Queue worker '%s': task failed with exception: %s", worker_id, exc)
+            logger.error(
+                "Queue worker '%s': task failed with exception: %s", worker_id, exc
+            )
             queue.fail(task.id, str(exc))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PipelineRunner — shared by all three modes
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class PipelineRunner:
     """
@@ -428,7 +460,7 @@ class PipelineRunner:
 
     def __init__(self, registry: "MinionRegistry", config: "GrubConfig") -> None:
         self.registry = registry
-        self.config   = config
+        self.config = config
 
     async def run_pipeline(self, task: GrubTask) -> MinionResult:
         """
@@ -440,7 +472,7 @@ class PipelineRunner:
         logger.info("Pipeline start: %s", task.title)
 
         # ── Stage 1: Code ──────────────────────────────────────────────────────
-        coder     = self.registry.get_minion("coder")
+        coder = self.registry.get_minion("coder")
         coder_result = await coder.run(task)
 
         if not coder_result.succeeded and coder_result.status == ResultStatus.FAILED:
@@ -450,19 +482,19 @@ class PipelineRunner:
         # ── Stage 2: Review (with retry loop) ─────────────────────────────────
         reviewer = self.registry.get_minion("reviewer")
         review_task = GrubTask(
-            id            = task.id,
-            title         = task.title,
-            description   = task.description,
-            artifact_path = task.artifact_path,
-            subsystem     = task.subsystem,
-            context       = {
+            id=task.id,
+            title=task.title,
+            description=task.description,
+            artifact_path=task.artifact_path,
+            subsystem=task.subsystem,
+            context={
                 **task.context,
                 "files_to_review": coder_result.files_written,
             },
         )
 
-        review_result   = await reviewer.run(review_task)
-        current_files   = coder_result.files_written
+        review_result = await reviewer.run(review_task)
+        current_files = coder_result.files_written
         best_coder_result = coder_result
 
         for retry in range(self.config.max_iterations - 1):
@@ -470,17 +502,20 @@ class PipelineRunner:
                 break
             logger.info(
                 "Pipeline: review score %.2f < %.2f, retrying coder (attempt %d)",
-                review_result.score, self.config.quality_threshold, retry + 2
+                review_result.score,
+                self.config.quality_threshold,
+                retry + 2,
             )
             # Re-run coder with reviewer feedback
             retry_task = GrubTask(
-                id            = task.id,
-                title         = task.title,
-                description   = task.description + f"\n\n## Reviewer Feedback\n{review_result.notes[:1500]}",
-                artifact_path = task.artifact_path,
-                target_files  = current_files,
-                subsystem     = task.subsystem,
-                context       = task.context,
+                id=task.id,
+                title=task.title,
+                description=task.description
+                + f"\n\n## Reviewer Feedback\n{review_result.notes[:1500]}",
+                artifact_path=task.artifact_path,
+                target_files=current_files,
+                subsystem=task.subsystem,
+                context=task.context,
             )
             retry_task.attempt_count = retry + 2
             coder_result = await coder.run(retry_task)
@@ -493,11 +528,11 @@ class PipelineRunner:
         # ── Stage 3: Test ──────────────────────────────────────────────────────
         tester = self.registry.get_minion("tester")
         test_task = GrubTask(
-            id          = task.id,
-            title       = task.title,
-            description = task.description,
-            subsystem   = task.subsystem,
-            context     = {**task.context, "files_to_test": current_files},
+            id=task.id,
+            title=task.title,
+            description=task.description,
+            subsystem=task.subsystem,
+            context={**task.context, "files_to_test": current_files},
         )
         test_result = await tester.run(test_task)
 
@@ -505,16 +540,19 @@ class PipelineRunner:
         if test_result.test_results and not test_result.test_results.all_passed:
             debugger = self.registry.get_minion("debugger")
             debug_task = GrubTask(
-                id          = task.id,
-                title       = task.title,
-                description = task.description,
-                subsystem   = task.subsystem,
-                context     = {
+                id=task.id,
+                title=task.title,
+                description=task.description,
+                subsystem=task.subsystem,
+                context={
                     **task.context,
-                    "test_output":   test_result.test_results.output,
+                    "test_output": test_result.test_results.output,
                     "failing_files": current_files,
-                    "test_file":     (test_result.files_written[0]
-                                      if test_result.files_written else ""),
+                    "test_file": (
+                        test_result.files_written[0]
+                        if test_result.files_written
+                        else ""
+                    ),
                 },
             )
             debug_result = await debugger.run(debug_task)
@@ -524,15 +562,16 @@ class PipelineRunner:
         # ── Stage 5: Refactor ─────────────────────────────────────────────────
         refactorer = self.registry.get_minion("refactorer")
         refactor_task = GrubTask(
-            id          = task.id,
-            title       = task.title,
-            description = task.description,
-            subsystem   = task.subsystem,
-            context     = {
+            id=task.id,
+            title=task.title,
+            description=task.description,
+            subsystem=task.subsystem,
+            context={
                 **task.context,
                 "files_to_refactor": current_files,
-                "test_file": (test_result.files_written[0]
-                              if test_result.files_written else ""),
+                "test_file": (
+                    test_result.files_written[0] if test_result.files_written else ""
+                ),
             },
         )
         final_result = await refactorer.run(refactor_task)
@@ -540,16 +579,23 @@ class PipelineRunner:
         duration = time.monotonic() - t0
         logger.info(
             "Pipeline done: %s — %.1fs, score=%.2f, files=%s",
-            task.title, duration, final_result.score,
-            ", ".join(final_result.files_written[:3])
+            task.title,
+            duration,
+            final_result.score,
+            ", ".join(final_result.files_written[:3]),
         )
 
         # Merge feedback from all stages
-        combined_feedback = " | ".join(filter(None, [
-            best_coder_result.feedback_for_tinker,
-            review_result.notes[:200] if not review_result.succeeded else "",
-        ]))
+        combined_feedback = " | ".join(
+            filter(
+                None,
+                [
+                    best_coder_result.feedback_for_tinker,
+                    review_result.notes[:200] if not review_result.succeeded else "",
+                ],
+            )
+        )
         final_result.feedback_for_tinker = combined_feedback
-        final_result.duration_seconds   = duration
+        final_result.duration_seconds = duration
 
         return final_result

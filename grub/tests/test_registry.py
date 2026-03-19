@@ -5,17 +5,16 @@ Tests for MinionRegistry — minion registration, skill loading, get_minion().
 """
 
 import pytest
-from pathlib import Path
-from unittest.mock import MagicMock
 
-from grub.config   import GrubConfig
+from grub.config import GrubConfig
 from grub.registry import MinionRegistry
 from grub.minions.base import BaseMinion
-from grub.contracts.task   import GrubTask
+from grub.contracts.task import GrubTask
 from grub.contracts.result import MinionResult, ResultStatus
 
 
 # ── A minimal stub Minion for testing ─────────────────────────────────────────
+
 
 class StubMinion(BaseMinion):
     MINION_NAME = "stub"
@@ -23,17 +22,17 @@ class StubMinion(BaseMinion):
 
     async def run(self, task: GrubTask) -> MinionResult:
         return MinionResult(
-            task_id     = task.id,
-            minion_name = self.name,
-            status      = ResultStatus.SUCCESS,
-            score       = 1.0,
+            task_id=task.id,
+            minion_name=self.name,
+            status=ResultStatus.SUCCESS,
+            score=1.0,
         )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class TestMinionRegistry:
 
+class TestMinionRegistry:
     @pytest.fixture
     def registry(self):
         cfg = GrubConfig()
@@ -56,7 +55,7 @@ class TestMinionRegistry:
         registry.register_minion("stub", StubMinion)
         m1 = registry.get_minion("stub")
         m2 = registry.get_minion("stub")
-        assert m1 is not m2   # fresh instance each time
+        assert m1 is not m2  # fresh instance each time
 
     def test_register_skill_and_get(self, registry):
         registry.register_skill("my_skill", "You are an expert.")
@@ -73,7 +72,7 @@ class TestMinionRegistry:
         skill_dir.mkdir()
         (skill_dir / "my_file_skill.md").write_text("# Expert skill content")
 
-        cfg      = GrubConfig()
+        cfg = GrubConfig()
         registry = MinionRegistry(cfg)
         # Patch the skills dir to point to our temp directory
         monkeypatch.setattr(registry, "_skills_dir", skill_dir)
@@ -89,7 +88,7 @@ class TestMinionRegistry:
         (skill_dir / "skill_b.md").write_text("Skill B")
         (skill_dir / "not_a_skill.json").write_text("{}")
 
-        cfg      = GrubConfig()
+        cfg = GrubConfig()
         registry = MinionRegistry(cfg)
         monkeypatch.setattr(registry, "_skills_dir", skill_dir)
         registry.load_all_skills()
@@ -125,4 +124,4 @@ class TestMinionRegistry:
         registry.register_skill("sk", "skill text")
         s = registry.summary()
         assert "stub" in s["minions"]
-        assert "sk"   in s["skills"]
+        assert "sk" in s["skills"]

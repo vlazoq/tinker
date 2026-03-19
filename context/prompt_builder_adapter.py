@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 # Lazy import: only pulled when needed so this module can be imported even
 # if ``prompts`` has not been fully initialised yet.
-_builder_cls   = None
+_builder_cls = None
 _tmpl_registry = None
 
 
@@ -67,9 +67,12 @@ def _get_template_registry():
     if _tmpl_registry is None:
         try:
             from prompts.templates import TEMPLATE_REGISTRY
+
             _tmpl_registry = TEMPLATE_REGISTRY
         except Exception as exc:
-            logger.warning("PromptBuilderAdapter: could not load TEMPLATE_REGISTRY: %s", exc)
+            logger.warning(
+                "PromptBuilderAdapter: could not load TEMPLATE_REGISTRY: %s", exc
+            )
             _tmpl_registry = {}
     return _tmpl_registry
 
@@ -79,18 +82,21 @@ def _get_builder():
     if _builder_cls is None:
         try:
             from prompts.builder import PromptBuilder
+
             _builder_cls = PromptBuilder
         except Exception as exc:
-            logger.warning("PromptBuilderAdapter: could not import PromptBuilder: %s", exc)
+            logger.warning(
+                "PromptBuilderAdapter: could not import PromptBuilder: %s", exc
+            )
     return _builder_cls
 
 
 # Map AgentRole enum → loop-level string for TEMPLATE_REGISTRY lookup
 _ROLE_DEFAULT_LEVEL: dict[AgentRole, str] = {
-    AgentRole.ARCHITECT   : "micro",
-    AgentRole.CRITIC      : "micro",
-    AgentRole.RESEARCHER  : "micro",
-    AgentRole.SYNTHESIZER : "meso",
+    AgentRole.ARCHITECT: "micro",
+    AgentRole.CRITIC: "micro",
+    AgentRole.RESEARCHER: "micro",
+    AgentRole.SYNTHESIZER: "meso",
 }
 
 # Map int loop_level → LoopLevel string for PromptBuilder
@@ -112,7 +118,7 @@ class PromptBuilderAdapter(_PromptBuilderProtocol):
 
     def __init__(self, add_build_metadata: bool = False) -> None:
         self._add_meta = add_build_metadata
-        self._pb       = None   # lazily initialised on first use
+        self._pb = None  # lazily initialised on first use
 
     def _prompt_builder(self):
         if self._pb is None:
@@ -135,11 +141,13 @@ class PromptBuilderAdapter(_PromptBuilderProtocol):
         Falls back to a minimal placeholder if the template is not found.
         """
         level = _ROLE_DEFAULT_LEVEL.get(role, "micro")
-        key   = f"{role.value}.{level}"
-        tmpl  = _get_template_registry().get(key)
+        key = f"{role.value}.{level}"
+        tmpl = _get_template_registry().get(key)
         if tmpl is not None:
             return tmpl.system
-        logger.debug("PromptBuilderAdapter: no template for key %r — using fallback", key)
+        logger.debug(
+            "PromptBuilderAdapter: no template for key %r — using fallback", key
+        )
         return f"You are Tinker's {role.value} agent."
 
     def build_output_format(self, role: AgentRole, loop_level: int) -> str:
@@ -153,7 +161,7 @@ class PromptBuilderAdapter(_PromptBuilderProtocol):
         ``ContextAssembler`` drops empty sections gracefully, so this never
         introduces a blank section into the assembled prompt.
         """
-        return ""   # format is already in the system prompt (build_system_identity)
+        return ""  # format is already in the system prompt (build_system_identity)
 
     def render_template(self, template_name: str, **kwargs: Any) -> str:
         """
@@ -183,6 +191,7 @@ class PromptBuilderAdapter(_PromptBuilderProtocol):
         except Exception as exc:
             logger.warning(
                 "PromptBuilderAdapter.render_template(%r): %s — using fallback",
-                template_name, exc,
+                template_name,
+                exc,
             )
             return f"[{template_name}] {kwargs}"

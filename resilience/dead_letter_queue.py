@@ -65,10 +65,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +97,7 @@ class DeadLetterQueue:
         """
         try:
             import aiosqlite  # type: ignore
+
             self._conn = await aiosqlite.connect(self._db_path)
             self._conn.row_factory = aiosqlite.Row
             await self._conn.execute("PRAGMA journal_mode=WAL")  # concurrent reads
@@ -126,7 +126,9 @@ class DeadLetterQueue:
                 "aiosqlite not available — DeadLetterQueue operating in memory-only mode"
             )
         except Exception as exc:
-            logger.warning("DeadLetterQueue failed to connect: %s — DLQ is disabled", exc)
+            logger.warning(
+                "DeadLetterQueue failed to connect: %s — DLQ is disabled", exc
+            )
 
     async def close(self) -> None:
         """Close the SQLite connection."""
@@ -162,7 +164,9 @@ class DeadLetterQueue:
         None : If the DLQ is disabled (aiosqlite unavailable).
         """
         if not self._conn:
-            logger.debug("DLQ disabled — dropping failed operation: %s (%s)", operation, error)
+            logger.debug(
+                "DLQ disabled — dropping failed operation: %s (%s)", operation, error
+            )
             return None
 
         item_id = str(uuid.uuid4())
@@ -170,23 +174,28 @@ class DeadLetterQueue:
 
         async with self._lock:
             try:
-                await self._conn.execute("""
+                await self._conn.execute(
+                    """
                     INSERT INTO dlq_items
                         (id, operation, payload, error, context, status, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
-                """, (
-                    item_id,
-                    operation,
-                    json.dumps(payload),
-                    error,
-                    json.dumps(context) if context else None,
-                    now,
-                    now,
-                ))
+                """,
+                    (
+                        item_id,
+                        operation,
+                        json.dumps(payload),
+                        error,
+                        json.dumps(context) if context else None,
+                        now,
+                        now,
+                    ),
+                )
                 await self._conn.commit()
                 logger.warning(
                     "DLQ: Enqueued failed operation '%s' (id=%s): %s",
-                    operation, item_id[:8], error[:100],
+                    operation,
+                    item_id[:8],
+                    error[:100],
                 )
                 return item_id
             except Exception as exc:
@@ -212,11 +221,14 @@ class DeadLetterQueue:
         now = datetime.now(timezone.utc).isoformat()
         async with self._lock:
             try:
-                cursor = await self._conn.execute("""
+                cursor = await self._conn.execute(
+                    """
                     UPDATE dlq_items
                     SET status='resolved', resolved_at=?, updated_at=?, notes=?
                     WHERE id=? AND status='pending'
-                """, (now, now, notes, item_id))
+                """,
+                    (now, now, notes, item_id),
+                )
                 await self._conn.commit()
                 return cursor.rowcount > 0
             except Exception as exc:
@@ -242,11 +254,14 @@ class DeadLetterQueue:
         now = datetime.now(timezone.utc).isoformat()
         async with self._lock:
             try:
-                cursor = await self._conn.execute("""
+                cursor = await self._conn.execute(
+                    """
                     UPDATE dlq_items
                     SET status='discarded', updated_at=?, notes=?
                     WHERE id=?
-                """, (now, reason, item_id))
+                """,
+                    (now, reason, item_id),
+                )
                 await self._conn.commit()
                 return cursor.rowcount > 0
             except Exception as exc:
@@ -261,11 +276,14 @@ class DeadLetterQueue:
         now = datetime.now(timezone.utc).isoformat()
         async with self._lock:
             try:
-                cursor = await self._conn.execute("""
+                cursor = await self._conn.execute(
+                    """
                     UPDATE dlq_items
                     SET retry_count = retry_count + 1, updated_at=?
                     WHERE id=?
-                """, (now, item_id))
+                """,
+                    (now, item_id),
+                )
                 await self._conn.commit()
                 return cursor.rowcount > 0
             except Exception as exc:
@@ -293,13 +311,16 @@ class DeadLetterQueue:
             return []
 
         try:
-            cursor = await self._conn.execute("""
+            cursor = await self._conn.execute(
+                """
                 SELECT id, operation, payload, error, context, created_at, retry_count
                 FROM dlq_items
                 WHERE status = 'pending'
                 ORDER BY created_at ASC
                 LIMIT ?
-            """, (limit,))
+            """,
+                (limit,),
+            )
             rows = await cursor.fetchall()
             result = []
             for row in rows:
@@ -342,7 +363,13 @@ class DeadLetterQueue:
         dict with keys: total, pending, resolved, discarded.
         """
         if not self._conn:
-            return {"total": 0, "pending": 0, "resolved": 0, "discarded": 0, "disabled": True}
+            return {
+                "total": 0,
+                "pending": 0,
+                "resolved": 0,
+                "discarded": 0,
+                "disabled": True,
+            }
 
         try:
             cursor = await self._conn.execute("""
@@ -361,7 +388,13 @@ class DeadLetterQueue:
             }
         except Exception as exc:
             logger.error("DLQ.stats failed: %s", exc)
-            return {"total": 0, "pending": 0, "resolved": 0, "discarded": 0, "error": str(exc)}
+            return {
+                "total": 0,
+                "pending": 0,
+                "resolved": 0,
+                "discarded": 0,
+                "error": str(exc),
+            }
 
     async def purge_resolved(self, older_than_days: int = 7) -> int:
         """
@@ -371,18 +404,23 @@ class DeadLetterQueue:
         """
         if not self._conn:
             return 0
-        cutoff = datetime.now(timezone.utc).isoformat()
         # Simple approach: delete status != pending AND created_at < N days ago
         # We use Python's time instead of SQLite date functions for portability.
         import datetime as dt
-        cutoff_dt = (datetime.now(timezone.utc) - dt.timedelta(days=older_than_days)).isoformat()
+
+        cutoff_dt = (
+            datetime.now(timezone.utc) - dt.timedelta(days=older_than_days)
+        ).isoformat()
         async with self._lock:
             try:
-                cursor = await self._conn.execute("""
+                cursor = await self._conn.execute(
+                    """
                     DELETE FROM dlq_items
                     WHERE status IN ('resolved', 'discarded')
                     AND created_at < ?
-                """, (cutoff_dt,))
+                """,
+                    (cutoff_dt,),
+                )
                 await self._conn.commit()
                 count = cursor.rowcount
                 if count > 0:

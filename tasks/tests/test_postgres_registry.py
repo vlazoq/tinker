@@ -25,11 +25,8 @@ methods see exactly what a real PostgreSQL cursor would return.
 
 from __future__ import annotations
 
-import json
-import threading
-import time
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -47,24 +44,25 @@ from tasks.schema import Task, TaskStatus, TaskType, Subsystem
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def _make_task(
     task_id: str = "t-001",
-    status:  TaskStatus = TaskStatus.PENDING,
+    status: TaskStatus = TaskStatus.PENDING,
 ) -> Task:
     """Return a minimal Task for testing."""
     return Task(
-        id            = task_id,
-        title         = "Design auth module",
-        description   = "Research and design the authentication subsystem.",
-        type          = TaskType.DESIGN,
-        subsystem     = Subsystem.ORCHESTRATOR,
-        status        = status,
-        created_at    = _now(),
-        updated_at    = _now(),
+        id=task_id,
+        title="Design auth module",
+        description="Research and design the authentication subsystem.",
+        type=TaskType.DESIGN,
+        subsystem=Subsystem.ORCHESTRATOR,
+        status=status,
+        created_at=_now(),
+        updated_at=_now(),
     )
 
 
@@ -74,7 +72,7 @@ def _task_row(task: Task) -> dict:
     This is what fetchone() / fetchall() would return.
     """
     d = _task_to_row(task)
-    return d   # already a flat dict with JSON-serialised list/dict fields
+    return d  # already a flat dict with JSON-serialised list/dict fields
 
 
 def _make_registry() -> tuple[PostgresTaskRegistry, MagicMock]:
@@ -85,7 +83,7 @@ def _make_registry() -> tuple[PostgresTaskRegistry, MagicMock]:
     individual tests can configure fetchone/fetchall/rowcount freely.
     """
     mock_conn = MagicMock()
-    registry  = PostgresTaskRegistry(connection_factory=lambda: mock_conn)
+    registry = PostgresTaskRegistry(connection_factory=lambda: mock_conn)
     return registry, mock_conn
 
 
@@ -103,11 +101,11 @@ def _fresh_cursor(mock_conn: MagicMock) -> MagicMock:
 
 # ── Tests: row helpers ────────────────────────────────────────────────────────
 
-class TestRowHelpers:
 
+class TestRowHelpers:
     def test_pg_row_to_dict_converts_is_exploration_to_bool(self):
         row = {"id": "x", "is_exploration": 1, "title": "t"}
-        d   = _pg_row_to_dict(row)
+        d = _pg_row_to_dict(row)
         assert d["is_exploration"] is True
 
     def test_pg_row_to_dict_false_when_zero(self):
@@ -116,7 +114,7 @@ class TestRowHelpers:
 
     def test_task_to_row_json_serialises_list_fields(self):
         task = _make_task()
-        row  = _task_to_row(task)
+        row = _task_to_row(task)
         assert isinstance(row["dependencies"], str)
         assert isinstance(row["outputs"], str)
         assert isinstance(row["tags"], str)
@@ -128,18 +126,18 @@ class TestRowHelpers:
 
     def test_task_to_row_includes_all_columns(self):
         task = _make_task()
-        row  = _task_to_row(task)
+        row = _task_to_row(task)
         for col in _COLUMNS:
             assert col in row, f"Column {col!r} missing from task row"
 
 
 # ── Tests: schema init ────────────────────────────────────────────────────────
 
-class TestSchemaInit:
 
+class TestSchemaInit:
     def test_create_table_sql_executed_on_construction(self):
         mock_conn = MagicMock()
-        cur       = MagicMock()
+        cur = MagicMock()
         mock_conn.cursor.return_value = cur
 
         PostgresTaskRegistry(connection_factory=lambda: mock_conn)
@@ -150,14 +148,14 @@ class TestSchemaInit:
 
     def test_indexes_created_on_construction(self):
         mock_conn = MagicMock()
-        cur       = MagicMock()
+        cur = MagicMock()
         mock_conn.cursor.return_value = cur
 
         PostgresTaskRegistry(connection_factory=lambda: mock_conn)
 
         executed = " ".join(str(c.args[0]) for c in cur.execute.call_args_list)
-        assert "idx_tasks_status"    in executed
-        assert "idx_tasks_priority"  in executed
+        assert "idx_tasks_status" in executed
+        assert "idx_tasks_priority" in executed
         assert "idx_tasks_subsystem" in executed
 
     def test_commit_called_after_schema_init(self):
@@ -169,8 +167,8 @@ class TestSchemaInit:
 
 # ── Tests: save (upsert) ──────────────────────────────────────────────────────
 
-class TestSave:
 
+class TestSave:
     def test_save_calls_upsert_sql(self):
         registry, mock_conn = _make_registry()
         cur = _fresh_cursor(mock_conn)
@@ -224,8 +222,8 @@ class TestSave:
 
 # ── Tests: get ────────────────────────────────────────────────────────────────
 
-class TestGet:
 
+class TestGet:
     def test_get_returns_none_when_not_found(self):
         registry, mock_conn = _make_registry()
         cur = _fresh_cursor(mock_conn)
@@ -259,8 +257,8 @@ class TestGet:
 
 # ── Tests: delete ─────────────────────────────────────────────────────────────
 
-class TestDelete:
 
+class TestDelete:
     def test_delete_returns_true_when_row_deleted(self):
         registry, mock_conn = _make_registry()
         cur = _fresh_cursor(mock_conn)
@@ -289,8 +287,8 @@ class TestDelete:
 
 # ── Tests: list_all ───────────────────────────────────────────────────────────
 
-class TestListAll:
 
+class TestListAll:
     def test_list_all_returns_empty_list_when_no_tasks(self):
         registry, mock_conn = _make_registry()
         cur = _fresh_cursor(mock_conn)
@@ -312,8 +310,8 @@ class TestListAll:
 
 # ── Tests: by_status ──────────────────────────────────────────────────────────
 
-class TestByStatus:
 
+class TestByStatus:
     def test_by_status_filters_on_status(self):
         task = _make_task(status=TaskStatus.PENDING)
         registry, mock_conn = _make_registry()
@@ -334,13 +332,13 @@ class TestByStatus:
         registry.by_status(TaskStatus.PENDING, TaskStatus.ACTIVE)
 
         sql, params = cur.execute.call_args.args
-        assert sql.count("%s") == 2   # one placeholder per status
+        assert sql.count("%s") == 2  # one placeholder per status
 
 
 # ── Tests: pending_ordered ───────────────────────────────────────────────────
 
-class TestPendingOrdered:
 
+class TestPendingOrdered:
     def test_pending_ordered_orders_by_priority(self):
         registry, mock_conn = _make_registry()
         cur = _fresh_cursor(mock_conn)
@@ -365,13 +363,13 @@ class TestPendingOrdered:
 
 # ── Tests: count_by_status ───────────────────────────────────────────────────
 
-class TestCountByStatus:
 
+class TestCountByStatus:
     def test_count_returns_dict(self):
         registry, mock_conn = _make_registry()
         cur = _fresh_cursor(mock_conn)
         cur.fetchall.return_value = [
-            {"status": "pending",  "n": 3},
+            {"status": "pending", "n": 3},
             {"status": "complete", "n": 7},
         ]
 
@@ -389,8 +387,8 @@ class TestCountByStatus:
 
 # ── Tests: oldest_pending ────────────────────────────────────────────────────
 
-class TestOldestPending:
 
+class TestOldestPending:
     def test_returns_none_when_no_pending(self):
         registry, mock_conn = _make_registry()
         cur = _fresh_cursor(mock_conn)
@@ -423,8 +421,8 @@ class TestOldestPending:
 
 # ── Tests: close ─────────────────────────────────────────────────────────────
 
-class TestClose:
 
+class TestClose:
     def test_close_calls_connection_close(self):
         registry, mock_conn = _make_registry()
         registry.close()
@@ -432,6 +430,7 @@ class TestClose:
 
 
 # ── Tests: registry_factory ──────────────────────────────────────────────────
+
 
 class TestRegistryFactory:
     """Verify the factory produces the right backend type."""
@@ -454,7 +453,6 @@ class TestRegistryFactory:
 
     def test_factory_postgres_uses_connection_factory(self):
         """Verify the factory can create a PostgresTaskRegistry via injection."""
-        from tasks.registry_factory import create_task_registry
         from tasks.postgres_registry import PostgresTaskRegistry
 
         mock_conn = MagicMock()
@@ -478,6 +476,7 @@ class TestRegistryFactory:
 
 
 # ── Tests: is_transient helper ────────────────────────────────────────────────
+
 
 class TestIsTransient:
     """Unit tests for the transient-error detection logic.
@@ -534,6 +533,7 @@ class TestIsTransient:
 
 # ── Tests: connection retry ───────────────────────────────────────────────────
 
+
 class TestConnectionRetry:
     """Verify that _conn() retries on transient errors with exponential back-off.
 
@@ -548,15 +548,15 @@ class TestConnectionRetry:
 
         Returns (registry, mock_pool).
         """
-        mock_conn = MagicMock()
+        _mock_conn = MagicMock()
         mock_pool = MagicMock()
         mock_pool.getconn.side_effect = getconn_side_effects
 
         registry = PostgresTaskRegistry.__new__(PostgresTaskRegistry)
-        registry._single           = None
-        registry._pool             = mock_pool
-        registry._max_retries      = 3
-        registry._retry_base_delay = 0.1   # kept small for speed in tests
+        registry._single = None
+        registry._pool = mock_pool
+        registry._max_retries = 3
+        registry._retry_base_delay = 0.1  # kept small for speed in tests
         registry._query_timeout_ms = None
         return registry, mock_pool
 
@@ -592,7 +592,10 @@ class TestConnectionRetry:
         registry._retry_base_delay = 1.0
 
         sleep_calls = []
-        with patch("tasks.postgres_registry.time.sleep", side_effect=lambda d: sleep_calls.append(d)):
+        with patch(
+            "tasks.postgres_registry.time.sleep",
+            side_effect=lambda d: sleep_calls.append(d),
+        ):
             with registry._conn():
                 pass
 
@@ -644,7 +647,7 @@ class TestConnectionRetry:
 
         with patch("tasks.postgres_registry.time.sleep"):
             with pytest.raises(RuntimeError):
-                with registry._conn() as conn:
+                with registry._conn() as _conn:
                     raise RuntimeError("query failed")
 
         mock_pool.putconn.assert_called_once_with(mock_conn)
@@ -655,13 +658,14 @@ class TestConnectionRetry:
 
         with patch("tasks.postgres_registry.time.sleep"):
             with pytest.raises(RuntimeError):
-                with registry._conn() as conn:
+                with registry._conn() as _conn:
                     raise RuntimeError("query failed")
 
         mock_conn.rollback.assert_called_once()
 
 
 # ── Tests: query timeout configuration ───────────────────────────────────────
+
 
 class TestQueryTimeoutConfig:
     """Verify that query_timeout_ms is forwarded to the connection pool.
@@ -673,13 +677,13 @@ class TestQueryTimeoutConfig:
     def test_no_timeout_by_default(self):
         """The registry must not inject statement_timeout if not asked."""
         mock_conn = MagicMock()
-        registry  = PostgresTaskRegistry(connection_factory=lambda: mock_conn)
+        registry = PostgresTaskRegistry(connection_factory=lambda: mock_conn)
         # query_timeout_ms is None; no error expected, just verify attribute
         assert registry._query_timeout_ms is None
 
     def test_timeout_stored_on_instance(self):
         mock_conn = MagicMock()
-        registry  = PostgresTaskRegistry(
+        registry = PostgresTaskRegistry(
             connection_factory=lambda: mock_conn,
             query_timeout_ms=3000,
         )
@@ -723,10 +727,13 @@ class TestQueryTimeoutConfig:
 
             if mock_pool_cls.called:
                 _, kwargs = mock_pool_cls.call_args
-                assert "options" not in kwargs or "statement_timeout" not in kwargs.get("options", "")
+                assert "options" not in kwargs or "statement_timeout" not in kwargs.get(
+                    "options", ""
+                )
 
 
 # ── Tests: health_check ───────────────────────────────────────────────────────
+
 
 class TestHealthCheck:
     """Verify that health_check() returns True/False and never raises."""
@@ -772,10 +779,12 @@ class TestHealthCheck:
         """health_check must be declared in the abstract base class."""
         from tasks.abstract_registry import AbstractTaskRegistry
         import inspect
+
         assert "health_check" in dict(inspect.getmembers(AbstractTaskRegistry))
 
 
 # ── Tests: save_batch ─────────────────────────────────────────────────────────
+
 
 class TestSaveBatch:
     """Verify save_batch() inserts multiple tasks in a single transaction."""
@@ -793,7 +802,7 @@ class TestSaveBatch:
 
     def test_single_task_batch_commits(self):
         registry, mock_conn = _make_registry()
-        cur = _fresh_cursor(mock_conn)
+        _cur = _fresh_cursor(mock_conn)
         mock_conn.reset_mock()
         task = _make_task()
 
@@ -857,10 +866,11 @@ class TestSaveBatch:
 
         result = registry.save_batch(tasks)
 
-        assert result is tasks   # same object, not a copy
+        assert result is tasks  # same object, not a copy
 
 
 # ── Tests: schema migration versioning ───────────────────────────────────────
+
 
 class TestSchemaMigrations:
     """Verify the migration versioning system.
@@ -870,7 +880,9 @@ class TestSchemaMigrations:
     sets and verify the correct migrations are (or are not) applied.
     """
 
-    def _migration_registry(self, already_applied: list[int]) -> tuple[PostgresTaskRegistry, MagicMock]:
+    def _migration_registry(
+        self, already_applied: list[int]
+    ) -> tuple[PostgresTaskRegistry, MagicMock]:
         """
         Build a registry whose mock DB reports ``already_applied`` versions.
 
@@ -939,6 +951,7 @@ class TestSchemaMigrations:
 
             def capture_execute(sql, *a, **kw):
                 executed_sqls.append(str(sql))
+
             cur.execute.side_effect = capture_execute
             return cur
 
@@ -966,6 +979,7 @@ class TestSchemaMigrations:
             def capture_execute(sql, *a, **kw):
                 if "CREATE TABLE IF NOT EXISTS tasks" in str(sql):
                     create_table_call_count[0] += 1
+
             cur.execute.side_effect = capture_execute
             return cur
 
@@ -994,13 +1008,19 @@ class TestSchemaMigrations:
         mock_conn.cursor.return_value = cur
 
         call_count = [0]
+
         def fake_fetchall():
             call_count[0] += 1
             if call_count[0] <= 1:
                 return []  # schema_migrations initial query
             return [
-                {"version": 1, "description": "Initial schema", "applied_at": "2024-01-01T00:00:00+00:00"},
+                {
+                    "version": 1,
+                    "description": "Initial schema",
+                    "applied_at": "2024-01-01T00:00:00+00:00",
+                },
             ]
+
         cur.fetchall.side_effect = fake_fetchall
 
         registry = PostgresTaskRegistry(connection_factory=lambda: mock_conn)
@@ -1008,7 +1028,11 @@ class TestSchemaMigrations:
         # Reset to normal fetchall for the list_applied_migrations call
         cur.fetchall.side_effect = None
         cur.fetchall.return_value = [
-            {"version": 1, "description": "Initial schema", "applied_at": "2024-01-01T00:00:00+00:00"},
+            {
+                "version": 1,
+                "description": "Initial schema",
+                "applied_at": "2024-01-01T00:00:00+00:00",
+            },
         ]
         result = registry.list_applied_migrations()
 
@@ -1021,11 +1045,13 @@ class TestSchemaMigrations:
 
 # ── Tests: SQLiteTaskRegistry enterprise features ─────────────────────────────
 
+
 class TestSQLiteHealthCheck:
     """health_check() and save_batch() on the SQLite backend."""
 
     def _make_sqlite(self):
         from tasks.registry import SQLiteTaskRegistry
+
         return SQLiteTaskRegistry(db_path=":memory:")
 
     def test_health_check_returns_true_on_fresh_registry(self):
@@ -1050,6 +1076,7 @@ class TestSQLiteHealthCheck:
 
     def test_save_batch_inserts_all_tasks(self):
         from tasks.registry import SQLiteTaskRegistry
+
         reg = SQLiteTaskRegistry(db_path=":memory:")
         try:
             tasks = [_make_task(f"t-{i}") for i in range(10)]
@@ -1061,10 +1088,11 @@ class TestSQLiteHealthCheck:
     def test_save_batch_is_atomic_on_error(self):
         """If any task in the batch fails, no tasks should be written."""
         from tasks.registry import SQLiteTaskRegistry
+
         reg = SQLiteTaskRegistry(db_path=":memory:")
         try:
             good = _make_task("good-id")
-            bad  = MagicMock()
+            bad = MagicMock()
             bad.to_dict.side_effect = RuntimeError("serialisation failure")
 
             with pytest.raises(Exception):
@@ -1077,6 +1105,7 @@ class TestSQLiteHealthCheck:
 
     def test_save_batch_returns_same_list(self):
         from tasks.registry import SQLiteTaskRegistry
+
         reg = SQLiteTaskRegistry(db_path=":memory:")
         try:
             tasks = [_make_task("a"), _make_task("b")]
@@ -1088,6 +1117,7 @@ class TestSQLiteHealthCheck:
     def test_save_batch_upserts_existing_tasks(self):
         """Saving a task twice via save_batch must not duplicate it."""
         from tasks.registry import SQLiteTaskRegistry
+
         reg = SQLiteTaskRegistry(db_path=":memory:")
         try:
             task = _make_task("dup-id")
@@ -1100,19 +1130,29 @@ class TestSQLiteHealthCheck:
 
 # ── Tests: abstract_registry completeness ────────────────────────────────────
 
+
 class TestAbstractRegistryInterface:
     """Verify the ABC declares all required methods and both backends implement them."""
 
     REQUIRED_METHODS = [
-        "save", "save_batch", "update", "delete",
-        "get", "list_all", "by_status", "by_subsystem",
-        "children_of", "pending_ordered", "count_by_status",
-        "oldest_pending", "health_check", "close",
+        "save",
+        "save_batch",
+        "update",
+        "delete",
+        "get",
+        "list_all",
+        "by_status",
+        "by_subsystem",
+        "children_of",
+        "pending_ordered",
+        "count_by_status",
+        "oldest_pending",
+        "health_check",
+        "close",
     ]
 
     def test_all_required_methods_on_abstract_registry(self):
         from tasks.abstract_registry import AbstractTaskRegistry
-        import inspect
 
         abstract_methods = AbstractTaskRegistry.__abstractmethods__
         for method in self.REQUIRED_METHODS:
@@ -1130,6 +1170,7 @@ class TestAbstractRegistryInterface:
 
     def test_sqlite_implements_all_required_methods(self):
         from tasks.registry import SQLiteTaskRegistry
+
         reg = SQLiteTaskRegistry(db_path=":memory:")
         try:
             for method in self.REQUIRED_METHODS:

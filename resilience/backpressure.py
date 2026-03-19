@@ -59,11 +59,12 @@ logger = logging.getLogger(__name__)
 
 class BackpressureAction(enum.Enum):
     """Recommended action from the backpressure controller."""
-    NONE            = "none"             # System healthy — proceed normally
-    WARN            = "warn"             # Approaching threshold — log warning
-    SLOW_DOWN       = "slow_down"        # Generate fewer tasks (reduce rate)
+
+    NONE = "none"  # System healthy — proceed normally
+    WARN = "warn"  # Approaching threshold — log warning
+    SLOW_DOWN = "slow_down"  # Generate fewer tasks (reduce rate)
     PAUSE_GENERATION = "pause_generation"  # Stop generating tasks this cycle
-    COMPRESS_MEMORY  = "compress_memory"  # Trigger memory compression
+    COMPRESS_MEMORY = "compress_memory"  # Trigger memory compression
 
 
 @dataclass
@@ -78,6 +79,7 @@ class BackpressureRecommendation:
     reason       : Human-readable explanation of why this action was recommended.
     signals      : Dict of the raw signal values that triggered the recommendation.
     """
+
     action: BackpressureAction = BackpressureAction.NONE
     wait_seconds: float = 0.0
     reason: str = ""
@@ -227,7 +229,8 @@ class BackpressureController:
         if artifact_count >= self._artifact_warn:
             logger.debug(
                 "Backpressure WARN: artifact_count=%d ≥ %d",
-                artifact_count, self._artifact_warn,
+                artifact_count,
+                self._artifact_warn,
             )
             return BackpressureRecommendation(
                 action=BackpressureAction.WARN,
@@ -251,6 +254,7 @@ class BackpressureController:
             "slow_downs_triggered": self._slow_downs_triggered,
             "last_pause_ago": (
                 round(time.monotonic() - self._last_pause_at, 1)
-                if self._last_pause_at else None
+                if self._last_pause_at
+                else None
             ),
         }

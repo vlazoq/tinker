@@ -22,7 +22,6 @@ Coverage matrix
 from __future__ import annotations
 
 import inspect
-import sys
 import time
 import pytest
 
@@ -30,20 +29,30 @@ import exceptions as exc_mod
 from exceptions import (
     TinkerError,
     # LLM
-    LLMError, ModelClientError,
-    ModelConnectionError, ModelTimeoutError,
-    ModelRateLimitError, ModelServerError,
-    ResponseParseError, ModelRouterError, PromptBuilderError,
+    LLMError,
+    ModelClientError,
+    ModelConnectionError,
+    ModelTimeoutError,
+    ModelRateLimitError,
+    ModelServerError,
+    ResponseParseError,
+    ModelRouterError,
+    PromptBuilderError,
     # Orchestrator
-    OrchestratorError, MicroLoopError, ConfigurationError,
+    OrchestratorError,
+    MicroLoopError,
+    ConfigurationError,
     # Memory
     MemoryStoreError,
     # Tasks
-    TaskError, DependencyCycleError,
+    TaskError,
+    DependencyCycleError,
     # Resilience
-    ResilienceError, CircuitBreakerOpenError,
+    ResilienceError,
+    CircuitBreakerOpenError,
     # Tools
-    ToolError, ToolNotFoundError,
+    ToolError,
+    ToolNotFoundError,
     # Context
     ContextError,
     # Architecture
@@ -58,6 +67,7 @@ from exceptions import (
 # ---------------------------------------------------------------------------
 # 1. __all__ completeness
 # ---------------------------------------------------------------------------
+
 
 class TestAllCompleteness:
     """Every class defined in exceptions.py must appear in __all__."""
@@ -77,8 +87,7 @@ class TestAllCompleteness:
         defined_in_module = {
             name
             for name, obj in inspect.getmembers(exc_mod, inspect.isclass)
-            if issubclass(obj, Exception)
-            and obj.__module__ == exc_mod.__name__
+            if issubclass(obj, Exception) and obj.__module__ == exc_mod.__name__
         }
         missing_from_all = defined_in_module - set(exc_mod.__all__)
         assert not missing_from_all, (
@@ -99,19 +108,32 @@ class TestAllCompleteness:
 # 2. Entire hierarchy descends from TinkerError
 # ---------------------------------------------------------------------------
 
+
 class TestHierarchy:
     """Every exception class must be a subclass of TinkerError."""
 
     ALL_CLASSES = [
-        LLMError, ModelClientError, ModelConnectionError, ModelTimeoutError,
-        ModelRateLimitError, ModelServerError, ResponseParseError,
-        ModelRouterError, PromptBuilderError,
-        OrchestratorError, MicroLoopError, ConfigurationError,
+        LLMError,
+        ModelClientError,
+        ModelConnectionError,
+        ModelTimeoutError,
+        ModelRateLimitError,
+        ModelServerError,
+        ResponseParseError,
+        ModelRouterError,
+        PromptBuilderError,
+        OrchestratorError,
+        MicroLoopError,
+        ConfigurationError,
         MemoryStoreError,
-        TaskError, DependencyCycleError,
-        ResilienceError, CircuitBreakerOpenError,
-        ToolError, ToolNotFoundError,
-        ContextError, ArchitectureError,
+        TaskError,
+        DependencyCycleError,
+        ResilienceError,
+        CircuitBreakerOpenError,
+        ToolError,
+        ToolNotFoundError,
+        ContextError,
+        ArchitectureError,
         ValidationError,
         ExperimentError,
     ]
@@ -133,36 +155,39 @@ class TestHierarchy:
 
 # (class, expected_retryable)
 _RETRYABLE_TABLE = [
-    (TinkerError,             False),
-    (LLMError,                False),
-    (ModelClientError,        False),
-    (ModelConnectionError,    True),
-    (ModelTimeoutError,       True),
-    (ModelRateLimitError,     True),
-    (ModelServerError,        True),
-    (ResponseParseError,      False),
-    (ModelRouterError,        False),
-    (PromptBuilderError,      False),
-    (OrchestratorError,       False),
-    (MicroLoopError,          True),
-    (ConfigurationError,      False),
-    (MemoryStoreError,        True),   # storage transients are worth retrying
-    (TaskError,               False),
-    (DependencyCycleError,    False),
-    (ResilienceError,         False),
-    (CircuitBreakerOpenError, True),   # retryable after cooldown
-    (ToolError,               True),
-    (ToolNotFoundError,       False),
-    (ContextError,            False),
-    (ArchitectureError,       False),
-    (ValidationError,         False),
-    (ExperimentError,         False),
+    (TinkerError, False),
+    (LLMError, False),
+    (ModelClientError, False),
+    (ModelConnectionError, True),
+    (ModelTimeoutError, True),
+    (ModelRateLimitError, True),
+    (ModelServerError, True),
+    (ResponseParseError, False),
+    (ModelRouterError, False),
+    (PromptBuilderError, False),
+    (OrchestratorError, False),
+    (MicroLoopError, True),
+    (ConfigurationError, False),
+    (MemoryStoreError, True),  # storage transients are worth retrying
+    (TaskError, False),
+    (DependencyCycleError, False),
+    (ResilienceError, False),
+    (CircuitBreakerOpenError, True),  # retryable after cooldown
+    (ToolError, True),
+    (ToolNotFoundError, False),
+    (ContextError, False),
+    (ArchitectureError, False),
+    (ValidationError, False),
+    (ExperimentError, False),
 ]
 
 
 class TestRetryableFlags:
-
-    @pytest.mark.parametrize("cls,expected", _RETRYABLE_TABLE, ids=lambda x: x.__name__ if inspect.isclass(x) else str(x))
+    @pytest.mark.parametrize(
+        "cls,expected",
+        _RETRYABLE_TABLE,
+        ids=lambda x: x.__name__ if inspect.isclass(x) else str(x),
+    )
     def test_class_level_retryable(self, cls, expected):
         assert cls.retryable is expected, (
             f"{cls.__name__}.retryable should be {expected}, got {cls.retryable}"
@@ -197,8 +222,8 @@ class TestRetryableFlags:
 # 4. TinkerError base: message, context, __str__
 # ---------------------------------------------------------------------------
 
-class TestTinkerErrorBase:
 
+class TestTinkerErrorBase:
     def test_empty_message(self):
         err = TinkerError()
         assert str(err) == ""
@@ -247,8 +272,8 @@ class TestTinkerErrorBase:
 # 5. CircuitBreakerOpenError custom __init__
 # ---------------------------------------------------------------------------
 
-class TestCircuitBreakerOpenError:
 
+class TestCircuitBreakerOpenError:
     def test_is_tinker_error(self):
         err = CircuitBreakerOpenError("payments", time.monotonic() + 30)
         assert isinstance(err, TinkerError)
@@ -289,8 +314,8 @@ class TestCircuitBreakerOpenError:
 # 6. ValidationError custom __init__
 # ---------------------------------------------------------------------------
 
-class TestValidationError:
 
+class TestValidationError:
     def test_field_attribute(self):
         err = ValidationError("email", "not-an-email", "must contain @")
         assert err.field == "email"
@@ -338,23 +363,28 @@ class TestValidationError:
 # 7. Backwards-compat aliases in llm/client.py
 # ---------------------------------------------------------------------------
 
+
 class TestBackwardsCompatAliases:
     """Old import paths from llm/client.py must resolve to the canonical classes."""
 
     def test_connection_error_alias(self):
         from llm.client import ConnectionError as LLMConnectionError
+
         assert LLMConnectionError is ModelConnectionError
 
     def test_timeout_error_alias(self):
         from llm.client import TimeoutError as LLMTimeoutError
+
         assert LLMTimeoutError is ModelTimeoutError
 
     def test_rate_limit_alias(self):
         from llm.client import RateLimitError
+
         assert RateLimitError is ModelRateLimitError
 
     def test_server_error_alias(self):
         from llm.client import ServerError
+
         assert ServerError is ModelServerError
 
 
@@ -362,20 +392,24 @@ class TestBackwardsCompatAliases:
 # 8. Submodule re-exports (each module re-exports its own exceptions)
 # ---------------------------------------------------------------------------
 
-class TestSubmoduleReexports:
 
+class TestSubmoduleReexports:
     def test_circuit_breaker_module_exports_open_error(self):
         from resilience.circuit_breaker import CircuitBreakerOpenError as CBE
+
         assert CBE is CircuitBreakerOpenError
 
     def test_prompt_builder_module_exports_error(self):
         from prompts.builder import PromptBuilderError as PBE
+
         assert PBE is PromptBuilderError
 
     def test_tasks_resolver_exports_cycle_error(self):
         from tasks.resolver import DependencyCycleError as DCE
+
         assert DCE is DependencyCycleError
 
     def test_validation_module_exports_error(self):
         from validation.input_validator import ValidationError as VE
+
         assert VE is ValidationError

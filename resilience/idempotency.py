@@ -122,7 +122,7 @@ class IdempotencyCache:
         self._default_ttl = default_ttl
         self._key_prefix = key_prefix
         self._client = None
-        self._memory: dict[str, str] = {}    # fallback in-memory cache
+        self._memory: dict[str, str] = {}  # fallback in-memory cache
         self._redis_available: Optional[bool] = None
 
     async def get(self, key: str) -> Optional[Any]:
@@ -187,7 +187,9 @@ class IdempotencyCache:
         if client is not None:
             try:
                 await client.set(full_key, serialised, ex=effective_ttl)
-                logger.debug("Cached idempotency key '%s' (ttl=%ds)", key[:20], effective_ttl)
+                logger.debug(
+                    "Cached idempotency key '%s' (ttl=%ds)", key[:20], effective_ttl
+                )
                 return True
             except Exception as exc:
                 logger.debug("IdempotencyCache.set Redis error (falling back): %s", exc)
@@ -254,6 +256,7 @@ class IdempotencyCache:
 
         try:
             import redis.asyncio as aioredis  # type: ignore
+
             client = aioredis.from_url(
                 self._redis_url,
                 decode_responses=True,
@@ -269,6 +272,8 @@ class IdempotencyCache:
             return None
         except Exception as exc:
             if self._redis_available is None:
-                logger.info("IdempotencyCache: Redis unavailable (%s) — in-memory fallback", exc)
+                logger.info(
+                    "IdempotencyCache: Redis unavailable (%s) — in-memory fallback", exc
+                )
             self._redis_available = False
             return None

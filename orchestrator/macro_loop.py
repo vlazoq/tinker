@@ -52,6 +52,7 @@ orchestrator, not here), so the next attempt won't happen for another full
 interval.  This prevents "retry storms" where a persistently-failing macro loop
 hammers the Synthesizer AI continuously.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -70,7 +71,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger("tinker.orchestrator.macro")
 
 
-async def run_macro_loop(orch: "Orchestrator", trigger_iteration: int) -> MacroLoopRecord:
+async def run_macro_loop(
+    orch: "Orchestrator", trigger_iteration: int
+) -> MacroLoopRecord:
     """
     Execute a full architectural snapshot and commit it to version control.
 

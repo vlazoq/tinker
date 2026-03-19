@@ -52,30 +52,29 @@ import json
 import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
 
 
 # ── Default configuration values ─────────────────────────────────────────────
 
 _DEFAULT_MODELS = {
     # High-quality 32B coder for writing and debugging
-    "coder":      os.getenv("GRUB_CODER_MODEL",      "qwen2.5-coder:32b"),
+    "coder": os.getenv("GRUB_CODER_MODEL", "qwen2.5-coder:32b"),
     # Fast 7B for reviewing (doesn't need to write code, just judge it)
-    "reviewer":   os.getenv("GRUB_REVIEWER_MODEL",   "qwen3:7b"),
+    "reviewer": os.getenv("GRUB_REVIEWER_MODEL", "qwen3:7b"),
     # Fast 7B for writing tests
-    "tester":     os.getenv("GRUB_TESTER_MODEL",     "qwen3:7b"),
+    "tester": os.getenv("GRUB_TESTER_MODEL", "qwen3:7b"),
     # 32B for debugging (needs to deeply understand code)
-    "debugger":   os.getenv("GRUB_DEBUGGER_MODEL",   "qwen2.5-coder:32b"),
+    "debugger": os.getenv("GRUB_DEBUGGER_MODEL", "qwen2.5-coder:32b"),
     # Medium 7B for refactoring (mostly structural changes)
     "refactorer": os.getenv("GRUB_REFACTORER_MODEL", "qwen2.5-coder:7b"),
 }
 
 # Default: all minions use the same Ollama instance
 _DEFAULT_OLLAMA_URLS = {
-    "coder":      os.getenv("GRUB_OLLAMA_URL", "http://localhost:11434"),
-    "reviewer":   os.getenv("GRUB_OLLAMA_URL", "http://localhost:11434"),
-    "tester":     os.getenv("GRUB_OLLAMA_URL", "http://localhost:11434"),
-    "debugger":   os.getenv("GRUB_OLLAMA_URL", "http://localhost:11434"),
+    "coder": os.getenv("GRUB_OLLAMA_URL", "http://localhost:11434"),
+    "reviewer": os.getenv("GRUB_OLLAMA_URL", "http://localhost:11434"),
+    "tester": os.getenv("GRUB_OLLAMA_URL", "http://localhost:11434"),
+    "debugger": os.getenv("GRUB_OLLAMA_URL", "http://localhost:11434"),
     "refactorer": os.getenv("GRUB_OLLAMA_URL", "http://localhost:11434"),
 }
 
@@ -115,38 +114,42 @@ class GrubConfig:
     )
 
     # ── Model assignments ──────────────────────────────────────────────────────
-    models:      dict[str, str] = field(default_factory=lambda: dict(_DEFAULT_MODELS))
-    ollama_urls: dict[str, str] = field(default_factory=lambda: dict(_DEFAULT_OLLAMA_URLS))
+    models: dict[str, str] = field(default_factory=lambda: dict(_DEFAULT_MODELS))
+    ollama_urls: dict[str, str] = field(
+        default_factory=lambda: dict(_DEFAULT_OLLAMA_URLS)
+    )
 
     # ── Quality control ────────────────────────────────────────────────────────
     quality_threshold: float = float(os.getenv("GRUB_QUALITY_THRESHOLD", "0.75"))
-    max_iterations:    int   = int(os.getenv("GRUB_MAX_ITERATIONS",    "5"))
+    max_iterations: int = int(os.getenv("GRUB_MAX_ITERATIONS", "5"))
 
     # ── Paths ──────────────────────────────────────────────────────────────────
-    output_dir:           str = os.getenv("GRUB_OUTPUT_DIR",      "./grub_output")
-    queue_db_path:        str = os.getenv("GRUB_QUEUE_DB",         "grub_queue.sqlite")
-    tinker_tasks_db:      str = os.getenv("TINKER_TASK_DB",        "tinker_tasks_engine.sqlite")
-    tinker_artifacts_dir: str = os.getenv("TINKER_ARTIFACTS_DIR",  "./tinker_artifacts")
-    grub_artifacts_dir:   str = os.getenv("GRUB_ARTIFACTS_DIR",    "./grub_artifacts")
+    output_dir: str = os.getenv("GRUB_OUTPUT_DIR", "./grub_output")
+    queue_db_path: str = os.getenv("GRUB_QUEUE_DB", "grub_queue.sqlite")
+    tinker_tasks_db: str = os.getenv("TINKER_TASK_DB", "tinker_tasks_engine.sqlite")
+    tinker_artifacts_dir: str = os.getenv("TINKER_ARTIFACTS_DIR", "./tinker_artifacts")
+    grub_artifacts_dir: str = os.getenv("GRUB_ARTIFACTS_DIR", "./grub_artifacts")
 
     # ── Mode C: Queue settings ─────────────────────────────────────────────────
     # These only matter when execution_mode == "queue"
     queue_workers: int = int(os.getenv("GRUB_QUEUE_WORKERS", "2"))
 
     # ── Optional features ──────────────────────────────────────────────────────
-    enable_git:       bool  = os.getenv("GRUB_ENABLE_GIT",  "false").lower() == "true"
-    request_timeout:  float = float(os.getenv("GRUB_REQUEST_TIMEOUT", "120.0"))
+    enable_git: bool = os.getenv("GRUB_ENABLE_GIT", "false").lower() == "true"
+    request_timeout: float = float(os.getenv("GRUB_REQUEST_TIMEOUT", "120.0"))
 
     # ── Skills loaded for each minion ──────────────────────────────────────────
     # You can add more skill files by dropping them in grub/skills/ and
     # adding the filename to the list below.
-    minion_skills: dict[str, list[str]] = field(default_factory=lambda: {
-        "coder":      ["python_expert.md", "clean_code.md", "software_architecture.md"],
-        "reviewer":   ["clean_code.md", "security_review.md"],
-        "tester":     ["python_expert.md", "testing_patterns.md"],
-        "debugger":   ["python_expert.md", "clean_code.md"],
-        "refactorer": ["python_expert.md", "clean_code.md"],
-    })
+    minion_skills: dict[str, list[str]] = field(
+        default_factory=lambda: {
+            "coder": ["python_expert.md", "clean_code.md", "software_architecture.md"],
+            "reviewer": ["clean_code.md", "security_review.md"],
+            "tester": ["python_expert.md", "testing_patterns.md"],
+            "debugger": ["python_expert.md", "clean_code.md"],
+            "refactorer": ["python_expert.md", "clean_code.md"],
+        }
+    )
 
     def validate(self) -> list[str]:
         """
@@ -194,7 +197,9 @@ class GrubConfig:
                 data = json.loads(p.read_text())
                 return cls.from_dict(data)
             except Exception as exc:
-                print(f"[GrubConfig] Warning: could not load {path}: {exc} — using defaults")
+                print(
+                    f"[GrubConfig] Warning: could not load {path}: {exc} — using defaults"
+                )
         # Write defaults so the user can edit them
         cfg = cls()
         try:

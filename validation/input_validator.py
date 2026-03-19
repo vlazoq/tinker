@@ -67,7 +67,7 @@ MAX_PROBLEM_LENGTH = 2000
 MAX_TASK_DESCRIPTION_LENGTH = 5000
 MAX_SUBSYSTEM_LENGTH = 100
 MAX_TASK_TITLE_LENGTH = 200
-MAX_CONTENT_LENGTH = 100_000    # 100KB — reasonable artifact size
+MAX_CONTENT_LENGTH = 100_000  # 100KB — reasonable artifact size
 MAX_QUERY_LENGTH = 500
 
 # Allowed URL schemes for web scraping (prevents file:// and other unsafe schemes)
@@ -112,7 +112,7 @@ INJECTION_PATTERNS = [
     r"<<SYS>>",
     # Jailbreak keywords
     r"\bjailbreak\b",
-    r"\bdan\s+mode\b",          # "Do Anything Now" jailbreak
+    r"\bdan\s+mode\b",  # "Do Anything Now" jailbreak
     r"\bgrandma\s+trick\b",
     r"\btoken\s+smuggling\b",
     r"\bprompt\s+injection\b",
@@ -128,12 +128,13 @@ INJECTION_PATTERNS = [
 # from both TinkerError and ValueError for backwards compatibility) and
 # re-exported here so ``from validation.input_validator import ValidationError``
 # continues to work.
-from exceptions import ValidationError  # noqa: F401  (intentional re-export)
+from exceptions import ValidationError  # noqa: E402, F401  (intentional re-export)
 
 
 # ---------------------------------------------------------------------------
 # String sanitization
 # ---------------------------------------------------------------------------
+
 
 def sanitize_string(
     value: Any,
@@ -187,7 +188,9 @@ def sanitize_string(
     if len(text) > max_length:
         logger.warning(
             "Sanitizing '%s': truncating from %d to %d characters",
-            field, len(text), max_length,
+            field,
+            len(text),
+            max_length,
         )
         text = text[:max_length]
 
@@ -197,6 +200,7 @@ def sanitize_string(
 # ---------------------------------------------------------------------------
 # Prompt injection detection
 # ---------------------------------------------------------------------------
+
 
 def check_prompt_injection(text: str, field: str = "input") -> Optional[str]:
     """
@@ -210,7 +214,9 @@ def check_prompt_injection(text: str, field: str = "input") -> Optional[str]:
     lower = text.lower()
     for pattern in INJECTION_PATTERNS:
         if re.search(pattern, lower, re.IGNORECASE):
-            msg = f"Potential prompt injection detected in '{field}': pattern '{pattern}'"
+            msg = (
+                f"Potential prompt injection detected in '{field}': pattern '{pattern}'"
+            )
             logger.warning(msg)
             return msg
     return None
@@ -219,6 +225,7 @@ def check_prompt_injection(text: str, field: str = "input") -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Domain-specific validators
 # ---------------------------------------------------------------------------
+
 
 def validate_problem_statement(raw: Any) -> str:
     """
@@ -241,7 +248,9 @@ def validate_problem_statement(raw: Any) -> str:
     ------
     ValidationError : If the input is invalid.
     """
-    text = sanitize_string(raw, max_length=MAX_PROBLEM_LENGTH, field="problem_statement")
+    text = sanitize_string(
+        raw, max_length=MAX_PROBLEM_LENGTH, field="problem_statement"
+    )
 
     # Warn (but don't block) on suspected injection
     check_prompt_injection(text, "problem_statement")
@@ -273,7 +282,9 @@ def validate_task(raw: Any) -> dict:
 
     task_id = raw.get("id")
     if not task_id or not isinstance(task_id, str):
-        raise ValidationError("task.id", task_id, "task must have a non-empty string id")
+        raise ValidationError(
+            "task.id", task_id, "task must have a non-empty string id"
+        )
 
     # Sanitize string fields (non-destructive — keeps dict structure)
     safe = dict(raw)
@@ -303,7 +314,9 @@ def validate_task(raw: Any) -> dict:
             allow_empty=True,
         )
         # Subsystem names should be alphanumeric (slugs)
-        if safe["subsystem"] and not re.match(r"^[a-zA-Z0-9_\-. ]+$", safe["subsystem"]):
+        if safe["subsystem"] and not re.match(
+            r"^[a-zA-Z0-9_\-. ]+$", safe["subsystem"]
+        ):
             logger.warning(
                 "task.subsystem contains unexpected characters: '%s'", safe["subsystem"]
             )
@@ -342,16 +355,16 @@ def validate_url(raw: Any, field: str = "url") -> str:
 
     if parsed.scheme.lower() not in ALLOWED_URL_SCHEMES:
         raise ValidationError(
-            field, url,
-            f"URL scheme '{parsed.scheme}' not allowed (only http/https)"
+            field, url, f"URL scheme '{parsed.scheme}' not allowed (only http/https)"
         )
 
     host = parsed.hostname or ""
     for pattern in BLOCKED_URL_PATTERNS:
         if re.search(pattern, host, re.IGNORECASE):
             raise ValidationError(
-                field, url,
-                f"URL blocked: host '{host}' matches restricted pattern '{pattern}'"
+                field,
+                url,
+                f"URL blocked: host '{host}' matches restricted pattern '{pattern}'",
             )
 
     return url
@@ -394,8 +407,9 @@ def validate_file_path(
         candidate.relative_to(base)
     except ValueError:
         raise ValidationError(
-            field, raw,
-            f"Path traversal detected: '{raw_str}' would escape base dir '{base_dir}'"
+            field,
+            raw,
+            f"Path traversal detected: '{raw_str}' would escape base dir '{base_dir}'",
         )
 
     return candidate
@@ -431,16 +445,16 @@ def validate_ai_json(
 
     if not isinstance(raw, dict):
         raise ValidationError(
-            field, type(raw).__name__,
-            f"Expected dict from AI, got {type(raw).__name__}"
+            field,
+            type(raw).__name__,
+            f"Expected dict from AI, got {type(raw).__name__}",
         )
 
     if expected_keys:
         missing = [k for k in expected_keys if k not in raw]
         if missing:
             raise ValidationError(
-                field, list(raw.keys()),
-                f"AI output missing required keys: {missing}"
+                field, list(raw.keys()), f"AI output missing required keys: {missing}"
             )
 
     return raw
@@ -477,18 +491,14 @@ def validate_config_value(
     try:
         cast = value_type(value)
     except (TypeError, ValueError) as exc:
-        raise ValidationError(name, value, f"Cannot cast to {value_type.__name__}: {exc}")
+        raise ValidationError(
+            name, value, f"Cannot cast to {value_type.__name__}: {exc}"
+        )
 
     if min_val is not None and cast < min_val:
-        raise ValidationError(
-            name, cast,
-            f"Value {cast} is below minimum {min_val}"
-        )
+        raise ValidationError(name, cast, f"Value {cast} is below minimum {min_val}")
 
     if max_val is not None and cast > max_val:
-        raise ValidationError(
-            name, cast,
-            f"Value {cast} exceeds maximum {max_val}"
-        )
+        raise ValidationError(name, cast, f"Value {cast} exceeds maximum {max_val}")
 
     return cast

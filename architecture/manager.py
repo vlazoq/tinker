@@ -72,7 +72,6 @@ Responsibilities
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 from datetime import datetime, timezone
@@ -127,7 +126,7 @@ class ArchitectureStateManager:
     # The name of the "live" current-state file (always in workspace root)
     STATE_FILENAME = "architecture_state.json"
     # The subdirectory where historical snapshots are stored
-    HISTORY_DIR    = "history"
+    HISTORY_DIR = "history"
 
     def __init__(
         self,
@@ -135,12 +134,12 @@ class ArchitectureStateManager:
         system_name: str = "Unknown System",
         auto_git: bool = True,
     ) -> None:
-        self.workspace   = Path(workspace)
-        self.auto_git    = auto_git
+        self.workspace = Path(workspace)
+        self.auto_git = auto_git
 
         # Build the full paths for convenience
         self._state_path = self.workspace / self.STATE_FILENAME
-        self._hist_dir   = self.workspace / self.HISTORY_DIR
+        self._hist_dir = self.workspace / self.HISTORY_DIR
 
         # Create the workspace and history directories if they don't exist yet.
         # parents=True means it will create intermediate directories too.
@@ -201,10 +200,10 @@ class ArchitectureStateManager:
         - Writes a timestamped snapshot to the history/ directory.
         - If auto_git is True, runs git add + git commit.
         """
-        old_state   = self._state
+        old_state = self._state
         # The merger produces a brand-new state object — nothing is mutated
-        new_state   = merge_update(old_state, update)
-        self._state = new_state   # update our in-memory reference
+        new_state = merge_update(old_state, update)
+        self._state = new_state  # update our in-memory reference
 
         # Save the new state in both the "live" file and the history archive
         self._persist(new_state)
@@ -246,9 +245,9 @@ class ArchitectureStateManager:
           - loop_XXXX   : zero-padded loop number (so files sort correctly)
           - YYYYMMDDTHHMMSSZ : UTC timestamp in ISO 8601 "compact" format
         """
-        ts  = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         # :04d pads the loop number with leading zeros to 4 digits
-        fn  = f"loop_{state.macro_loop:04d}_{ts}.json"
+        fn = f"loop_{state.macro_loop:04d}_{ts}.json"
         dst = self._hist_dir / fn
         dst.write_text(state.model_dump_json(indent=2), encoding="utf-8")
 
@@ -276,7 +275,7 @@ class ArchitectureStateManager:
         state didn't actually change between two updates).
         """
         try:
-            self._run_git("add", "--all")   # stage everything in the workspace
+            self._run_git("add", "--all")  # stage everything in the workspace
             self._run_git("commit", "-m", message)
         except subprocess.CalledProcessError as exc:
             # "nothing to commit" is not a real error — it just means no files changed
@@ -298,10 +297,10 @@ class ArchitectureStateManager:
         The stripped stdout text from the git command.
         """
         result = subprocess.run(
-            ["git", *args],           # ["git", "commit", "-m", "msg", ...]
-            cwd=self.workspace,       # run the command inside the workspace folder
-            capture_output=True,      # capture stdout and stderr instead of printing
-            text=True,                # return strings instead of bytes
+            ["git", *args],  # ["git", "commit", "-m", "msg", ...]
+            cwd=self.workspace,  # run the command inside the workspace folder
+            capture_output=True,  # capture stdout and stderr instead of printing
+            text=True,  # return strings instead of bytes
         )
         if result.returncode != 0 and "nothing to commit" not in result.stdout:
             raise subprocess.CalledProcessError(
@@ -333,15 +332,15 @@ class ArchitectureStateManager:
         new    : The state AFTER the update.
         update : The raw update dict (used to extract the loop_note).
         """
-        loop      = new.macro_loop
+        loop = new.macro_loop
         # Count how many items were ADDED in each collection
-        new_comps = len(new.components)     - len(old.components)
-        new_decs  = len(new.decisions)      - len(old.decisions)
-        new_qs    = len(new.open_questions) - len(old.open_questions)
-        conf      = new.overall_confidence.value
+        new_comps = len(new.components) - len(old.components)
+        new_decs = len(new.decisions) - len(old.decisions)
+        new_qs = len(new.open_questions) - len(old.open_questions)
+        conf = new.overall_confidence.value
 
         # Build the message by assembling pipe-separated parts
-        parts   = [f"loop {loop:04d}: arch-state update"]
+        parts = [f"loop {loop:04d}: arch-state update"]
         details = []
         if new_comps > 0:
             details.append(f"+{new_comps} component(s)")
@@ -390,13 +389,15 @@ class ArchitectureStateManager:
         -------
         A plain-text string ready to paste directly into an LLM prompt.
         """
-        s    = self._state
+        s = self._state
         # Convert token budget to character budget using the 1 token ≈ 4 chars rule
         char_budget = budget_tokens * 4
         lines: list[str] = []
 
         # Header: system name, loop number, confidence
-        lines.append(f"=== Architecture State: {s.system_name} (loop {s.macro_loop}) ===")
+        lines.append(
+            f"=== Architecture State: {s.system_name} (loop {s.macro_loop}) ==="
+        )
         lines.append(f"Purpose : {s.system_purpose or '(not set)'}")
         lines.append(f"Scope   : {s.system_scope or '(not set)'}")
         tier = s.overall_confidence.tier.value
@@ -424,16 +425,20 @@ class ArchitectureStateManager:
                 # Show component names rather than raw IDs wherever possible
                 src = id_to_name.get(r.source_id, r.source_id)
                 tgt = id_to_name.get(r.target_id, r.target_id)
-                lines.append(f"  {src} --[{r.kind}]--> {tgt}"
-                             + (f" ({r.description})" if r.description else ""))
+                lines.append(
+                    f"  {src} --[{r.kind}]--> {tgt}"
+                    + (f" ({r.description})" if r.description else "")
+                )
             if len(s.relationships) > 10:
-                lines.append(f"  … +{len(s.relationships)-10} more")
+                lines.append(f"  … +{len(s.relationships) - 10} more")
             lines.append("")
 
         # Decisions — top 8 by confidence, with status label
         if s.decisions:
             lines.append(f"── Design Decisions ({len(s.decisions)}) ──")
-            for d in sorted(s.decisions.values(), key=lambda x: -x.confidence.value)[:8]:
+            for d in sorted(s.decisions.values(), key=lambda x: -x.confidence.value)[
+                :8
+            ]:
                 lines.append(f"  [{d.status} {d.confidence.value:.2f}] {d.title}")
             lines.append("")
 
@@ -526,14 +531,16 @@ class ArchitectureStateManager:
         for p in sorted(self._hist_dir.glob("loop_*_*.json")):
             try:
                 s = ArchitectureState.model_validate_json(p.read_text())
-                result.append({
-                    "file":       p.name,
-                    "loop":       s.macro_loop,
-                    "components": len(s.components),
-                    "decisions":  len(s.decisions),
-                    "confidence": round(s.overall_confidence.value, 3),
-                    "updated_at": s.updated_at,
-                })
+                result.append(
+                    {
+                        "file": p.name,
+                        "loop": s.macro_loop,
+                        "components": len(s.components),
+                        "decisions": len(s.decisions),
+                        "confidence": round(s.overall_confidence.value, 3),
+                        "updated_at": s.updated_at,
+                    }
+                )
             except Exception:
                 # Skip files we can't parse rather than crashing the whole listing
                 pass
@@ -577,8 +584,11 @@ class ArchitectureStateManager:
         These are decisions the AI has proposed but hasn't yet backed with
         strong evidence.  They may need to be revisited or challenged.
         """
-        return [d for d in self._state.decisions.values()
-                if d.confidence.tier == ConfidenceTier.SPECULATIVE]
+        return [
+            d
+            for d in self._state.decisions.values()
+            if d.confidence.tier == ConfidenceTier.SPECULATIVE
+        ]
 
     def components_by_subsystem(self, subsystem: str) -> list[Component]:
         """
@@ -586,8 +596,11 @@ class ArchitectureStateManager:
         Case-insensitive.  Useful for getting a complete picture of one
         part of the system.
         """
-        return [c for c in self._state.components.values()
-                if c.subsystem and c.subsystem.lower() == subsystem.lower()]
+        return [
+            c
+            for c in self._state.components.values()
+            if c.subsystem and c.subsystem.lower() == subsystem.lower()
+        ]
 
     def confidence_map(self) -> dict[str, float]:
         """
@@ -624,6 +637,7 @@ class ArchitectureStateManager:
 # Diff helper (module-level)
 # ──────────────────────────────────────────────
 
+
 def _diff_states(a: ArchitectureState, b: ArchitectureState) -> str:
     """
     Compare two ArchitectureState versions and produce a human-readable
@@ -655,8 +669,8 @@ def _diff_states(a: ArchitectureState, b: ArchitectureState) -> str:
     )
 
     # Overall confidence change — shows whether the AI is becoming more or less certain
-    dc   = b.overall_confidence.value - a.overall_confidence.value
-    sign = "+" if dc >= 0 else ""    # include "+" prefix for positive changes
+    dc = b.overall_confidence.value - a.overall_confidence.value
+    sign = "+" if dc >= 0 else ""  # include "+" prefix for positive changes
     lines.append(
         f"\nOverall confidence: {a.overall_confidence.value:.3f} → "
         f"{b.overall_confidence.value:.3f}  ({sign}{dc:.3f})"
@@ -668,10 +682,10 @@ def _diff_states(a: ArchitectureState, b: ArchitectureState) -> str:
     #                 a_names & b_names = components present in both (may be updated)
     a_names = {c.name for c in a.components.values()}
     b_names = {c.name for c in b.components.values()}
-    c_added   = b_names - a_names     # in b but not in a → newly added
-    c_removed = a_names - b_names     # in a but not in b → removed
+    c_added = b_names - a_names  # in b but not in a → newly added
+    c_removed = a_names - b_names  # in a but not in b → removed
     c_changed = []
-    for name in a_names & b_names:   # in both → check for changes
+    for name in a_names & b_names:  # in both → check for changes
         ca = next(c for c in a.components.values() if c.name == name)
         cb = next(c for c in b.components.values() if c.name == name)
         delta = cb.confidence.value - ca.confidence.value
@@ -695,7 +709,7 @@ def _diff_states(a: ArchitectureState, b: ArchitectureState) -> str:
     # ── Compare Design Decisions ────────────────────────────────────
     a_dt = {d.title for d in a.decisions.values()}
     b_dt = {d.title for d in b.decisions.values()}
-    d_added   = b_dt - a_dt
+    d_added = b_dt - a_dt
     d_removed = a_dt - b_dt
     d_changed = []
     for title in a_dt & b_dt:
@@ -704,8 +718,9 @@ def _diff_states(a: ArchitectureState, b: ArchitectureState) -> str:
         delta = db.confidence.value - da.confidence.value
         # Report if status changed (e.g. proposed → accepted) OR confidence shifted
         if da.status != db.status or abs(delta) > 0.005:
-            d_changed.append((title, da.status, db.status,
-                               da.confidence.value, db.confidence.value))
+            d_changed.append(
+                (title, da.status, db.status, da.confidence.value, db.confidence.value)
+            )
 
     if d_added or d_removed or d_changed:
         lines.append("\n── Design Decisions ──")
@@ -714,7 +729,7 @@ def _diff_states(a: ArchitectureState, b: ArchitectureState) -> str:
         for t in sorted(d_removed):
             lines.append(f"  [-] REMOVED  {t}")
         for title, sa, sb, ca, cb in d_changed:
-            arrow  = "↑" if cb > ca else "↓"
+            arrow = "↑" if cb > ca else "↓"
             # Show status transition only if it changed (e.g. [proposed→accepted])
             status = f"  [{sa}→{sb}]" if sa != sb else ""
             lines.append(f"  [~] UPDATED  {title}  {ca:.3f}→{cb:.3f} {arrow}{status}")
@@ -722,13 +737,14 @@ def _diff_states(a: ArchitectureState, b: ArchitectureState) -> str:
     # ── Compare Open Questions ──────────────────────────────────────
     a_qs = {q.question for q in a.open_questions.values()}
     b_qs = {q.question for q in b.open_questions.values()}
-    q_new = b_qs - a_qs    # questions raised in b that didn't exist in a
+    q_new = b_qs - a_qs  # questions raised in b that didn't exist in a
 
     # Find questions that were open in a but marked resolved in b.
     # The walrus operator `:=` (Python 3.8+) assigns and tests in one expression:
     #   (aq := a.question_by_text(q.question))   ← assigns aq AND checks it's not None
     q_resolved = [
-        q.question for q in b.open_questions.values()
+        q.question
+        for q in b.open_questions.values()
         if (aq := a.question_by_text(q.question)) and not aq.resolved and q.resolved
     ]
 
@@ -741,7 +757,7 @@ def _diff_states(a: ArchitectureState, b: ArchitectureState) -> str:
 
     # ── New Loop Notes ──────────────────────────────────────────────
     # Notes are append-only, so anything beyond a's length is new in b
-    new_notes = b.loop_notes[len(a.loop_notes):]
+    new_notes = b.loop_notes[len(a.loop_notes) :]
     if new_notes:
         lines.append("\n── New Loop Notes ──")
         for n in new_notes:

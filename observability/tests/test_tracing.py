@@ -4,11 +4,10 @@ Tests for observability/tracing.py
 
 Covers span recording, trace context propagation, and performance summaries.
 """
+
 from __future__ import annotations
 
-import asyncio
 import time
-import pytest
 
 from observability.tracing import Tracer, Span
 
@@ -25,7 +24,7 @@ class TestSpan:
         span.ended_at = time.monotonic()
         # duration_ms is a property (not a method); returns milliseconds
         assert span.duration_ms is not None
-        assert span.duration_ms >= 10.0    # at least 10 ms
+        assert span.duration_ms >= 10.0  # at least 10 ms
 
     def test_span_duration_none_if_not_ended(self):
         span = Span(name="op")
@@ -53,7 +52,7 @@ class TestTracer:
             except ValueError:
                 pass
         recent = tracer.recent_traces()
-        last_trace = recent[-1]   # dict from to_dict()
+        last_trace = recent[-1]  # dict from to_dict()
         failed_spans = [s for s in last_trace["spans"] if s.get("error")]
         assert len(failed_spans) >= 1
 
@@ -83,16 +82,19 @@ class TestTracer:
 # record_tinker_exception
 # ---------------------------------------------------------------------------
 
+
 class TestRecordTinkerException:
     """record_tinker_exception attaches TinkerError context to a Span."""
 
     def _span(self, name: str = "op") -> "Span":
         from observability.tracing import Span
+
         return Span(name=name)
 
     def test_sets_error_field(self):
         from observability.tracing import record_tinker_exception
         from exceptions import ModelConnectionError
+
         span = self._span()
         exc = ModelConnectionError("connect failed")
         record_tinker_exception(exc, span)
@@ -102,6 +104,7 @@ class TestRecordTinkerException:
     def test_attaches_exc_type_attribute(self):
         from observability.tracing import record_tinker_exception
         from exceptions import ModelTimeoutError
+
         span = self._span()
         record_tinker_exception(ModelTimeoutError("timeout"), span)
         assert span.attributes.get("exc.type") == "ModelTimeoutError"
@@ -109,6 +112,7 @@ class TestRecordTinkerException:
     def test_attaches_retryable_attribute(self):
         from observability.tracing import record_tinker_exception
         from exceptions import ModelConnectionError, ResponseParseError
+
         span_r = self._span()
         span_nr = self._span()
         record_tinker_exception(ModelConnectionError("x"), span_r)
@@ -119,6 +123,7 @@ class TestRecordTinkerException:
     def test_context_dict_attached_as_prefixed_attrs(self):
         from observability.tracing import record_tinker_exception
         from exceptions import ModelConnectionError
+
         span = self._span()
         exc = ModelConnectionError("fail", context={"url": "http://x", "attempt": 2})
         record_tinker_exception(exc, span)
@@ -128,13 +133,21 @@ class TestRecordTinkerException:
     def test_empty_context_adds_no_exc_prefixed_attrs(self):
         from observability.tracing import record_tinker_exception
         from exceptions import TinkerError
+
         span = self._span()
         record_tinker_exception(TinkerError("plain"), span)
-        exc_ctx_keys = [k for k in span.attributes if k.startswith("exc.") and k not in ("exc.type", "exc.retryable")]
+        # TinkerError always has a trace_id in its context, so exc.trace_id is expected
+        exc_ctx_keys = [
+            k
+            for k in span.attributes
+            if k.startswith("exc.")
+            and k not in ("exc.type", "exc.retryable", "exc.trace_id")
+        ]
         assert exc_ctx_keys == []
 
     def test_plain_exception_gets_type_only(self):
         from observability.tracing import record_tinker_exception
+
         span = self._span()
         record_tinker_exception(ValueError("bad input"), span)
         assert span.attributes.get("exc.type") == "ValueError"
@@ -143,10 +156,12 @@ class TestRecordTinkerException:
     def test_does_not_raise_on_malformed_exc(self):
         """record_tinker_exception must never crash the caller."""
         from observability.tracing import record_tinker_exception
+
         span = self._span()
         # Pass a completely unexpected type — should not raise
         record_tinker_exception(None, span)  # type: ignore
 
     def test_importable_from_observability_package(self):
         from observability import record_tinker_exception
+
         assert callable(record_tinker_exception)

@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from functools import lru_cache
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +42,19 @@ class EmbeddingPipeline:
         if self._model is not None:
             return
         async with self._lock:
-            if self._model is not None:   # double-checked inside lock
+            if self._model is not None:  # double-checked inside lock
                 return
-            logger.info("Loading embedding model '%s' on %s…", self.model_name, self.device)
+            logger.info(
+                "Loading embedding model '%s' on %s…", self.model_name, self.device
+            )
             loop = asyncio.get_running_loop()
             self._model = await loop.run_in_executor(None, self._load_model)
             logger.info("Embedding model loaded.")
 
     def _load_model(self):
         """Runs in a thread-pool executor so it doesn't block the event loop."""
-        from sentence_transformers import SentenceTransformer   # type: ignore
+        from sentence_transformers import SentenceTransformer  # type: ignore
+
         return SentenceTransformer(self.model_name, device=self.device)
 
     def _encode_sync(self, texts: list[str]) -> list[list[float]]:

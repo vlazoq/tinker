@@ -30,10 +30,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CommandResult:
     """Result of running a shell command."""
+
     returncode: int
-    stdout:     str
-    stderr:     str
-    command:    str   # the command that was run (for logging)
+    stdout: str
+    stderr: str
+    command: str  # the command that was run (for logging)
 
     @property
     def succeeded(self) -> bool:
@@ -51,10 +52,10 @@ class CommandResult:
 
 
 def run_command(
-    cmd:     list[str],
-    cwd:     Optional[Union[str, Path]] = None,
+    cmd: list[str],
+    cwd: Optional[Union[str, Path]] = None,
     timeout: float = 60.0,
-    env:     Optional[dict] = None,
+    env: Optional[dict] = None,
 ) -> CommandResult:
     """
     Run a command synchronously and return its output.
@@ -93,17 +94,17 @@ def run_command(
     try:
         proc = subprocess.run(
             [str(c) for c in cmd],
-            capture_output = True,
-            text           = True,
-            cwd            = str(cwd) if cwd else None,
-            timeout        = timeout,
-            env            = run_env,
+            capture_output=True,
+            text=True,
+            cwd=str(cwd) if cwd else None,
+            timeout=timeout,
+            env=run_env,
         )
         result = CommandResult(
-            returncode = proc.returncode,
-            stdout     = proc.stdout,
-            stderr     = proc.stderr,
-            command    = cmd_str,
+            returncode=proc.returncode,
+            stdout=proc.stdout,
+            stderr=proc.stderr,
+            command=cmd_str,
         )
         if result.succeeded:
             logger.debug("run_command OK: %s", cmd_str)
@@ -113,24 +114,24 @@ def run_command(
     except subprocess.TimeoutExpired:
         logger.warning("run_command timeout after %.0fs: %s", timeout, cmd_str)
         return CommandResult(
-            returncode = -1,
-            stdout     = "",
-            stderr     = f"Command timed out after {timeout}s",
-            command    = cmd_str,
+            returncode=-1,
+            stdout="",
+            stderr=f"Command timed out after {timeout}s",
+            command=cmd_str,
         )
     except Exception as exc:
         logger.warning("run_command failed: %s — %s", cmd_str, exc)
         return CommandResult(
-            returncode = -1,
-            stdout     = "",
-            stderr     = str(exc),
-            command    = cmd_str,
+            returncode=-1,
+            stdout="",
+            stderr=str(exc),
+            command=cmd_str,
         )
 
 
 async def run_command_async(
-    cmd:     list[str],
-    cwd:     Optional[Union[str, Path]] = None,
+    cmd: list[str],
+    cwd: Optional[Union[str, Path]] = None,
     timeout: float = 60.0,
 ) -> CommandResult:
     """
@@ -142,9 +143,9 @@ async def run_command_async(
     try:
         proc = await asyncio.create_subprocess_exec(
             *[str(c) for c in cmd],
-            stdout = asyncio.subprocess.PIPE,
-            stderr = asyncio.subprocess.PIPE,
-            cwd    = str(cwd) if cwd else None,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(cwd) if cwd else None,
         )
         try:
             stdout_b, stderr_b = await asyncio.wait_for(
@@ -156,10 +157,10 @@ async def run_command_async(
             return CommandResult(-1, "", f"Timed out after {timeout}s", cmd_str)
 
         return CommandResult(
-            returncode = proc.returncode,
-            stdout     = stdout_b.decode(errors="replace"),
-            stderr     = stderr_b.decode(errors="replace"),
-            command    = cmd_str,
+            returncode=proc.returncode,
+            stdout=stdout_b.decode(errors="replace"),
+            stderr=stderr_b.decode(errors="replace"),
+            command=cmd_str,
         )
     except Exception as exc:
         return CommandResult(-1, "", str(exc), cmd_str)
@@ -167,8 +168,8 @@ async def run_command_async(
 
 def run_tests(
     test_path: Union[str, Path],
-    cwd:       Optional[Union[str, Path]] = None,
-    timeout:   float = 120.0,
+    cwd: Optional[Union[str, Path]] = None,
+    timeout: float = 120.0,
     extra_args: list[str] | None = None,
 ) -> CommandResult:
     """

@@ -57,6 +57,7 @@ from .base import BaseTool, ToolSchema
 # Protocol — matches whatever MemoryManager exposes
 # ---------------------------------------------------------------------------
 
+
 @runtime_checkable
 class MemoryManagerProtocol(Protocol):
     """
@@ -119,6 +120,7 @@ class MemoryManagerProtocol(Protocol):
 # Stub used when no real MemoryManager is wired in (e.g., during testing)
 # ---------------------------------------------------------------------------
 
+
 class _StubMemoryManager:
     """
     A placeholder MemoryManager used when no real one is provided.
@@ -144,6 +146,7 @@ class _StubMemoryManager:
     ) -> list[dict]:
         """Return empty results and warn that the stub is being used."""
         import warnings
+
         warnings.warn(
             "MemoryQueryTool is using the stub MemoryManager — no results returned. "
             "Pass a real MemoryManager instance to MemoryQueryTool().",
@@ -159,6 +162,7 @@ class _StubMemoryManager:
 # ---------------------------------------------------------------------------
 # Tool
 # ---------------------------------------------------------------------------
+
 
 class MemoryQueryTool(BaseTool):
     """
@@ -240,7 +244,7 @@ class MemoryQueryTool(BaseTool):
                         ),
                         "properties": {
                             "artifact_type": {"type": "string"},
-                            "task_id":       {"type": "string"},
+                            "task_id": {"type": "string"},
                             "tags": {
                                 "type": "array",
                                 "items": {"type": "string"},
@@ -265,12 +269,12 @@ class MemoryQueryTool(BaseTool):
     # Implementation
     # ------------------------------------------------------------------
 
-    async def _execute(           # type: ignore[override]
+    async def _execute(  # type: ignore[override]
         self,
         query: str,
         top_k: int = 10,
         filters: dict | None = None,
-        **_: Any,   # absorb any unexpected kwargs
+        **_: Any,  # absorb any unexpected kwargs
     ) -> list[dict]:
         """
         Search the memory archive and return normalised results.
@@ -305,19 +309,19 @@ class MemoryQueryTool(BaseTool):
             normalised.append(
                 {
                     # Some implementations use "id", others use "memory_id" — handle both.
-                    "memory_id":     r.get("memory_id", r.get("id", "")),
+                    "memory_id": r.get("memory_id", r.get("id", "")),
                     # Round the relevance score to 4 decimal places for readability.
-                    "score":         round(float(r.get("score", 0.0)), 4),
-                    "title":         r.get("title", ""),
+                    "score": round(float(r.get("score", 0.0)), 4),
+                    "title": r.get("title", ""),
                     "artifact_type": r.get("artifact_type", ""),
-                    "task_id":       r.get("task_id", ""),
-                    "created_at":    r.get("created_at", ""),
-                    "tags":          r.get("tags", []),
+                    "task_id": r.get("task_id", ""),
+                    "created_at": r.get("created_at", ""),
+                    "tags": r.get("tags", []),
                     # Some implementations use "snippet", others use "text".
                     # We take whichever exists, and cap text at 300 chars to keep
                     # the result compact (the full artifact can be fetched separately
                     # if needed).
-                    "snippet":       r.get("snippet", r.get("text", "")[:300]),
+                    "snippet": r.get("snippet", r.get("text", "")[:300]),
                 }
             )
         return normalised

@@ -58,6 +58,7 @@ from .schema import Task, TaskType
 # ScorerWeights — configuration knobs
 # =============================================================================
 
+
 @dataclass
 class ScorerWeights:
     """
@@ -86,20 +87,21 @@ class ScorerWeights:
     recency_half_life_hours : The recency score decays to 0.5 after this many hours.
     staleness_sat_hours  : The staleness score saturates (plateaus) after this many hours.
     """
-    confidence_gap:    float = 0.30   # Most important: explore what we don't know
-    recency:           float = 0.20   # Revisit neglected subsystems
-    staleness:         float = 0.20   # Prevent any task from waiting forever
-    dependency_depth:  float = 0.15   # Prefer shallower (less blocked) tasks
-    type_bonus:        float = 0.15   # Reward higher-value task types
+
+    confidence_gap: float = 0.30  # Most important: explore what we don't know
+    recency: float = 0.20  # Revisit neglected subsystems
+    staleness: float = 0.20  # Prevent any task from waiting forever
+    dependency_depth: float = 0.15  # Prefer shallower (less blocked) tasks
+    type_bonus: float = 0.15  # Reward higher-value task types
 
     # This is additive (not a weight), applied after the weighted sum.
     # It gives exploration tasks a small push so they aren't always beaten
     # by highly-scored regular tasks.
-    exploration_bump:  float = 0.10
+    exploration_bump: float = 0.10
 
     # Decay/saturation constants used in the math below.
-    recency_half_life_hours: float = 4.0    # After 4 hours, recency score = 0.5
-    staleness_sat_hours:     float = 24.0   # After 24 hours, staleness score saturates
+    recency_half_life_hours: float = 4.0  # After 4 hours, recency score = 0.5
+    staleness_sat_hours: float = 24.0  # After 24 hours, staleness score saturates
 
 
 # =============================================================================
@@ -110,18 +112,19 @@ class ScorerWeights:
 # EXPLORATION.  This table encodes that intuition.
 
 _TYPE_VALUES: dict[TaskType, float] = {
-    TaskType.SYNTHESIS:   1.0,   # Highest value: brings strands of work together
-    TaskType.DESIGN:      0.9,   # Core architectural output
-    TaskType.VALIDATION:  0.8,   # Confirming or refuting claims
-    TaskType.CRITIQUE:    0.7,   # Identifying weaknesses
-    TaskType.RESEARCH:    0.6,   # Background investigation
-    TaskType.EXPLORATION: 0.5,   # Lowest value: open-ended, unpredictable
+    TaskType.SYNTHESIS: 1.0,  # Highest value: brings strands of work together
+    TaskType.DESIGN: 0.9,  # Core architectural output
+    TaskType.VALIDATION: 0.8,  # Confirming or refuting claims
+    TaskType.CRITIQUE: 0.7,  # Identifying weaknesses
+    TaskType.RESEARCH: 0.6,  # Background investigation
+    TaskType.EXPLORATION: 0.5,  # Lowest value: open-ended, unpredictable
 }
 
 
 # =============================================================================
 # PriorityScorer class
 # =============================================================================
+
 
 class PriorityScorer:
     """
@@ -173,11 +176,11 @@ class PriorityScorer:
         # Each _*_component() method returns a raw value in [0, 1],
         # so multiplying by the weight scales it to [0, weight].
         components = {
-            "confidence_gap":   self.w.confidence_gap   * self._confidence_component(task),
-            "recency":          self.w.recency           * self._recency_component(task),
-            "staleness":        self.w.staleness         * self._staleness_component(task),
-            "dependency_depth": self.w.dependency_depth  * self._depth_component(task),
-            "type_bonus":       self.w.type_bonus        * self._type_component(task),
+            "confidence_gap": self.w.confidence_gap * self._confidence_component(task),
+            "recency": self.w.recency * self._recency_component(task),
+            "staleness": self.w.staleness * self._staleness_component(task),
+            "dependency_depth": self.w.dependency_depth * self._depth_component(task),
+            "type_bonus": self.w.type_bonus * self._type_component(task),
         }
 
         # Sum all five weighted components into a single raw score
@@ -343,12 +346,12 @@ class PriorityScorer:
             }
         """
         return {
-            "confidence_gap":   self.w.confidence_gap   * self._confidence_component(task),
-            "recency":          self.w.recency           * self._recency_component(task),
-            "staleness":        self.w.staleness         * self._staleness_component(task),
-            "dependency_depth": self.w.dependency_depth  * self._depth_component(task),
-            "type_bonus":       self.w.type_bonus        * self._type_component(task),
+            "confidence_gap": self.w.confidence_gap * self._confidence_component(task),
+            "recency": self.w.recency * self._recency_component(task),
+            "staleness": self.w.staleness * self._staleness_component(task),
+            "dependency_depth": self.w.dependency_depth * self._depth_component(task),
+            "type_bonus": self.w.type_bonus * self._type_component(task),
             # Show 0.0 for exploration_bump when the task isn't an exploration task
             "exploration_bump": self.w.exploration_bump if task.is_exploration else 0.0,
-            "raw_total":        self.score(task),
+            "raw_total": self.score(task),
         }

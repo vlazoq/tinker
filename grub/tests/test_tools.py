@@ -11,17 +11,28 @@ import pytest
 import sys
 from pathlib import Path
 
-from grub.tools.file_ops     import read_file, write_file, append_file, list_files, ensure_dir
-from grub.tools.shell        import run_command, check_syntax
-from grub.tools.code_analysis import count_lines, extract_functions, extract_imports, summarise_file
+from grub.tools.file_ops import (
+    read_file,
+    write_file,
+    append_file,
+    list_files,
+    ensure_dir,
+)
+from grub.tools.shell import run_command, check_syntax
+from grub.tools.code_analysis import (
+    count_lines,
+    extract_functions,
+    extract_imports,
+    summarise_file,
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # file_ops
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class TestFileOps:
 
+class TestFileOps:
     def test_write_then_read(self, tmp_path):
         p = tmp_path / "hello.txt"
         ok, path = write_file(p, "hello world")
@@ -79,8 +90,8 @@ class TestFileOps:
 # shell
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class TestShell:
 
+class TestShell:
     def test_run_command_success(self):
         result = run_command([sys.executable, "-c", "print('hello')"])
         assert result.succeeded is True
@@ -107,7 +118,7 @@ class TestShell:
 
     def test_check_syntax_invalid_file(self, tmp_path):
         p = tmp_path / "invalid.py"
-        p.write_text("def foo(\n")   # syntax error: unclosed paren
+        p.write_text("def foo(\n")  # syntax error: unclosed paren
         result = check_syntax(p)
         assert result.succeeded is False
 
@@ -140,7 +151,6 @@ def top_level(name: str) -> str:
 
 
 class TestCodeAnalysis:
-
     @pytest.fixture
     def sample_file(self, tmp_path) -> Path:
         p = tmp_path / "sample.py"
@@ -155,14 +165,14 @@ class TestCodeAnalysis:
     def test_count_lines_blank_and_code(self, sample_file):
         result = count_lines(sample_file)
         assert result["blank"] > 0
-        assert result["code"]  > 0
+        assert result["code"] > 0
 
     def test_extract_functions_finds_methods_and_top_level(self, sample_file):
         funcs = extract_functions(sample_file)
         names = [f["name"] for f in funcs]
-        assert "method_one"  in names
-        assert "_private"    in names
-        assert "top_level"   in names
+        assert "method_one" in names
+        assert "_private" in names
+        assert "top_level" in names
 
     def test_extract_functions_marks_async(self, tmp_path):
         p = tmp_path / "async_code.py"
@@ -170,21 +180,21 @@ class TestCodeAnalysis:
         funcs = extract_functions(p)
         by_name = {f["name"]: f for f in funcs}
         assert by_name["fetch"]["is_async"] is True
-        assert by_name["sync"]["is_async"]  is False
+        assert by_name["sync"]["is_async"] is False
 
     def test_extract_imports(self, sample_file):
         imports = extract_imports(sample_file)
-        assert "os"       in imports
-        assert "sys"      in imports
-        assert "pathlib"  in imports
+        assert "os" in imports
+        assert "sys" in imports
+        assert "pathlib" in imports
 
     def test_summarise_file_returns_expected_keys(self, sample_file):
         summary = summarise_file(sample_file)
-        assert "path"      in summary
-        assert "lines"     in summary
+        assert "path" in summary
+        assert "lines" in summary
         assert "functions" in summary
-        assert "classes"   in summary
-        assert "imports"   in summary
+        assert "classes" in summary
+        assert "imports" in summary
 
     def test_summarise_file_finds_class(self, sample_file):
         summary = summarise_file(sample_file)
@@ -192,7 +202,7 @@ class TestCodeAnalysis:
 
     def test_extract_functions_on_missing_file(self, tmp_path):
         result = extract_functions(tmp_path / "ghost.py")
-        assert result == []   # graceful empty return
+        assert result == []  # graceful empty return
 
     def test_count_lines_on_missing_file(self, tmp_path):
         result = count_lines(tmp_path / "ghost.py")

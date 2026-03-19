@@ -41,10 +41,12 @@ How the three loops use this config
 
   All loops  — ``state_snapshot_path`` (where the Dashboard reads live state)
 """
+
 from __future__ import annotations
 
 import logging
 import os
+
 # ``dataclass`` is the decorator; ``field`` lets us define fields whose
 # default values are computed at runtime (e.g. reading an env variable).
 from dataclasses import dataclass, field
@@ -179,7 +181,7 @@ class OrchestratorConfig:
     # = 4 hours.  This is intentionally a long interval: the macro snapshot is
     # expensive (it reads everything in memory) and is meant to capture slow,
     # high-level drift in the architecture, not minute-to-minute changes.
-    macro_interval_seconds: float = 4 * 60 * 60   # 4 hours
+    macro_interval_seconds: float = 4 * 60 * 60  # 4 hours
 
     # ── Researcher routing ──────────────────────────────────────────────────
     # When the Architect AI says "I don't know enough about X", the orchestrator
@@ -220,9 +222,7 @@ class OrchestratorConfig:
     # Override the file path with the TINKER_STATE_PATH environment variable,
     # e.g. ``export TINKER_STATE_PATH=/var/run/tinker/state.json``
     state_snapshot_path: str = field(
-        default_factory=lambda: os.getenv(
-            "TINKER_STATE_PATH", "./tinker_state.json"
-        )
+        default_factory=lambda: os.getenv("TINKER_STATE_PATH", "./tinker_state.json")
     )
 
     def __post_init__(self) -> None:
@@ -245,25 +245,53 @@ class OrchestratorConfig:
         """
         # Timeout values must be positive — zero or negative would cause
         # every AI call to immediately time out
-        self.architect_timeout = _positive_float(self.architect_timeout,   "architect_timeout",   min_val=1.0)
-        self.critic_timeout    = _positive_float(self.critic_timeout,      "critic_timeout",      min_val=1.0)
-        self.synthesizer_timeout = _positive_float(self.synthesizer_timeout, "synthesizer_timeout", min_val=1.0)
-        self.tool_timeout      = _positive_float(self.tool_timeout,        "tool_timeout",        min_val=1.0)
+        self.architect_timeout = _positive_float(
+            self.architect_timeout, "architect_timeout", min_val=1.0
+        )
+        self.critic_timeout = _positive_float(
+            self.critic_timeout, "critic_timeout", min_val=1.0
+        )
+        self.synthesizer_timeout = _positive_float(
+            self.synthesizer_timeout, "synthesizer_timeout", min_val=1.0
+        )
+        self.tool_timeout = _positive_float(
+            self.tool_timeout, "tool_timeout", min_val=1.0
+        )
 
         # Intervals must be non-negative
-        self.macro_interval_seconds  = _positive_float(self.macro_interval_seconds,  "macro_interval_seconds",  min_val=1.0)
-        self.failure_backoff_seconds = _positive_float(self.failure_backoff_seconds, "failure_backoff_seconds", min_val=0.0)
-        self.micro_loop_idle_seconds = _positive_float(self.micro_loop_idle_seconds, "micro_loop_idle_seconds", min_val=0.0)
+        self.macro_interval_seconds = _positive_float(
+            self.macro_interval_seconds, "macro_interval_seconds", min_val=1.0
+        )
+        self.failure_backoff_seconds = _positive_float(
+            self.failure_backoff_seconds, "failure_backoff_seconds", min_val=0.0
+        )
+        self.micro_loop_idle_seconds = _positive_float(
+            self.micro_loop_idle_seconds, "micro_loop_idle_seconds", min_val=0.0
+        )
 
         # Count thresholds must be positive integers
-        self.meso_trigger_count          = _positive_int(self.meso_trigger_count,          "meso_trigger_count",          min_val=1)
-        self.max_consecutive_failures    = _positive_int(self.max_consecutive_failures,    "max_consecutive_failures",    min_val=1)
-        self.meso_min_artifacts          = _positive_int(self.meso_min_artifacts,          "meso_min_artifacts",          min_val=1)
-        self.max_researcher_calls_per_loop = _positive_int(self.max_researcher_calls_per_loop, "max_researcher_calls_per_loop", min_val=0)
-        self.context_max_artifacts       = _positive_int(self.context_max_artifacts,       "context_max_artifacts",       min_val=1)
+        self.meso_trigger_count = _positive_int(
+            self.meso_trigger_count, "meso_trigger_count", min_val=1
+        )
+        self.max_consecutive_failures = _positive_int(
+            self.max_consecutive_failures, "max_consecutive_failures", min_val=1
+        )
+        self.meso_min_artifacts = _positive_int(
+            self.meso_min_artifacts, "meso_min_artifacts", min_val=1
+        )
+        self.max_researcher_calls_per_loop = _positive_int(
+            self.max_researcher_calls_per_loop,
+            "max_researcher_calls_per_loop",
+            min_val=0,
+        )
+        self.context_max_artifacts = _positive_int(
+            self.context_max_artifacts, "context_max_artifacts", min_val=1
+        )
 
         logger.debug(
             "OrchestratorConfig validated: meso_trigger=%d, architect_timeout=%.1fs, "
             "macro_interval=%.0fs",
-            self.meso_trigger_count, self.architect_timeout, self.macro_interval_seconds,
+            self.meso_trigger_count,
+            self.architect_timeout,
+            self.macro_interval_seconds,
         )

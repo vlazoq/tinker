@@ -102,16 +102,14 @@ class TaskGenerator:
             except Exception as exc:
                 log.error("Failed to parse candidate task %s: %s", raw, exc)
 
-        log.info(
-            "TaskGenerator produced %d task(s) from Architect output", len(tasks)
-        )
+        log.info("TaskGenerator produced %d task(s) from Architect output", len(tasks))
         return tasks
 
     def make_implementation_task(
         self,
-        title:         str,
-        description:   str,
-        subsystem:     "Subsystem | str" = "cross_cutting",
+        title: str,
+        description: str,
+        subsystem: "Subsystem | str" = "cross_cutting",
         artifact_path: str = "",
         tinker_task_id: str = "",
     ) -> Task:
@@ -138,22 +136,22 @@ class TaskGenerator:
         -------
         Task with type=IMPLEMENTATION and status=PENDING.
         """
-        import json as _json
+
         sub = self._parse_subsystem(
             subsystem.value if isinstance(subsystem, Subsystem) else subsystem
         )
         return Task(
-            title       = title,
-            description = description,
-            type        = TaskType.IMPLEMENTATION,
-            subsystem   = sub,
-            status      = TaskStatus.PENDING,
-            confidence_gap = 0.7,
-            tags        = ["grub_ready"],
-            metadata    = {
-                "artifact_path":   artifact_path,
-                "tinker_task_id":  tinker_task_id,
-                "source":          "meso_synthesis",
+            title=title,
+            description=description,
+            type=TaskType.IMPLEMENTATION,
+            subsystem=sub,
+            status=TaskStatus.PENDING,
+            confidence_gap=0.7,
+            tags=["grub_ready"],
+            metadata={
+                "artifact_path": artifact_path,
+                "tinker_task_id": tinker_task_id,
+                "source": "meso_synthesis",
             },
         )
 
@@ -173,7 +171,7 @@ class TaskGenerator:
             type=TaskType.EXPLORATION,
             subsystem=subsystem,
             status=TaskStatus.PENDING,
-            confidence_gap=0.9,   # Exploration tasks are high-uncertainty by design
+            confidence_gap=0.9,  # Exploration tasks are high-uncertainty by design
             is_exploration=True,
             tags=["exploration", "auto-generated"],
         )
@@ -186,14 +184,16 @@ class TaskGenerator:
         parent_id: str | None,
         source_subsystem: Subsystem,
     ) -> Task:
-        title       = str(raw.get("title", "Untitled task")).strip() or "Untitled task"
+        title = str(raw.get("title", "Untitled task")).strip() or "Untitled task"
         description = str(raw.get("description", "")).strip()
-        task_type   = self._parse_type(raw.get("type", TaskType.DESIGN.value))
-        subsystem   = self._parse_subsystem(raw.get("subsystem", source_subsystem.value))
-        deps        = self._parse_str_list(raw.get("dependencies", []))
-        tags        = self._parse_str_list(raw.get("tags", []))
-        metadata    = raw.get("metadata", {}) if isinstance(raw.get("metadata"), dict) else {}
-        conf_gap    = self._clamp_float(
+        task_type = self._parse_type(raw.get("type", TaskType.DESIGN.value))
+        subsystem = self._parse_subsystem(raw.get("subsystem", source_subsystem.value))
+        deps = self._parse_str_list(raw.get("dependencies", []))
+        tags = self._parse_str_list(raw.get("tags", []))
+        metadata = (
+            raw.get("metadata", {}) if isinstance(raw.get("metadata"), dict) else {}
+        )
+        conf_gap = self._clamp_float(
             raw.get("confidence_gap", self.default_confidence_gap), 0.0, 1.0
         )
 

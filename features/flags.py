@@ -51,44 +51,43 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 # Default flag values — safe conservative defaults
 _DEFAULTS: dict[str, bool] = {
     # Core loop components
-    "researcher_calls":        True,   # Enable Architect knowledge gap research
-    "meso_synthesis":          True,   # Enable subsystem-level synthesis
-    "macro_synthesis":         True,   # Enable architectural snapshot commits
-    "stagnation_detection":    True,   # Enable anti-stagnation monitor
-    "context_assembly":        True,   # Enable prior context fetching
-
+    "researcher_calls": True,  # Enable Architect knowledge gap research
+    "researcher_calls_enabled": True,
+    "meso_synthesis": True,  # Enable subsystem-level synthesis
+    "meso_synthesis_enabled": True,
+    "macro_synthesis": True,  # Enable architectural snapshot commits
+    "stagnation_detection": True,  # Enable anti-stagnation monitor
+    "context_assembly": True,  # Enable prior context fetching
     # Resilience features
-    "circuit_breakers":        True,   # Enable circuit breakers for external services
-    "distributed_locking":     True,   # Enable Redis distributed locks
-    "idempotency_cache":       True,   # Enable idempotency key caching
-    "rate_limiting":           True,   # Enable AI call rate limiting
-    "backpressure":            True,   # Enable queue backpressure
-
+    "circuit_breakers": True,  # Enable circuit breakers for external services
+    "circuit_breakers_enabled": True,
+    "distributed_locking": True,  # Enable Redis distributed locks
+    "idempotency_cache": True,  # Enable idempotency key caching
+    "rate_limiting": True,  # Enable AI call rate limiting
+    "rate_limiting_enabled": True,
+    "backpressure": True,  # Enable queue backpressure
     # Observability features
-    "structured_logging":      True,   # Enable JSON structured logging
-    "tracing":                 True,   # Enable span tracing
-    "audit_log":               True,   # Enable immutable audit log
-    "sla_tracking":            True,   # Enable SLA measurement
-    "health_endpoints":        True,   # Enable HTTP health server
-
+    "structured_logging": True,  # Enable JSON structured logging
+    "tracing": True,  # Enable span tracing
+    "audit_log": True,  # Enable immutable audit log
+    "sla_tracking": True,  # Enable SLA measurement
+    "health_endpoints": True,  # Enable HTTP health server
     # Alerting
-    "slack_alerts":            True,   # Enable Slack alerting
-    "webhook_alerts":          True,   # Enable webhook alerting
-
+    "slack_alerts": True,  # Enable Slack alerting
+    "webhook_alerts": True,  # Enable webhook alerting
     # Storage operations
-    "auto_backup":             False,  # Auto-backup (disabled by default — manual trigger)
-    "memory_compression":      True,   # Enable automatic memory compression
-
+    "auto_backup": False,  # Auto-backup (disabled by default — manual trigger)
+    "memory_compression": True,  # Enable automatic memory compression
     # Experimental (off by default)
-    "ab_testing":              False,  # A/B prompt variant testing
-    "lineage_tracking":        False,  # Data lineage graph tracking
+    "ab_testing": False,  # A/B prompt variant testing
+    "lineage_tracking": False,  # Data lineage graph tracking
 }
 
 
@@ -162,7 +161,7 @@ class FeatureFlags:
             return self._file_flags[flag_lower]
 
         # 4. Default
-        return self._defaults.get(flag_lower, True)
+        return self._defaults.get(flag_lower, False)
 
     def set(self, flag: str, enabled: bool) -> None:
         """
@@ -181,7 +180,9 @@ class FeatureFlags:
         self._overrides[flag_lower] = enabled
 
         if old_val != enabled:
-            logger.info("Feature flag '%s' changed: %s → %s", flag_lower, old_val, enabled)
+            logger.info(
+                "Feature flag '%s' changed: %s → %s", flag_lower, old_val, enabled
+            )
             self._notify_callbacks(flag_lower, enabled)
 
     def on_change(self, flag: str, callback: Callable[[str, bool], None]) -> None:
@@ -209,7 +210,13 @@ class FeatureFlags:
             env_key = f"TINKER_FLAG_{key.upper()}"
             env_val = os.getenv(env_key)
             if env_val is not None:
-                all_flags[key] = env_val.lower() not in ("false", "0", "no", "off", "disabled")
+                all_flags[key] = env_val.lower() not in (
+                    "false",
+                    "0",
+                    "no",
+                    "off",
+                    "disabled",
+                )
 
         return all_flags
 
@@ -229,12 +236,16 @@ class FeatureFlags:
         try:
             raw = json.loads(self._config_file.read_text())
             if isinstance(raw, dict):
-                self._file_flags = {
-                    k.lower(): bool(v) for k, v in raw.items()
-                }
-                logger.debug("Loaded %d feature flags from %s", len(self._file_flags), self._config_file)
+                self._file_flags = {k.lower(): bool(v) for k, v in raw.items()}
+                logger.debug(
+                    "Loaded %d feature flags from %s",
+                    len(self._file_flags),
+                    self._config_file,
+                )
         except Exception as exc:
-            logger.warning("Could not load feature flags from '%s': %s", self._config_file, exc)
+            logger.warning(
+                "Could not load feature flags from '%s': %s", self._config_file, exc
+            )
 
     def _maybe_reload(self) -> None:
         """Reload the config file if enough time has elapsed."""

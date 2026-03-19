@@ -61,10 +61,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import math
 import statistics
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from exceptions import ExperimentError
 
@@ -84,8 +83,9 @@ class Experiment:
     metric   : Name of the metric being measured (for reporting).
     active   : Whether the experiment is currently accepting new assignments.
     """
+
     name: str
-    variants: dict        # e.g. {"control": 0.7, "treatment": 0.5}
+    variants: dict  # e.g. {"control": 0.7, "treatment": 0.5}
     metric: str = "critic_score"
     active: bool = True
     outcomes: dict[str, list[float]] = field(default_factory=dict)
@@ -180,8 +180,10 @@ class ABTestingFramework:
         if not exp:
             raise ExperimentError(
                 f"Experiment '{experiment_name}' not found",
-                context={"experiment": experiment_name,
-                         "available": sorted(self._experiments)},
+                context={
+                    "experiment": experiment_name,
+                    "available": sorted(self._experiments),
+                },
             )
         if not exp.active:
             # Return control if experiment is paused
@@ -239,8 +241,10 @@ class ABTestingFramework:
         if not exp:
             raise ExperimentError(
                 f"Experiment '{experiment_name}' not found",
-                context={"experiment": experiment_name,
-                         "available": sorted(self._experiments)},
+                context={
+                    "experiment": experiment_name,
+                    "available": sorted(self._experiments),
+                },
             )
 
         report = {
@@ -283,8 +287,8 @@ class ABTestingFramework:
             if control_stats.get("n", 0) > 0 and best_stats.get("n", 0) > 0:
                 diff = abs(best_stats.get("mean", 0) - control_stats.get("mean", 0))
                 pooled_std = (
-                    (control_stats.get("std", 1) + best_stats.get("std", 1)) / 2
-                )
+                    control_stats.get("std", 1) + best_stats.get("std", 1)
+                ) / 2
                 report["significant"] = diff > pooled_std
                 if report["significant"]:
                     report["winner"] = best

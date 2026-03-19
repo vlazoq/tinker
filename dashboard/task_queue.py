@@ -8,22 +8,22 @@ from textual.app import ComposeResult
 from textual.widget import Widget
 from textual.widgets import Static
 
-from .state import TaskStatus, TaskType, TinkerState
+from .state import TinkerState
 
 STATUS_COLOURS = {
-    "pending":  "yellow",
-    "active":   "bright_green",
+    "pending": "yellow",
+    "active": "bright_green",
     "complete": "bright_black",
-    "failed":   "bright_red",
-    "skipped":  "dim white",
+    "failed": "bright_red",
+    "skipped": "dim white",
 }
 
 TYPE_COLOURS = {
-    "design":           "bright_cyan",
-    "critique":         "bright_yellow",
-    "refine":           "bright_green",
-    "research":         "bright_blue",
-    "commit":           "bright_magenta",
+    "design": "bright_cyan",
+    "critique": "bright_yellow",
+    "refine": "bright_green",
+    "research": "bright_blue",
+    "commit": "bright_magenta",
     "stagnation_break": "bright_red",
 }
 
@@ -71,7 +71,7 @@ class TaskQueuePanel(Widget):
         for key in ("active", "pending", "complete", "failed", "skipped"):
             n = qs.by_status.get(key, 0)
             colour = STATUS_COLOURS.get(key, "white")
-            bar    = _small_bar(n, total)
+            bar = _small_bar(n, total)
             row_txt = Text(bar, style=colour)
             status_tbl.add_row(
                 Text(key, style=colour),
@@ -107,8 +107,7 @@ class TaskQueuePanel(Widget):
 
         recent_tbl.add_row(Text("RECENT", style="bold dim"), Text(""), Text(""))
         for t in state.recent_tasks[-5:]:
-            status_col = STATUS_COLOURS.get(t.status.value, "white")
-            type_col   = TYPE_COLOURS.get(t.type.value, "white")
+            type_col = TYPE_COLOURS.get(t.type.value, "white")
             recent_tbl.add_row(
                 Text(t.id[-8:], style="dim"),
                 Text(t.type.value, style=type_col),

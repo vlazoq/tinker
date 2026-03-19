@@ -30,7 +30,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
 
 
 class ResultStatus(str, Enum):
@@ -46,11 +45,12 @@ class ResultStatus(str, Enum):
                    (e.g. "I need more context to continue").
     SKIPPED      : Task was skipped (e.g. file already exists and is correct).
     """
-    SUCCESS     = "success"
-    PARTIAL     = "partial"
-    FAILED      = "failed"
+
+    SUCCESS = "success"
+    PARTIAL = "partial"
+    FAILED = "failed"
     NEEDS_RETRY = "needs_retry"
-    SKIPPED     = "skipped"
+    SKIPPED = "skipped"
 
 
 @dataclass
@@ -66,11 +66,12 @@ class TestSummary:
     skipped : Number of tests that were skipped.
     output  : Full test runner output (pytest stdout/stderr).
     """
-    passed:  int = 0
-    failed:  int = 0
-    errors:  int = 0
+
+    passed: int = 0
+    failed: int = 0
+    errors: int = 0
     skipped: int = 0
-    output:  str = ""
+    output: str = ""
 
     @property
     def total(self) -> int:
@@ -82,12 +83,12 @@ class TestSummary:
 
     def to_dict(self) -> dict:
         return {
-            "passed":  self.passed,
-            "failed":  self.failed,
-            "errors":  self.errors,
+            "passed": self.passed,
+            "failed": self.failed,
+            "errors": self.errors,
             "skipped": self.skipped,
-            "total":   self.total,
-            "output":  self.output[:2000],  # truncate long output
+            "total": self.total,
+            "output": self.output[:2000],  # truncate long output
         }
 
 
@@ -119,30 +120,30 @@ class MinionResult:
     """
 
     # Mandatory
-    task_id:     str
+    task_id: str
     minion_name: str
-    status:      ResultStatus
+    status: ResultStatus
 
     # Quality
-    score: float = 0.0   # 0.0 = unusable, 1.0 = perfect
+    score: float = 0.0  # 0.0 = unusable, 1.0 = perfect
 
     # Outputs
-    files_written:  list[str]           = field(default_factory=list)
-    test_results:   TestSummary | None  = None
-    summary:        str                 = ""
-    notes:          str                 = ""   # reviewer feedback, errors, etc.
-    artifacts:      list[str]           = field(default_factory=list)
+    files_written: list[str] = field(default_factory=list)
+    test_results: TestSummary | None = None
+    summary: str = ""
+    notes: str = ""  # reviewer feedback, errors, etc.
+    artifacts: list[str] = field(default_factory=list)
 
     # Tinker integration
-    feedback_for_tinker: str = ""   # if set, Grub creates a new Tinker task
+    feedback_for_tinker: str = ""  # if set, Grub creates a new Tinker task
 
     # Metadata
-    iterations:       int   = 1
+    iterations: int = 1
     duration_seconds: float = 0.0
-    completed_at:     str   = field(
+    completed_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
-    raw_llm_output: str = ""   # full LLM response (for debugging)
+    raw_llm_output: str = ""  # full LLM response (for debugging)
 
     @property
     def succeeded(self) -> bool:
@@ -154,17 +155,17 @@ class MinionResult:
 
     def to_dict(self) -> dict:
         return {
-            "task_id":           self.task_id,
-            "minion_name":       self.minion_name,
-            "status":            self.status.value,
-            "score":             round(self.score, 3),
-            "files_written":     self.files_written,
-            "test_results":      self.test_results.to_dict() if self.test_results else None,
-            "summary":           self.summary,
-            "notes":             self.notes[:4000],
-            "artifacts":         self.artifacts,
+            "task_id": self.task_id,
+            "minion_name": self.minion_name,
+            "status": self.status.value,
+            "score": round(self.score, 3),
+            "files_written": self.files_written,
+            "test_results": self.test_results.to_dict() if self.test_results else None,
+            "summary": self.summary,
+            "notes": self.notes[:4000],
+            "artifacts": self.artifacts,
             "feedback_for_tinker": self.feedback_for_tinker,
-            "iterations":        self.iterations,
-            "duration_seconds":  round(self.duration_seconds, 2),
-            "completed_at":      self.completed_at,
+            "iterations": self.iterations,
+            "duration_seconds": round(self.duration_seconds, 2),
+            "completed_at": self.completed_at,
         }

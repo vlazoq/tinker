@@ -28,10 +28,8 @@ import asyncio
 import json
 import logging
 import sys
-import textwrap
-import traceback
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 # ── configure logging ────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -42,21 +40,25 @@ logging.basicConfig(
 logger = logging.getLogger("tinker.tests")
 
 # ── local imports ─────────────────────────────────────────────────────────────
-from llm import (
-    AgentRole, Machine, MachineConfig, Message,
-    ModelRequest, ModelResponse, ModelRouter, RetryConfig,
-    ROLE_MACHINE_MAP, extract_json, build_json_instruction,
+from llm import (  # noqa: E402
+    AgentRole,
+    Machine,
+    MachineConfig,
+    Message,
+    ModelRequest,
+    ModelRouter,
+    RetryConfig,
+    ROLE_MACHINE_MAP,
+    extract_json,
+    build_json_instruction,
 )
-from llm.context import count_tokens, enforce_context_limit
-from llm.client import (
-    OllamaClient, ConnectionError as MCConnectionError,
-    ServerError, TimeoutError as MCTimeoutError,
-)
+from llm.context import count_tokens, enforce_context_limit  # noqa: E402
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. UNIT TESTS  (no network required)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestRoleRouting(unittest.TestCase):
     def test_server_roles(self):
@@ -78,7 +80,7 @@ class TestJsonExtraction(unittest.TestCase):
         self.assertEqual(strat, "direct")
 
     def test_direct_array(self):
-        obj, strat = self._extract('[1, 2, 3]')
+        obj, strat = self._extract("[1, 2, 3]")
         self.assertEqual(obj, [1, 2, 3])
 
     def test_fenced_json(self):
@@ -93,7 +95,7 @@ class TestJsonExtraction(unittest.TestCase):
         self.assertEqual(obj, {"x": True})
 
     def test_preamble_with_json(self):
-        text = "Here is the JSON you requested:\n\n{\"result\": \"ok\"}"
+        text = 'Here is the JSON you requested:\n\n{"result": "ok"}'
         obj, strat = self._extract(text)
         self.assertEqual(obj, {"result": "ok"})
 
@@ -135,11 +137,13 @@ class TestContextEnforcement(unittest.TestCase):
         old_msgs = [
             self._make("user", "old " * 200),
             self._make("assistant", "old " * 200),
-        ] * 10   # lots of old history
+        ] * 10  # lots of old history
         last_msg = self._make("user", "newest question")
         all_msgs = [system] + old_msgs + [last_msg]
 
-        result = enforce_context_limit(all_msgs, context_window=1024, max_output_tokens=256)
+        result = enforce_context_limit(
+            all_msgs, context_window=1024, max_output_tokens=256
+        )
         # System and last message must survive
         self.assertEqual(result[0].role, "system")
         self.assertEqual(result[-1].content, "newest question")
@@ -174,6 +178,7 @@ class TestMachineConfig(unittest.TestCase):
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. MOCK INTEGRATION TESTS (network mocked via unittest.mock)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def _fake_response(content: str, prompt_tokens=10, completion_tokens=20) -> dict:
     return {
@@ -211,9 +216,7 @@ class TestRouterMocked(unittest.IsolatedAsyncioTestCase):
 
     async def test_architect_routes_to_server(self):
         self._patch_client(Machine.SERVER, "Design complete.")
-        resp = await self.router.complete_text(
-            AgentRole.ARCHITECT, "Design a system."
-        )
+        resp = await self.router.complete_text(AgentRole.ARCHITECT, "Design a system.")
         self.assertEqual(resp.machine, Machine.SERVER)
         self.assertEqual(resp.raw_text, "Design complete.")
 
@@ -228,18 +231,14 @@ class TestRouterMocked(unittest.IsolatedAsyncioTestCase):
     async def test_json_extraction_on_response(self):
         payload = json.dumps({"score": 8, "feedback": "Good design."})
         self._patch_client(Machine.SECONDARY, payload)
-        resp = await self.router.complete_json(
-            AgentRole.CRITIC, "Evaluate this."
-        )
+        resp = await self.router.complete_json(AgentRole.CRITIC, "Evaluate this.")
         self.assertIsNotNone(resp.structured)
         self.assertEqual(resp.structured["score"], 8)
 
     async def test_json_extraction_from_fenced_response(self):
-        payload = f'```json\n{{"services": ["auth", "billing"]}}\n```'
+        payload = '```json\n{"services": ["auth", "billing"]}\n```'
         self._patch_client(Machine.SERVER, payload)
-        resp = await self.router.complete_json(
-            AgentRole.ARCHITECT, "List services."
-        )
+        resp = await self.router.complete_json(AgentRole.ARCHITECT, "List services.")
         self.assertIn("auth", resp.structured["services"])
 
     async def test_token_usage_captured(self):
@@ -267,6 +266,7 @@ class TestRouterMocked(unittest.IsolatedAsyncioTestCase):
 # 3. LIVE INTEGRATION TESTS (require running Ollama)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 async def run_integration_tests(
     server_url: str,
     secondary_url: str,
@@ -275,7 +275,7 @@ async def run_integration_tests(
 ) -> None:
     PASS = "✅"
     FAIL = "❌"
-    SKIP = "⚠️ "
+    _SKIP = "⚠️ "
 
     results: list[tuple[str, str, str]] = []  # (name, status, detail)
 
@@ -285,11 +285,11 @@ async def run_integration_tests(
         icon = status
         print(f"  {icon}  {name}" + (f"  — {detail}" if detail else ""))
 
-    print(f"\n{'═'*60}")
-    print(f"  LIVE INTEGRATION TESTS")
+    print(f"\n{'═' * 60}")
+    print("  LIVE INTEGRATION TESTS")
     print(f"  Server:    {server_url}  [{server_model}]")
     print(f"  Secondary: {secondary_url}  [{secondary_model}]")
-    print(f"{'═'*60}\n")
+    print(f"{'═' * 60}\n")
 
     router = ModelRouter(
         server_config=MachineConfig(
@@ -314,15 +314,22 @@ async def run_integration_tests(
     print("── Health checks")
     health = await router.health()
     for machine, alive in health.items():
-        record(f"Health: {machine.value}", alive,
-               "reachable" if alive else "UNREACHABLE — subsequent tests may fail")
+        record(
+            f"Health: {machine.value}",
+            alive,
+            "reachable" if alive else "UNREACHABLE — subsequent tests may fail",
+        )
 
     # ── 2. Basic text completions ────────────────────────────────────────
     print("\n── Text completions")
     for role in AgentRole:
         machine = ROLE_MACHINE_MAP[role]
         if not health.get(machine, False):
-            record(f"Text completion [{role.value}]", False, "skipped (machine unreachable)")
+            record(
+                f"Text completion [{role.value}]",
+                False,
+                "skipped (machine unreachable)",
+            )
             continue
         try:
             resp = await router.complete_text(
@@ -343,8 +350,7 @@ async def run_integration_tests(
     # ── 3. JSON completions ──────────────────────────────────────────────
     print("\n── JSON completions")
     json_prompt = (
-        "Return a JSON object with keys: "
-        '"status" (string "ok"), "value" (integer 42).'
+        'Return a JSON object with keys: "status" (string "ok"), "value" (integer 42).'
     )
     for role in (AgentRole.ARCHITECT, AgentRole.CRITIC):
         machine = ROLE_MACHINE_MAP[role]
@@ -377,12 +383,15 @@ async def run_integration_tests(
     if health.get(Machine.SERVER, False):
         try:
             long_history = (
-                [Message("system", "You are Tinker.")] +
-                [
-                    Message("user" if i % 2 == 0 else "assistant", f"message {i} " + "word " * 50)
+                [Message("system", "You are Tinker.")]
+                + [
+                    Message(
+                        "user" if i % 2 == 0 else "assistant",
+                        f"message {i} " + "word " * 50,
+                    )
                     for i in range(40)
-                ] +
-                [Message("user", "What is 2+2?")]
+                ]
+                + [Message("user", "What is 2+2?")]
             )
             req = ModelRequest(
                 agent_role=AgentRole.ARCHITECT,
@@ -390,8 +399,11 @@ async def run_integration_tests(
                 temperature=0.0,
             )
             resp = await router.complete(req)
-            record("Context truncation (long history)", resp.ok,
-                   f"{resp.total_tokens} tokens, elapsed {resp.elapsed_seconds:.1f}s")
+            record(
+                "Context truncation (long history)",
+                resp.ok,
+                f"{resp.total_tokens} tokens, elapsed {resp.elapsed_seconds:.1f}s",
+            )
         except Exception as exc:
             record("Context truncation", False, str(exc))
 
@@ -415,13 +427,13 @@ async def run_integration_tests(
 
     # ── Summary ──────────────────────────────────────────────────────────
     await router.shutdown()
-    total  = len(results)
+    total = len(results)
     passed = sum(1 for _, s, _ in results if s == PASS)
     failed = sum(1 for _, s, _ in results if s == FAIL)
 
-    print(f"\n{'═'*60}")
+    print(f"\n{'═' * 60}")
     print(f"  Results: {passed}/{total} passed   {failed} failed")
-    print(f"{'═'*60}\n")
+    print(f"{'═' * 60}\n")
 
     if failed:
         sys.exit(1)
@@ -431,25 +443,44 @@ async def run_integration_tests(
 # 4. Entry point
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def main():
     import os
 
     parser = argparse.ArgumentParser(description="Tinker Model Client Test Harness")
-    parser.add_argument("--unit-only",    action="store_true", help="Only run unit tests (no network)")
-    parser.add_argument("--integration",  action="store_true", help="Run live integration tests")
-    parser.add_argument("--server-url",   default=os.getenv("TINKER_SERVER_URL",    "http://localhost:11434"))
-    parser.add_argument("--secondary-url",default=os.getenv("TINKER_SECONDARY_URL", "http://secondary:11434"))
-    parser.add_argument("--server-model", default=os.getenv("TINKER_SERVER_MODEL",  "qwen3:7b"))
-    parser.add_argument("--secondary-model", default=os.getenv("TINKER_SECONDARY_MODEL", "phi3:mini"))
+    parser.add_argument(
+        "--unit-only", action="store_true", help="Only run unit tests (no network)"
+    )
+    parser.add_argument(
+        "--integration", action="store_true", help="Run live integration tests"
+    )
+    parser.add_argument(
+        "--server-url", default=os.getenv("TINKER_SERVER_URL", "http://localhost:11434")
+    )
+    parser.add_argument(
+        "--secondary-url",
+        default=os.getenv("TINKER_SECONDARY_URL", "http://secondary:11434"),
+    )
+    parser.add_argument(
+        "--server-model", default=os.getenv("TINKER_SERVER_MODEL", "qwen3:7b")
+    )
+    parser.add_argument(
+        "--secondary-model", default=os.getenv("TINKER_SECONDARY_MODEL", "phi3:mini")
+    )
     args = parser.parse_args()
 
     # ── Unit + mock tests (always run unless --integration-only) ──────────
     if not args.integration:
         print("\n══ Unit + Mock Tests ══════════════════════════════════════\n")
         loader = unittest.TestLoader()
-        suite  = unittest.TestSuite()
-        for cls in (TestRoleRouting, TestJsonExtraction, TestContextEnforcement,
-                    TestMachineConfig, TestRouterMocked):
+        suite = unittest.TestSuite()
+        for cls in (
+            TestRoleRouting,
+            TestJsonExtraction,
+            TestContextEnforcement,
+            TestMachineConfig,
+            TestRouterMocked,
+        ):
             suite.addTests(loader.loadTestsFromTestCase(cls))
         runner = unittest.TextTestRunner(verbosity=2)
         result = runner.run(suite)
@@ -460,12 +491,14 @@ def main():
 
     # ── Live integration tests ─────────────────────────────────────────────
     if args.integration or not args.unit_only:
-        asyncio.run(run_integration_tests(
-            server_url=args.server_url,
-            secondary_url=args.secondary_url,
-            server_model=args.server_model,
-            secondary_model=args.secondary_model,
-        ))
+        asyncio.run(
+            run_integration_tests(
+                server_url=args.server_url,
+                secondary_url=args.secondary_url,
+                server_model=args.server_model,
+                secondary_model=args.secondary_model,
+            )
+        )
 
 
 if __name__ == "__main__":

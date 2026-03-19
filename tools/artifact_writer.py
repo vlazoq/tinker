@@ -61,13 +61,13 @@ DEFAULT_OUTPUT_DIR = os.getenv("ARTIFACT_OUTPUT_DIR", "./artifacts")
 # The allowed artifact types.  Using Literal[] means type-checkers will warn
 # if anyone passes a type string that isn't in this list.
 ArtifactType = Literal[
-    "research_note",          # findings from a Researcher loop
+    "research_note",  # findings from a Researcher loop
     "architecture_analysis",  # analysis of an existing system
-    "source_summary",         # summary of a specific source (URL, paper, etc.)
-    "decision_log",           # record of an architectural decision and its rationale
-    "diagram_spec",           # specification for generating a diagram
-    "raw_data",               # unprocessed data (API responses, downloaded files, etc.)
-    "report",                 # a human-readable report (e.g. end-of-cycle summary)
+    "source_summary",  # summary of a specific source (URL, paper, etc.)
+    "decision_log",  # record of an architectural decision and its rationale
+    "diagram_spec",  # specification for generating a diagram
+    "raw_data",  # unprocessed data (API responses, downloaded files, etc.)
+    "report",  # a human-readable report (e.g. end-of-cycle summary)
 ]
 
 
@@ -226,14 +226,13 @@ class ArtifactWriterTool(BaseTool):
             A filesystem-safe slug, max 60 characters.
         """
         import re
+
         # Replace any character that's not a letter or digit with an underscore.
         # Then strip leading/trailing underscores that might appear from
         # leading/trailing special chars in the input.
         return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:60]
 
-    def _build_markdown(
-        self, metadata: dict, content: str, sources: list[str]
-    ) -> str:
+    def _build_markdown(self, metadata: dict, content: str, sources: list[str]) -> str:
         """
         Build the full Markdown file content with YAML front matter.
 
@@ -269,7 +268,7 @@ class ArtifactWriterTool(BaseTool):
         lines = [
             "---",
             f"artifact_id: {metadata['artifact_id']}",
-            f"title: \"{metadata['title']}\"",
+            f'title: "{metadata["title"]}"',
             f"artifact_type: {metadata['artifact_type']}",
             f"task_id: {metadata['task_id']}",
             f"created_at: {metadata['created_at']}",
@@ -328,16 +327,16 @@ class ArtifactWriterTool(BaseTool):
     # Implementation
     # ------------------------------------------------------------------
 
-    async def _execute(           # type: ignore[override]
+    async def _execute(  # type: ignore[override]
         self,
         title: str,
         content: str,
         artifact_type: ArtifactType,
         task_id: str,
         tags: list[str] | None = None,
-        format: str = "markdown",       # noqa: A002  (shadowing built-in "format" is intentional here)
+        format: str = "markdown",  # noqa: A002  (shadowing built-in "format" is intentional here)
         sources: list[str] | None = None,
-        **_: Any,   # absorb any unexpected kwargs
+        **_: Any,  # absorb any unexpected kwargs
     ) -> dict:
         """
         Write an artifact to disk and return its metadata.
@@ -390,12 +389,12 @@ class ArtifactWriterTool(BaseTool):
         # Collect all metadata into a dict for use by both _build_markdown
         # and _build_json.
         metadata = {
-            "artifact_id":   artifact_id,
-            "title":         title,
+            "artifact_id": artifact_id,
+            "title": title,
             "artifact_type": artifact_type,
-            "task_id":       task_id,
-            "created_at":    ts,
-            "tags":          tags,
+            "task_id": task_id,
+            "created_at": ts,
+            "tags": tags,
         }
 
         # Build the file content in the requested format.
@@ -410,11 +409,11 @@ class ArtifactWriterTool(BaseTool):
         # Return a summary dict so the caller knows where the file ended up
         # and has the artifact_id to reference it later.
         return {
-            "artifact_id":   artifact_id,
-            "file_path":     str(file_path),
-            "task_id":       task_id,
+            "artifact_id": artifact_id,
+            "file_path": str(file_path),
+            "task_id": task_id,
             "artifact_type": artifact_type,
-            "created_at":    ts,
+            "created_at": ts,
             # st_size gives the file size in bytes — useful for observability.
-            "size_bytes":    file_path.stat().st_size,
+            "size_bytes": file_path.stat().st_size,
         }

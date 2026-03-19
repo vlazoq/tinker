@@ -22,4 +22,4 @@ Key helpers
 
 # Expose the exception-recording helper at the package level so callers can
 # write: ``from observability import record_tinker_exception``
-from .tracing import record_tinker_exception
+from .tracing import record_tinker_exception  # noqa: F401

@@ -109,14 +109,14 @@ class ModelRouter:
 
     def __init__(
         self,
-        server_config:    MachineConfig | None = None,
+        server_config: MachineConfig | None = None,
         secondary_config: MachineConfig | None = None,
-        retry_config:     RetryConfig   | None = None,
+        retry_config: RetryConfig | None = None,
     ) -> None:
         # Use provided configs or fall back to environment-variable defaults
-        self._server_cfg    = server_config    or MachineConfig.server_defaults()
+        self._server_cfg = server_config or MachineConfig.server_defaults()
         self._secondary_cfg = secondary_config or MachineConfig.secondary_defaults()
-        self._retry         = retry_config     or RetryConfig()
+        self._retry = retry_config or RetryConfig()
 
         # Will hold {Machine.SERVER: OllamaClient, Machine.SECONDARY: OllamaClient}
         # after start() is called.
@@ -133,9 +133,7 @@ class ModelRouter:
         Must be called before ``complete()``.  The ``async with ModelRouter()``
         pattern calls this automatically so you don't forget.
         """
-        self._clients[Machine.SERVER] = OllamaClient(
-            self._server_cfg, self._retry
-        )
+        self._clients[Machine.SERVER] = OllamaClient(self._server_cfg, self._retry)
         self._clients[Machine.SECONDARY] = OllamaClient(
             self._secondary_cfg, self._retry
         )
@@ -228,12 +226,12 @@ class ModelRouter:
         """
         # Step 1: figure out which machine and config to use for this role
         machine = ROLE_MACHINE_MAP[request.agent_role]
-        config  = self._config_for(machine)
-        client  = self._client_for(machine)
+        config = self._config_for(machine)
+        client = self._client_for(machine)
 
         # Record the resolved machine/model back into the request (useful for logging)
         request.resolved_machine = machine
-        request.resolved_model   = config.model
+        request.resolved_model = config.model
 
         # Step 2: append the "respond in JSON" instruction to the system prompt
         messages = list(request.messages)
@@ -425,6 +423,7 @@ class ModelRouter:
 # Module-level helper functions
 # ---------------------------------------------------------------------------
 
+
 def _inject_json_instruction(
     messages: list[Message],
     schema_hint: str | None,
@@ -452,7 +451,7 @@ def _inject_json_instruction(
                     list is not modified.
     """
     instruction = build_json_instruction(schema_hint)
-    result      = list(messages)  # make a copy so we don't mutate the caller's list
+    result = list(messages)  # make a copy so we don't mutate the caller's list
 
     if result and result[0].role == "system":
         # Append to the existing system message, separated by a blank line

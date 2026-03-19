@@ -31,16 +31,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from pathlib import Path
 from typing import Optional
 
-from .config    import GrubConfig
-from .registry  import MinionRegistry
-from .feedback  import TinkerBridge
-from .loop      import PipelineRunner, GrubQueue
-from .loop      import run_sequential, run_parallel, run_queue_worker
-from .contracts.task   import GrubTask
+from .config import GrubConfig
+from .registry import MinionRegistry
+from .feedback import TinkerBridge
+from .loop import PipelineRunner, GrubQueue
+from .loop import run_sequential, run_parallel, run_queue_worker
+from .contracts.task import GrubTask
 from .contracts.result import MinionResult
 
 logger = logging.getLogger(__name__)
@@ -65,16 +63,16 @@ class GrubAgent:
 
     def __init__(
         self,
-        config:   Optional[GrubConfig]   = None,
+        config: Optional[GrubConfig] = None,
         registry: Optional[MinionRegistry] = None,
     ) -> None:
-        self.config   = config   or GrubConfig()
+        self.config = config or GrubConfig()
         self.registry = registry or MinionRegistry(self.config)
         self.pipeline = PipelineRunner(self.registry, self.config)
-        self.bridge   = TinkerBridge(
-            tinker_tasks_db      = self.config.tinker_tasks_db,
-            tinker_artifacts_dir = self.config.tinker_artifacts_dir,
-            grub_artifacts_dir   = self.config.grub_artifacts_dir,
+        self.bridge = TinkerBridge(
+            tinker_tasks_db=self.config.tinker_tasks_db,
+            tinker_artifacts_dir=self.config.tinker_artifacts_dir,
+            grub_artifacts_dir=self.config.grub_artifacts_dir,
         )
         self._shutdown = False
 
@@ -85,8 +83,8 @@ class GrubAgent:
 
         If the file doesn't exist, a default config is created and saved.
         """
-        config   = GrubConfig.load(config_path)
-        errors   = config.validate()
+        config = GrubConfig.load(config_path)
+        errors = config.validate()
         if errors:
             for e in errors:
                 logger.error("Config error: %s", e)
@@ -136,7 +134,8 @@ class GrubAgent:
 
             logger.info(
                 "GrubAgent: batch done — %d/%d succeeded",
-                sum(1 for r in results if r.succeeded), len(results)
+                sum(1 for r in results if r.succeeded),
+                len(results),
             )
 
         logger.info("GrubAgent: shutdown complete")
@@ -179,9 +178,9 @@ class GrubAgent:
             # Start workers (one per configured worker slot)
             worker_coros = [
                 run_queue_worker(
-                    worker_id = f"worker-{i}",
-                    queue     = queue,
-                    pipeline  = self.pipeline,
+                    worker_id=f"worker-{i}",
+                    queue=queue,
+                    pipeline=self.pipeline,
                 )
                 for i in range(self.config.queue_workers)
             ]
@@ -192,16 +191,19 @@ class GrubAgent:
             # Build MinionResult objects from stored dicts
             results = []
             from .contracts.result import ResultStatus
+
             for r in raw_results:
-                results.append(MinionResult(
-                    task_id     = r["task_id"],
-                    minion_name = r.get("minion_name", "unknown"),
-                    status      = ResultStatus(r.get("status", "failed")),
-                    score       = float(r.get("score", 0.0)),
-                    summary     = r.get("summary", ""),
-                    notes       = r.get("notes", ""),
-                    files_written = r.get("files_written", []),
-                ))
+                results.append(
+                    MinionResult(
+                        task_id=r["task_id"],
+                        minion_name=r.get("minion_name", "unknown"),
+                        status=ResultStatus(r.get("status", "failed")),
+                        score=float(r.get("score", 0.0)),
+                        summary=r.get("summary", ""),
+                        notes=r.get("notes", ""),
+                        files_written=r.get("files_written", []),
+                    )
+                )
             return results
 
         else:
@@ -227,7 +229,8 @@ class GrubAgent:
 
     def _install_signal_handlers(self) -> None:
         """Install Ctrl-C handler for graceful shutdown."""
-        import signal, sys
+        import signal
+        import sys
 
         def _handler(_sig, _frame):
             logger.info("GrubAgent: received interrupt, shutting down...")
@@ -235,7 +238,7 @@ class GrubAgent:
 
         try:
             loop = asyncio.get_running_loop()
-            loop.add_signal_handler(signal.SIGINT,  self.request_shutdown)
+            loop.add_signal_handler(signal.SIGINT, self.request_shutdown)
             loop.add_signal_handler(signal.SIGTERM, self.request_shutdown)
         except (NotImplementedError, RuntimeError):
             # Windows: ProactorEventLoop doesn't support add_signal_handler.

@@ -45,7 +45,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +98,11 @@ class AutoRecoveryManager:
         This is synchronous (callback) but schedules an async coroutine.
         """
         from resilience.circuit_breaker import CircuitState
+
         if new_state == CircuitState.OPEN:
-            logger.info("AutoRecovery: %s circuit opened — scheduling recovery", breaker.name)
+            logger.info(
+                "AutoRecovery: %s circuit opened — scheduling recovery", breaker.name
+            )
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(self.attempt_recovery(breaker.name))
@@ -129,7 +132,9 @@ class AutoRecoveryManager:
         for attempt in range(1, self._max_attempts + 1):
             logger.info(
                 "AutoRecovery: attempting %s recovery (attempt %d/%d)",
-                service_name, attempt, self._max_attempts,
+                service_name,
+                attempt,
+                self._max_attempts,
             )
             try:
                 success = await self._recover_service(service_name)
@@ -142,19 +147,22 @@ class AutoRecoveryManager:
             except Exception as exc:
                 logger.warning(
                     "AutoRecovery: %s recovery attempt %d failed: %s",
-                    service_name, attempt, exc,
+                    service_name,
+                    attempt,
+                    exc,
                 )
 
             if attempt < self._max_attempts:
                 await asyncio.sleep(delay)
-                delay *= 2   # Exponential backoff
+                delay *= 2  # Exponential backoff
 
         self._recovery_success[service_name] = False
         self._recovery_attempts[service_name] = attempts + self._max_attempts
         logger.error(
             "AutoRecovery: %s failed to recover after %d attempts — "
             "system continues in degraded mode",
-            service_name, self._max_attempts,
+            service_name,
+            self._max_attempts,
         )
         return False
 
@@ -225,8 +233,10 @@ class AutoRecoveryManager:
         Recovery for Ollama is passive — we just wait for it to come back.
         """
         import os
+
         url_env = (
-            "TINKER_SERVER_URL" if service_name == "ollama_server"
+            "TINKER_SERVER_URL"
+            if service_name == "ollama_server"
             else "TINKER_SECONDARY_URL"
         )
         base_url = os.getenv(url_env, "http://localhost:11434")
@@ -234,6 +244,7 @@ class AutoRecoveryManager:
 
         try:
             import aiohttp
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     health_url, timeout=aiohttp.ClientTimeout(total=5)
@@ -241,7 +252,8 @@ class AutoRecoveryManager:
                     ok = resp.status == 200
                     logger.info(
                         "AutoRecovery: Ollama health check %s → HTTP %d",
-                        service_name, resp.status,
+                        service_name,
+                        resp.status,
                     )
                     return ok
         except Exception as exc:
@@ -251,9 +263,11 @@ class AutoRecoveryManager:
     async def _recover_searxng(self) -> bool:
         """Ping SearXNG to check if it's reachable."""
         import os
+
         searxng_url = os.getenv("TINKER_SEARXNG_URL", "http://localhost:8080")
         try:
             import aiohttp
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{searxng_url}/healthz",

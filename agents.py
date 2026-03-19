@@ -69,6 +69,7 @@ If the AI returns plain text (no JSON), we fall back to regex helpers that try
 to extract structured information from the free text. This makes the system
 resilient to model variability.
 """
+
 from __future__ import annotations
 
 import json
@@ -110,13 +111,17 @@ _current_trace_id: ContextVar[str] = ContextVar("trace_id", default="")
 # agents.py remains loadable in minimal test environments without the full
 # prompts/ and resilience/ packages installed.
 
+
 def _get_prompt_builder_cls():
     """Return the PromptBuilder class, or None if not available."""
     try:
         from prompts.builder import PromptBuilder
+
         return PromptBuilder
     except Exception as exc:
-        logger.debug("agents: PromptBuilder not available — using inline prompts: %s", exc)
+        logger.debug(
+            "agents: PromptBuilder not available — using inline prompts: %s", exc
+        )
         return None
 
 
@@ -124,9 +129,12 @@ def _get_retry_async():
     """Return (retry_async, CONSERVATIVE) or (None, None) if unavailable."""
     try:
         from resilience.retry import retry_async, CONSERVATIVE
+
         return retry_async, CONSERVATIVE
     except Exception as exc:
-        logger.debug("agents: resilience.retry not available — calls are not retried: %s", exc)
+        logger.debug(
+            "agents: resilience.retry not available — calls are not retried: %s", exc
+        )
         return None, None
 
 
@@ -134,9 +142,12 @@ def _get_rate_limiter_registry():
     """Return the default RateLimiterRegistry, or None if unavailable."""
     try:
         from resilience.rate_limiter import build_default_rate_limiters
+
         return build_default_rate_limiters()
     except Exception as exc:
-        logger.debug("agents: rate_limiter not available — token tracking disabled: %s", exc)
+        logger.debug(
+            "agents: rate_limiter not available — token tracking disabled: %s", exc
+        )
         return None
 
 
@@ -152,15 +163,24 @@ def _get_rate_limiter_registry():
 # Schema validation.  For stronger enforcement, replace with:
 #   import jsonschema; jsonschema.validate(d, ARCHITECT_SCHEMA)
 
-_ARCHITECT_REQUIRED_KEYS: frozenset[str] = frozenset({
-    "content",
-})
-_ARCHITECT_PROMPTBUILDER_REQUIRED_KEYS: frozenset[str] = frozenset({
-    "artifact_type", "title", "design",
-})
-_CRITIC_REQUIRED_KEYS: frozenset[str] = frozenset({
-    "content", "score",
-})
+_ARCHITECT_REQUIRED_KEYS: frozenset[str] = frozenset(
+    {
+        "content",
+    }
+)
+_ARCHITECT_PROMPTBUILDER_REQUIRED_KEYS: frozenset[str] = frozenset(
+    {
+        "artifact_type",
+        "title",
+        "design",
+    }
+)
+_CRITIC_REQUIRED_KEYS: frozenset[str] = frozenset(
+    {
+        "content",
+        "score",
+    }
+)
 
 
 def _validate_agent_response(
@@ -185,6 +205,7 @@ def _validate_agent_response(
         fallback path instead.
     """
     from exceptions import ResponseParseError
+
     missing = required_keys - d.keys()
     if missing:
         trace_id = _current_trace_id.get() or "?"
@@ -197,6 +218,7 @@ def _validate_agent_response(
 # ---------------------------------------------------------------------------
 # Internal helper functions (not part of the public API)
 # ---------------------------------------------------------------------------
+
 
 def _json_block(obj: Any) -> str:
     """
@@ -231,7 +253,10 @@ def _extract_knowledge_gaps(text: str) -> list[str]:
         # Strip common bullet-point characters and surrounding whitespace
         line = line.strip("- •*").strip()
         # Only keep lines that contain keywords suggesting a knowledge gap
-        if any(kw in line.lower() for kw in ("gap", "unknown", "unclear", "need to research", "investigate")):
+        if any(
+            kw in line.lower()
+            for kw in ("gap", "unknown", "unclear", "need to research", "investigate")
+        ):
             # Filter out very short lines (not useful) and very long ones (probably paragraphs)
             if 10 < len(line) < 300:
                 gaps.append(line)
@@ -273,9 +298,9 @@ def _extract_score(text: str) -> float:
     """
     for pattern in [
         r"score[:\s]+([0-9]+(?:\.[0-9]+)?)\s*/\s*10",  # "score: 7.5/10"
-        r"score[:\s]+([0-9]+(?:\.[0-9]+)?)",            # "score: 0.75"
-        r"([0-9]+(?:\.[0-9]+)?)\s*/\s*10",             # "7.5/10" anywhere
-        r"([0-9]\.[0-9]+)\b",                           # any decimal like "0.8"
+        r"score[:\s]+([0-9]+(?:\.[0-9]+)?)",  # "score: 0.75"
+        r"([0-9]+(?:\.[0-9]+)?)\s*/\s*10",  # "7.5/10" anywhere
+        r"([0-9]\.[0-9]+)\b",  # any decimal like "0.8"
     ]:
         m = re.search(pattern, text, re.IGNORECASE)
         if m:
@@ -303,13 +328,17 @@ def _parse_architect_structured(d: dict) -> tuple[str, list, list, list, list]:
     """
     # ── PromptBuilder schema (design_proposal) ──────────────────────────────
     if d.get("artifact_type") == "design_proposal":
-        _validate_agent_response(d, _ARCHITECT_PROMPTBUILDER_REQUIRED_KEYS, "Architect(PromptBuilder)")
-        design   = d.get("design", {})
-        summary  = design.get("summary", "")
+        _validate_agent_response(
+            d, _ARCHITECT_PROMPTBUILDER_REQUIRED_KEYS, "Architect(PromptBuilder)"
+        )
+        design = d.get("design", {})
+        summary = design.get("summary", "")
         # Reconstruct a readable narrative from structured fields
         components_txt = ""
         for comp in design.get("components", [])[:5]:
-            components_txt += f"\n- {comp.get('name', '?')}: {comp.get('responsibility', '')}"
+            components_txt += (
+                f"\n- {comp.get('name', '?')}: {comp.get('responsibility', '')}"
+            )
         trade_offs = design.get("trade_offs", {})
         trade_offs_txt = (
             f"\nGains: {trade_offs.get('gains', [])}"
@@ -328,12 +357,12 @@ def _parse_architect_structured(d: dict) -> tuple[str, list, list, list, list]:
         raw_next = d.get("candidate_next_tasks", [])
         candidate_tasks = [
             {
-                "title":          t.get("task", "")[:120],
-                "description":    t.get("task", ""),
-                "type":           "design",
-                "subsystem":      "unknown",
+                "title": t.get("task", "")[:120],
+                "description": t.get("task", ""),
+                "type": "design",
+                "subsystem": "unknown",
                 "confidence_gap": 0.5,
-                "tags":           [],
+                "tags": [],
             }
             for t in raw_next
             if isinstance(t, dict)
@@ -348,10 +377,10 @@ def _parse_architect_structured(d: dict) -> tuple[str, list, list, list, list]:
 
     # ── Legacy schema ────────────────────────────────────────────────────────
     _validate_agent_response(d, _ARCHITECT_REQUIRED_KEYS, "Architect(legacy)")
-    content    = d.get("content", "")
-    gaps       = d.get("knowledge_gaps", [])
-    decisions  = d.get("decisions", [])
-    questions  = d.get("open_questions", [])
+    content = d.get("content", "")
+    gaps = d.get("knowledge_gaps", [])
+    decisions = d.get("decisions", [])
+    questions = d.get("open_questions", [])
     candidates = d.get("candidate_tasks", [])
     return content, gaps, decisions, questions, candidates
 
@@ -384,17 +413,18 @@ def _build_architect_prompts(
                 # The assembled context IS the architecture state — it contains
                 # all the relevant sections (arch state, recent artifacts,
                 # research notes, prior critique) that ContextAssembler fetched.
-                architecture_state = context_str[:3000],
-                task_description   = task_desc,
-                constraints        = constraints_str or "None specified.",
+                architecture_state=context_str[:3000],
+                task_description=task_desc,
+                constraints=constraints_str or "None specified.",
                 # Additional context: the grub review section if present.
-                context            = grub_section.strip() or "(see architecture state above)",
+                context=grub_section.strip() or "(see architecture state above)",
             )
             return system, user
         except Exception as exc:
             logger.debug(
                 "agents: PromptBuilder.for_architect_micro failed (%s) — "
-                "using inline fallback prompt", exc,
+                "using inline fallback prompt",
+                exc,
             )
 
     # Inline fallback — matches the PromptBuilder output format closely so
@@ -439,15 +469,16 @@ def _build_critic_prompts(
     if pb_cls is not None:
         try:
             system, user = pb_cls.for_critic_micro(
-                target_artifact   = {"content": design_content[:2000]},
-                architecture_state = task_desc,
-                focus_areas       = "Design quality, scalability, and completeness.",
+                target_artifact={"content": design_content[:2000]},
+                architecture_state=task_desc,
+                focus_areas="Design quality, scalability, and completeness.",
             )
             return system, user
         except Exception as exc:
             logger.debug(
                 "agents: PromptBuilder.for_critic_micro failed (%s) — "
-                "using inline fallback prompt", exc,
+                "using inline fallback prompt",
+                exc,
             )
 
     # Inline fallback
@@ -487,18 +518,19 @@ def _build_synthesizer_prompts(
         artifacts = kwargs.get("artifacts", [])
         try:
             system, user = pb_cls.for_synthesizer_meso(
-                source_artifacts     = artifacts[:10],
-                synthesis_directive  = (
+                source_artifacts=artifacts[:10],
+                synthesis_directive=(
                     f"Synthesise all micro-level design artifacts for the "
                     f"'{subsystem}' subsystem into a coherent design document."
                 ),
-                prior_meso_synthesis = "None — first meso synthesis for this subsystem.",
+                prior_meso_synthesis="None — first meso synthesis for this subsystem.",
             )
             return system, user
         except Exception as exc:
             logger.debug(
                 "agents: PromptBuilder.for_synthesizer_meso failed (%s) — "
-                "using inline fallback", exc,
+                "using inline fallback",
+                exc,
             )
 
     # Inline fallbacks (macro always uses this path; meso uses it on PB failure)
@@ -521,8 +553,8 @@ def _build_synthesizer_prompts(
         )
     else:
         # level == "macro"
-        documents   = kwargs.get("documents", [])
-        version     = kwargs.get("snapshot_version", 0)
+        documents = kwargs.get("documents", [])
+        version = kwargs.get("snapshot_version", 0)
         micro_count = kwargs.get("total_micro_loops", 0)
         docs_text = "\n---\n".join(
             (d.get("content", str(d)) if isinstance(d, dict) else str(d))[:300]
@@ -545,6 +577,7 @@ def _build_synthesizer_prompts(
 # ---------------------------------------------------------------------------
 # ArchitectAgent
 # ---------------------------------------------------------------------------
+
 
 class ArchitectAgent:
     """
@@ -618,12 +651,14 @@ class ArchitectAgent:
 
         # Pull the most useful fields out of the task dict.
         # .get() with a default means we won't crash if a field is missing.
-        task_desc  = task.get("description", task.get("title", "architecture task"))
-        subsystem  = task.get("subsystem", "unknown")
+        task_desc = task.get("description", task.get("title", "architecture task"))
+        subsystem = task.get("subsystem", "unknown")
         constraints_list = task.get("constraints", [])
-        constraints_str  = (
-            ", ".join(constraints_list) if isinstance(constraints_list, list) and constraints_list
-            else str(constraints_list) if constraints_list
+        constraints_str = (
+            ", ".join(constraints_list)
+            if isinstance(constraints_list, list) and constraints_list
+            else str(constraints_list)
+            if constraints_list
             else "None specified."
         )
 
@@ -634,19 +669,24 @@ class ArchitectAgent:
         #
         # Token budget guard: warn if the assembler already hit or exceeded its
         # budget (should not normally happen, but surfaces misconfigurations).
-        _tokens_used   = context.get("tokens_used", 0)
+        _tokens_used = context.get("tokens_used", 0)
         _tokens_budget = context.get("tokens_budget", 8192)
         if _tokens_used and _tokens_budget and _tokens_used > _tokens_budget:
             logger.warning(
                 "ArchitectAgent: context tokens_used (%d) exceeds budget (%d) "
                 "[task=%s trace_id=%s] — prompt will be truncated",
-                _tokens_used, _tokens_budget, task_id, trace_id,
+                _tokens_used,
+                _tokens_budget,
+                task_id,
+                trace_id,
             )
         # Use the assembler's token budget to derive a character limit instead
         # of a hardcoded slice.  chars_per_token ≈ 3.8 (LLaMA/GPT average).
         _chars_limit = int(_tokens_budget * 3.8)
-        raw_prompt   = context.get("prompt", _json_block(context))
-        context_str  = raw_prompt[:_chars_limit] if len(raw_prompt) > _chars_limit else raw_prompt
+        raw_prompt = context.get("prompt", _json_block(context))
+        context_str = (
+            raw_prompt[:_chars_limit] if len(raw_prompt) > _chars_limit else raw_prompt
+        )
 
         # ── Grub implementation section (review tasks only) ─────────────────
         # When Tinker is processing a 'review' task, _enrich_review_context()
@@ -657,15 +697,16 @@ class ArchitectAgent:
         grub_section = ""
         grub_impl = context.get("grub_implementation")
         if grub_impl:
-            score    = grub_impl.get("score", "?")
-            summary  = grub_impl.get("summary", "")[:600]
-            files    = grub_impl.get("files_written", [])[:5]
-            tests    = grub_impl.get("test_results", {})
-            status   = grub_impl.get("status", "unknown")
+            score = grub_impl.get("score", "?")
+            summary = grub_impl.get("summary", "")[:600]
+            files = grub_impl.get("files_written", [])[:5]
+            tests = grub_impl.get("test_results", {})
+            status = grub_impl.get("status", "unknown")
             tests_str = (
                 f"Passed: {tests.get('passed', '?')}, "
                 f"Failed: {tests.get('failed', '?')}"
-                if tests else "Not available"
+                if tests
+                else "Not available"
             )
             files_str = ", ".join(files) if files else "(none recorded)"
             grub_section = (
@@ -681,11 +722,11 @@ class ArchitectAgent:
         # Build (system, user) prompts using PromptBuilder, falling back to
         # inline prompts when PromptBuilder is unavailable.
         system_prompt, user_prompt = _build_architect_prompts(
-            task_desc       = task_desc,
-            subsystem       = subsystem,
-            context_str     = context_str,
-            grub_section    = grub_section,
-            constraints_str = constraints_str,
+            task_desc=task_desc,
+            subsystem=subsystem,
+            context_str=context_str,
+            grub_section=grub_section,
+            constraints_str=constraints_str,
         )
 
         # Build the request and send it to the AI via ModelRouter.
@@ -695,10 +736,10 @@ class ArchitectAgent:
             agent_role=AgentRole.ARCHITECT,
             messages=[
                 Message("system", system_prompt),
-                Message("user",   user_prompt),
+                Message("user", user_prompt),
             ],
-            expect_json=True,   # Tell the router we want JSON back
-            temperature=0.7,    # 0=deterministic, 1=very creative; 0.7 is a good balance
+            expect_json=True,  # Tell the router we want JSON back
+            temperature=0.7,  # 0=deterministic, 1=very creative; 0.7 is a good balance
         )
 
         # Wrap the model call with retry for transient failures.
@@ -738,42 +779,46 @@ class ArchitectAgent:
                 logger.warning(
                     "ArchitectAgent: schema validation failed (%s) — "
                     "falling back to raw text [trace_id=%s]",
-                    parse_exc, trace_id,
+                    parse_exc,
+                    trace_id,
                 )
-                content    = resp.raw_text
-                gaps       = _extract_knowledge_gaps(content)
-                decisions  = []
-                questions  = []
+                content = resp.raw_text
+                gaps = _extract_knowledge_gaps(content)
+                decisions = []
+                questions = []
                 candidates = _extract_candidate_tasks(content)
         else:
             # Fallback: the AI returned plain text — extract what we can.
-            content    = resp.raw_text
-            gaps       = _extract_knowledge_gaps(content)
-            decisions  = []
-            questions  = []
+            content = resp.raw_text
+            gaps = _extract_knowledge_gaps(content)
+            decisions = []
+            questions = []
             candidates = _extract_candidate_tasks(content)
 
         logger.info(
             "ArchitectAgent.call complete [task=%s tokens=%d trace_id=%s]",
-            task_id, resp.total_tokens, trace_id,
+            task_id,
+            resp.total_tokens,
+            trace_id,
         )
 
         # Return a normalised dict that the Orchestrator's micro loop expects.
         # Every field has a safe default so callers don't need to handle None.
         return {
-            "content":        content,
-            "tokens_used":    resp.total_tokens,
+            "content": content,
+            "tokens_used": resp.total_tokens,
             "knowledge_gaps": gaps,
-            "decisions":      decisions,
+            "decisions": decisions,
             "open_questions": questions,
             "candidate_tasks": candidates,  # TaskGenerator reads this field
-            "trace_id":       trace_id,
+            "trace_id": trace_id,
         }
 
 
 # ---------------------------------------------------------------------------
 # CriticAgent
 # ---------------------------------------------------------------------------
+
 
 class CriticAgent:
     """
@@ -830,27 +875,25 @@ class CriticAgent:
         _current_trace_id.set(trace_id)
         task_id = task.get("id", "?")
 
-        logger.info(
-            "CriticAgent.call start [task=%s trace_id=%s]", task_id, trace_id
-        )
+        logger.info("CriticAgent.call start [task=%s trace_id=%s]", task_id, trace_id)
 
         # Truncate the design content to avoid exceeding the model's context window.
         # 3000 chars is usually enough to convey the key ideas.
         design_content = architect_result.get("content", "")[:3000]
-        task_desc      = task.get("description", task.get("title", ""))
+        task_desc = task.get("description", task.get("title", ""))
 
         # Build (system, user) prompts using PromptBuilder, falling back to
         # inline prompts when PromptBuilder is unavailable.
         system_prompt, user_prompt = _build_critic_prompts(
-            task_desc      = task_desc,
-            design_content = design_content,
+            task_desc=task_desc,
+            design_content=design_content,
         )
 
         req = ModelRequest(
             agent_role=AgentRole.CRITIC,
             messages=[
                 Message("system", system_prompt),
-                Message("user",   user_prompt),
+                Message("user", user_prompt),
             ],
             expect_json=True,
             temperature=0.3,  # Lower temperature = more consistent, less creative scoring
@@ -879,23 +922,26 @@ class CriticAgent:
         # Parse the response, with schema validation and regex fallback
         if resp.structured and isinstance(resp.structured, dict):
             try:
-                _validate_agent_response(resp.structured, _CRITIC_REQUIRED_KEYS, "Critic")
+                _validate_agent_response(
+                    resp.structured, _CRITIC_REQUIRED_KEYS, "Critic"
+                )
                 content = resp.structured.get("content", resp.raw_text)
-                score   = float(resp.structured.get("score", 0.7))
-                flags   = resp.structured.get("flags", [])
+                score = float(resp.structured.get("score", 0.7))
+                flags = resp.structured.get("flags", [])
             except Exception as parse_exc:
                 logger.warning(
                     "CriticAgent: schema validation failed (%s) — "
                     "falling back to raw text [trace_id=%s]",
-                    parse_exc, trace_id,
+                    parse_exc,
+                    trace_id,
                 )
                 content = resp.raw_text
-                score   = _extract_score(content)
-                flags   = []
+                score = _extract_score(content)
+                flags = []
         else:
             content = resp.raw_text
-            score   = _extract_score(content)
-            flags   = []
+            score = _extract_score(content)
+            flags = []
 
         # Always clamp the score to [0, 1] even if the model returns something
         # outside that range (e.g. "1.2" or "-0.1").
@@ -903,21 +949,25 @@ class CriticAgent:
 
         logger.info(
             "CriticAgent.call complete [task=%s score=%.2f tokens=%d trace_id=%s]",
-            task_id, score, resp.total_tokens, trace_id,
+            task_id,
+            score,
+            resp.total_tokens,
+            trace_id,
         )
 
         return {
-            "content":     content,
+            "content": content,
             "tokens_used": resp.total_tokens,
-            "score":       score,
-            "flags":       flags,
-            "trace_id":    trace_id,
+            "score": score,
+            "flags": flags,
+            "trace_id": trace_id,
         }
 
 
 # ---------------------------------------------------------------------------
 # SynthesizerAgent
 # ---------------------------------------------------------------------------
+
 
 class SynthesizerAgent:
     """
@@ -980,10 +1030,10 @@ class SynthesizerAgent:
             agent_role=AgentRole.SYNTHESIZER,
             messages=[
                 Message("system", system_prompt),
-                Message("user",   user_prompt),
+                Message("user", user_prompt),
             ],
             expect_json=False,  # Synthesis output is prose, not JSON
-            temperature=0.5,    # Moderate temperature: creative but coherent
+            temperature=0.5,  # Moderate temperature: creative but coherent
         )
 
         # Retry on transient failures.
@@ -1008,12 +1058,14 @@ class SynthesizerAgent:
 
         logger.info(
             "SynthesizerAgent.call complete [level=%s tokens=%d trace_id=%s]",
-            level, resp.total_tokens, trace_id,
+            level,
+            resp.total_tokens,
+            trace_id,
         )
 
         return {
-            "content":     resp.raw_text,
+            "content": resp.raw_text,
             "tokens_used": resp.total_tokens,
-            "level":       level,
-            "trace_id":    trace_id,
+            "level": level,
+            "trace_id": trace_id,
         }

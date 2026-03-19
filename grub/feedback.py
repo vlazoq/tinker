@@ -31,12 +31,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
-from .contracts.task   import GrubTask, TaskPriority
+from .contracts.task import GrubTask, TaskPriority
 from .contracts.result import MinionResult
 
 logger = logging.getLogger(__name__)
@@ -55,13 +53,13 @@ class TinkerBridge:
 
     def __init__(
         self,
-        tinker_tasks_db:      str = "tinker_tasks_engine.sqlite",
+        tinker_tasks_db: str = "tinker_tasks_engine.sqlite",
         tinker_artifacts_dir: str = "./tinker_artifacts",
-        grub_artifacts_dir:   str = "./grub_artifacts",
+        grub_artifacts_dir: str = "./grub_artifacts",
     ) -> None:
-        self._tasks_db     = Path(tinker_tasks_db)
-        self._artifacts    = Path(tinker_artifacts_dir)
-        self._grub_arts    = Path(grub_artifacts_dir)
+        self._tasks_db = Path(tinker_tasks_db)
+        self._artifacts = Path(tinker_artifacts_dir)
+        self._grub_arts = Path(grub_artifacts_dir)
         self._grub_arts.mkdir(parents=True, exist_ok=True)
 
     # ── Tinker → Grub ─────────────────────────────────────────────────────────
@@ -86,7 +84,7 @@ class TinkerBridge:
             return []
 
         try:
-            con  = sqlite3.connect(str(self._tasks_db), timeout=5)
+            con = sqlite3.connect(str(self._tasks_db), timeout=5)
             # WAL mode: allows concurrent readers + one writer without "database is
             # locked" errors.  Tinker (reader/writer) and Grub (writer) share this
             # file; WAL makes that safe.  The mode persists in the DB file — setting
@@ -99,7 +97,7 @@ class TinkerBridge:
                 "WHERE type='implementation' AND status='pending' "
                 "ORDER BY priority_score DESC "
                 "LIMIT ?",
-                (limit,)
+                (limit,),
             ).fetchall()
             con.close()
         except Exception as exc:
@@ -119,21 +117,27 @@ class TinkerBridge:
                 # Try to find the design artifact by subsystem name
                 artifact_path = self._find_artifact(row["subsystem"] or "")
 
-            tasks.append(GrubTask(
-                title          = row["title"],
-                description    = row["description"] or "",
-                artifact_path  = artifact_path,
-                target_files   = meta.get("target_files", []),
-                subsystem      = row["subsystem"] or "unknown",
-                tinker_task_id = row["id"],
-                priority       = TaskPriority.NORMAL,
-                context        = meta,
-            ))
-            logger.debug("TinkerBridge: fetched task '%s' (tinker_id=%s)",
-                         row["title"], row["id"][:8])
+            tasks.append(
+                GrubTask(
+                    title=row["title"],
+                    description=row["description"] or "",
+                    artifact_path=artifact_path,
+                    target_files=meta.get("target_files", []),
+                    subsystem=row["subsystem"] or "unknown",
+                    tinker_task_id=row["id"],
+                    priority=TaskPriority.NORMAL,
+                    context=meta,
+                )
+            )
+            logger.debug(
+                "TinkerBridge: fetched task '%s' (tinker_id=%s)",
+                row["title"],
+                row["id"][:8],
+            )
 
-        logger.info("TinkerBridge: fetched %d implementation tasks from Tinker",
-                    len(tasks))
+        logger.info(
+            "TinkerBridge: fetched %d implementation tasks from Tinker", len(tasks)
+        )
         return tasks
 
     def _find_artifact(self, subsystem: str) -> str:
@@ -192,10 +196,11 @@ class TinkerBridge:
             # 1. Mark original task as complete (matches TaskStatus.COMPLETE = "complete")
             con.execute(
                 "UPDATE tasks SET status='complete', updated_at=? WHERE id=?",
-                (now, tinker_task_id)
+                (now, tinker_task_id),
             )
-            logger.info("TinkerBridge: marked Tinker task %s as complete",
-                        tinker_task_id[:8])
+            logger.info(
+                "TinkerBridge: marked Tinker task %s as complete", tinker_task_id[:8]
+            )
 
             # 2. Always create a follow-up review task for Tinker so it knows
             #    what Grub produced and can decide whether to redesign.
@@ -216,10 +221,12 @@ class TinkerBridge:
                 f"Notes: {notes}\n\n"
                 f"Grub score: {result.score:.2f}"
             )
-            meta = json.dumps({
-                "grub_task_result": result.to_dict(),
-                "source":           "grub_feedback",
-            })
+            meta = json.dumps(
+                {
+                    "grub_task_result": result.to_dict(),
+                    "source": "grub_feedback",
+                }
+            )
             con.execute(
                 """INSERT OR IGNORE INTO tasks
                    (id, title, description, type, subsystem, status,
@@ -230,7 +237,7 @@ class TinkerBridge:
                    VALUES (?,?,?,'review','cross_cutting','pending',
                            0.6, 0, ?,?, 0.6, 0.0, 0, 0.0, 0,
                            '[]','[]','["grub_feedback"]',?)""",
-                (new_id, feedback_title, feedback_desc, now, now, meta)
+                (new_id, feedback_title, feedback_desc, now, now, meta),
             )
             logger.info("TinkerBridge: created Tinker review task %s", new_id[:8])
 
@@ -245,7 +252,7 @@ class TinkerBridge:
     def write_implementation_note(
         self,
         result: MinionResult,
-        task:   GrubTask,
+        task: GrubTask,
     ) -> str:
         """
         Write a human-readable implementation note to grub_artifacts/.
@@ -256,23 +263,25 @@ class TinkerBridge:
         Returns the path of the written file.
         """
         note_path = self._grub_arts / f"impl_{task.subsystem}_{task.id[:8]}.md"
-        now       = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
-        content = "\n".join([
-            f"# Implementation Note: {task.title}",
-            f"",
-            f"**Date**: {now}",
-            f"**Subsystem**: {task.subsystem}",
-            f"**Status**: {result.status.value}",
-            f"**Quality Score**: {result.score:.2f}",
-            f"",
-            f"## Summary",
-            result.summary,
-            f"",
-            f"## Files Produced",
-            *[f"- `{f}`" for f in result.files_written],
-            f"",
-        ])
+        content = "\n".join(
+            [
+                f"# Implementation Note: {task.title}",
+                "",
+                f"**Date**: {now}",
+                f"**Subsystem**: {task.subsystem}",
+                f"**Status**: {result.status.value}",
+                f"**Quality Score**: {result.score:.2f}",
+                "",
+                "## Summary",
+                result.summary,
+                "",
+                "## Files Produced",
+                *[f"- `{f}`" for f in result.files_written],
+                "",
+            ]
+        )
 
         if result.test_results:
             tr = result.test_results

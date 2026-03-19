@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,10 +20,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 # Stub httpx and trafilatura if not installed (sandbox/CI without pip)
 try:
-    import httpx
+    import httpx  # noqa: F401
 except ImportError:
     from unittest.mock import MagicMock
-    import sys, types
+    import sys
+    import types
+
     _httpx = types.ModuleType("httpx")
     _httpx.AsyncClient = MagicMock
     _httpx.HTTPStatusError = Exception
@@ -32,36 +33,47 @@ except ImportError:
     sys.modules["httpx"] = _httpx
 
 try:
-    import trafilatura
+    import trafilatura  # noqa: F401
 except ImportError:
-    import sys, types
+    import sys
+    import types
+
     _tra = types.ModuleType("trafilatura")
-    def _extract(html, **kw): return "Extracted text from article about architecture."
+
+    def _extract(html, **kw):
+        return "Extracted text from article about architecture."
+
     def _meta(html, **kw):
-        class M: title = "Test Title"
+        class M:
+            title = "Test Title"
+
         return M()
+
     _tra.extract = _extract
     _tra.extract_metadata = _meta
     sys.modules["trafilatura"] = _tra
-    import tool_layer.tools.web_scraper as _ws
+    import tools.web_scraper as _ws
+
     _ws._trafilatura = _tra
 
 
 # Make the package importable when run from the repo root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tool_layer.tools.base import BaseTool, ToolResult, ToolSchema
-from tool_layer.tools.web_search import WebSearchTool
-from tool_layer.tools.web_scraper import WebScraperTool
-from tool_layer.tools.artifact_writer import ArtifactWriterTool
-from tool_layer.tools.diagram_generator import DiagramGeneratorTool
-from tool_layer.tools.memory_query import MemoryQueryTool, _StubMemoryManager
-from tool_layer.registry import ToolRegistry, build_default_registry
+from tools.base import ToolResult
+from tools.web_search import WebSearchTool
+from tools.web_scraper import WebScraperTool
+from tools.artifact_writer import ArtifactWriterTool
+from tools.diagram_generator import DiagramGeneratorTool
+from tools.memory_query import MemoryQueryTool
+from tools.registry import ToolRegistry, build_default_registry
+from exceptions import ToolNotFoundError
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def run(coro):
     """Run a coroutine in the test's event loop."""
@@ -72,10 +84,12 @@ def run(coro):
 # Base / ToolResult tests
 # ---------------------------------------------------------------------------
 
-class TestToolResult(unittest.TestCase):
 
+class TestToolResult(unittest.TestCase):
     def test_to_dict_success(self):
-        r = ToolResult(success=True, tool_name="foo", data={"key": "val"}, duration_ms=42.1)
+        r = ToolResult(
+            success=True, tool_name="foo", data={"key": "val"}, duration_ms=42.1
+        )
         d = r.to_dict()
         self.assertTrue(d["success"])
         self.assertEqual(d["tool_name"], "foo")
@@ -93,8 +107,8 @@ class TestToolResult(unittest.TestCase):
 # Web Search Tool
 # ---------------------------------------------------------------------------
 
-class TestWebSearchTool(unittest.TestCase):
 
+class TestWebSearchTool(unittest.TestCase):
     def _make_tool(self) -> WebSearchTool:
         return WebSearchTool(searxng_url="http://localhost:8080")
 
@@ -163,8 +177,13 @@ class TestWebSearchTool(unittest.TestCase):
         tool = self._make_tool()
 
         many_results = [
-            {"title": f"Result {i}", "url": f"https://example.com/{i}",
-             "content": f"Content {i}", "engine": "google", "score": 0.9 - i * 0.01}
+            {
+                "title": f"Result {i}",
+                "url": f"https://example.com/{i}",
+                "content": f"Content {i}",
+                "engine": "google",
+                "score": 0.9 - i * 0.01,
+            }
             for i in range(20)
         ]
 
@@ -188,8 +207,8 @@ class TestWebSearchTool(unittest.TestCase):
 # Web Scraper Tool
 # ---------------------------------------------------------------------------
 
-class TestWebScraperTool(unittest.TestCase):
 
+class TestWebScraperTool(unittest.TestCase):
     def _make_tool(self) -> WebScraperTool:
         return WebScraperTool(timeout_ms=5000)
 
@@ -224,7 +243,7 @@ class TestWebScraperTool(unittest.TestCase):
             mock_client_cls.return_value = mock_client
 
             # Force httpx path by patching Playwright as unavailable
-            with patch("tool_layer.tools.web_scraper._PLAYWRIGHT_AVAILABLE", False):
+            with patch("tools.web_scraper._PLAYWRIGHT_AVAILABLE", False):
                 result = run(tool.execute(url="https://example.com/article"))
 
         self.assertTrue(result.success, result.error)
@@ -247,7 +266,7 @@ class TestWebScraperTool(unittest.TestCase):
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_client_cls.return_value = mock_client
 
-            with patch("tool_layer.tools.web_scraper._PLAYWRIGHT_AVAILABLE", False):
+            with patch("tools.web_scraper._PLAYWRIGHT_AVAILABLE", False):
                 result = run(tool.execute(url="example.com"))
 
         self.assertTrue(result.success, result.error)
@@ -258,8 +277,8 @@ class TestWebScraperTool(unittest.TestCase):
 # Artifact Writer Tool
 # ---------------------------------------------------------------------------
 
-class TestArtifactWriterTool(unittest.TestCase):
 
+class TestArtifactWriterTool(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
         self.tool = ArtifactWriterTool(output_dir=self._tmpdir)
@@ -271,13 +290,15 @@ class TestArtifactWriterTool(unittest.TestCase):
         self.assertIn("content", schema.parameters["required"])
 
     def test_write_markdown_artifact(self):
-        result = run(self.tool.execute(
-            title="Event Sourcing Research",
-            content="## Summary\n\nEvent sourcing stores state as a sequence of events.",
-            artifact_type="research_note",
-            task_id="task-001",
-            tags=["event-sourcing", "distributed-systems"],
-        ))
+        result = run(
+            self.tool.execute(
+                title="Event Sourcing Research",
+                content="## Summary\n\nEvent sourcing stores state as a sequence of events.",
+                artifact_type="research_note",
+                task_id="task-001",
+                tags=["event-sourcing", "distributed-systems"],
+            )
+        )
 
         self.assertTrue(result.success, result.error)
         self.assertIn("artifact_id", result.data)
@@ -295,13 +316,15 @@ class TestArtifactWriterTool(unittest.TestCase):
 
     def test_write_json_artifact(self):
         data = json.dumps({"components": ["A", "B"], "pattern": "CQRS"})
-        result = run(self.tool.execute(
-            title="Architecture Spec",
-            content=data,
-            artifact_type="architecture_analysis",
-            task_id="task-002",
-            format="json",
-        ))
+        result = run(
+            self.tool.execute(
+                title="Architecture Spec",
+                content=data,
+                artifact_type="architecture_analysis",
+                task_id="task-002",
+                format="json",
+            )
+        )
 
         self.assertTrue(result.success, result.error)
         file_path = Path(result.data["file_path"])
@@ -313,12 +336,14 @@ class TestArtifactWriterTool(unittest.TestCase):
 
     def test_artifacts_organised_by_task(self):
         for i in range(3):
-            run(self.tool.execute(
-                title=f"Note {i}",
-                content=f"Content {i}",
-                artifact_type="research_note",
-                task_id="task-xyz",
-            ))
+            run(
+                self.tool.execute(
+                    title=f"Note {i}",
+                    content=f"Content {i}",
+                    artifact_type="research_note",
+                    task_id="task-xyz",
+                )
+            )
 
         task_dir = Path(self._tmpdir) / "task_xyz"
         self.assertTrue(task_dir.exists())
@@ -326,12 +351,14 @@ class TestArtifactWriterTool(unittest.TestCase):
         self.assertEqual(len(md_files), 3)
 
     def test_size_bytes_returned(self):
-        result = run(self.tool.execute(
-            title="Size Test",
-            content="Hello world",
-            artifact_type="raw_data",
-            task_id="task-size",
-        ))
+        result = run(
+            self.tool.execute(
+                title="Size Test",
+                content="Hello world",
+                artifact_type="raw_data",
+                task_id="task-size",
+            )
+        )
         self.assertGreater(result.data["size_bytes"], 0)
 
 
@@ -339,8 +366,8 @@ class TestArtifactWriterTool(unittest.TestCase):
 # Diagram Generator Tool
 # ---------------------------------------------------------------------------
 
-class TestDiagramGeneratorTool(unittest.TestCase):
 
+class TestDiagramGeneratorTool(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
         self.tool = DiagramGeneratorTool(output_dir=self._tmpdir)
@@ -368,13 +395,15 @@ class TestDiagramGeneratorTool(unittest.TestCase):
         self.assertIn("relationships", schema.parameters["required"])
 
     def test_dot_file_generated(self):
-        result = run(self.tool.execute(
-            diagram_name="test_arch",
-            title="Test Architecture",
-            components=self.SAMPLE_COMPONENTS,
-            relationships=self.SAMPLE_RELATIONSHIPS,
-            direction="LR",
-        ))
+        result = run(
+            self.tool.execute(
+                diagram_name="test_arch",
+                title="Test Architecture",
+                components=self.SAMPLE_COMPONENTS,
+                relationships=self.SAMPLE_RELATIONSHIPS,
+                direction="LR",
+            )
+        )
 
         self.assertTrue(result.success, result.error)
         self.assertIn("dot_path", result.data)
@@ -389,32 +418,41 @@ class TestDiagramGeneratorTool(unittest.TestCase):
         self.assertIn("rankdir=LR", dot_src)
 
     def test_node_and_edge_counts(self):
-        result = run(self.tool.execute(
-            diagram_name="count_test",
-            components=self.SAMPLE_COMPONENTS,
-            relationships=self.SAMPLE_RELATIONSHIPS,
-        ))
+        result = run(
+            self.tool.execute(
+                diagram_name="count_test",
+                components=self.SAMPLE_COMPONENTS,
+                relationships=self.SAMPLE_RELATIONSHIPS,
+            )
+        )
         self.assertEqual(result.data["node_count"], 5)
         self.assertEqual(result.data["edge_count"], 5)
 
     def test_cluster_subgraphs(self):
-        result = run(self.tool.execute(
-            diagram_name="cluster_test",
-            components=self.SAMPLE_COMPONENTS,
-            relationships=self.SAMPLE_RELATIONSHIPS,
-        ))
+        result = run(
+            self.tool.execute(
+                diagram_name="cluster_test",
+                components=self.SAMPLE_COMPONENTS,
+                relationships=self.SAMPLE_RELATIONSHIPS,
+            )
+        )
         dot_src = result.data["dot_source"]
         self.assertIn("subgraph cluster_", dot_src)
         self.assertIn("Backend", dot_src)
 
     def test_graphviz_not_installed_handled_gracefully(self):
         """Even if Graphviz is not on PATH, the tool should succeed for the .dot file."""
-        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError("graphviz not found")):
-            result = run(self.tool.execute(
-                diagram_name="no_graphviz",
-                components=self.SAMPLE_COMPONENTS[:2],
-                relationships=self.SAMPLE_RELATIONSHIPS[:1],
-            ))
+        with patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=FileNotFoundError("graphviz not found"),
+        ):
+            result = run(
+                self.tool.execute(
+                    diagram_name="no_graphviz",
+                    components=self.SAMPLE_COMPONENTS[:2],
+                    relationships=self.SAMPLE_RELATIONSHIPS[:1],
+                )
+            )
 
         # The tool must still succeed — .dot file is valuable even without PNG
         self.assertTrue(result.success, result.error)
@@ -426,8 +464,8 @@ class TestDiagramGeneratorTool(unittest.TestCase):
 # Memory Query Tool
 # ---------------------------------------------------------------------------
 
-class TestMemoryQueryTool(unittest.TestCase):
 
+class TestMemoryQueryTool(unittest.TestCase):
     def test_schema(self):
         tool = MemoryQueryTool()
         schema = tool.schema
@@ -437,6 +475,7 @@ class TestMemoryQueryTool(unittest.TestCase):
     def test_stub_returns_empty_with_warning(self):
         tool = MemoryQueryTool()  # Uses _StubMemoryManager
         import warnings
+
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             result = run(tool.execute(query="event sourcing"))
@@ -447,25 +486,29 @@ class TestMemoryQueryTool(unittest.TestCase):
 
     def test_with_real_memory_manager(self):
         mock_mm = MagicMock()
-        mock_mm.search = AsyncMock(return_value=[
-            {
-                "memory_id": "mem-001",
-                "score": 0.92,
-                "title": "CQRS Pattern Analysis",
-                "artifact_type": "architecture_analysis",
-                "task_id": "task-003",
-                "created_at": "2024-01-15T10:00:00Z",
-                "tags": ["cqrs", "patterns"],
-                "snippet": "CQRS separates read and write models...",
-            }
-        ])
+        mock_mm.search = AsyncMock(
+            return_value=[
+                {
+                    "memory_id": "mem-001",
+                    "score": 0.92,
+                    "title": "CQRS Pattern Analysis",
+                    "artifact_type": "architecture_analysis",
+                    "task_id": "task-003",
+                    "created_at": "2024-01-15T10:00:00Z",
+                    "tags": ["cqrs", "patterns"],
+                    "snippet": "CQRS separates read and write models...",
+                }
+            ]
+        )
 
         tool = MemoryQueryTool(memory_manager=mock_mm)
-        result = run(tool.execute(
-            query="CQRS read write separation",
-            top_k=5,
-            filters={"artifact_type": "architecture_analysis"},
-        ))
+        result = run(
+            tool.execute(
+                query="CQRS read write separation",
+                top_k=5,
+                filters={"artifact_type": "architecture_analysis"},
+            )
+        )
 
         self.assertTrue(result.success, result.error)
         self.assertEqual(len(result.data), 1)
@@ -480,17 +523,25 @@ class TestMemoryQueryTool(unittest.TestCase):
 
     def test_normalises_missing_fields(self):
         mock_mm = MagicMock()
-        mock_mm.search = AsyncMock(return_value=[
-            {"id": "mem-002", "score": 0.7, "text": "Some text"}
-        ])
+        mock_mm.search = AsyncMock(
+            return_value=[{"id": "mem-002", "score": 0.7, "text": "Some text"}]
+        )
         tool = MemoryQueryTool(memory_manager=mock_mm)
         result = run(tool.execute(query="anything"))
 
         self.assertTrue(result.success)
         r = result.data[0]
         # All standard fields must be present
-        for key in ("memory_id", "score", "title", "artifact_type", "task_id",
-                    "created_at", "tags", "snippet"):
+        for key in (
+            "memory_id",
+            "score",
+            "title",
+            "artifact_type",
+            "task_id",
+            "created_at",
+            "tags",
+            "snippet",
+        ):
             self.assertIn(key, r, f"Missing key: {key}")
 
 
@@ -498,8 +549,8 @@ class TestMemoryQueryTool(unittest.TestCase):
 # ToolRegistry
 # ---------------------------------------------------------------------------
 
-class TestToolRegistry(unittest.TestCase):
 
+class TestToolRegistry(unittest.TestCase):
     def _make_registry(self) -> ToolRegistry:
         registry = ToolRegistry()
         registry.register(WebSearchTool())
@@ -529,7 +580,7 @@ class TestToolRegistry(unittest.TestCase):
 
     def test_get_tool_raises_for_unknown(self):
         registry = self._make_registry()
-        with self.assertRaises(KeyError):
+        with self.assertRaises(ToolNotFoundError):
             registry.get_tool("nonexistent_tool")
 
     def test_execute_unknown_tool_returns_failure(self):
@@ -562,12 +613,14 @@ class TestToolRegistry(unittest.TestCase):
 
         model_call = {
             "name": "artifact_writer",
-            "arguments": json.dumps({
-                "title": "JSON String Args",
-                "content": "Testing JSON string arguments",
-                "artifact_type": "raw_data",
-                "task_id": "task-json",
-            }),
+            "arguments": json.dumps(
+                {
+                    "title": "JSON String Args",
+                    "content": "Testing JSON string arguments",
+                    "artifact_type": "raw_data",
+                    "task_id": "task-json",
+                }
+            ),
         }
         result = run(registry.execute_from_model_call(model_call))
         self.assertTrue(result.success, result.error)
@@ -577,8 +630,13 @@ class TestToolRegistry(unittest.TestCase):
             artifact_output_dir=tempfile.mkdtemp(),
             diagram_output_dir=tempfile.mkdtemp(),
         )
-        for name in ("web_search", "web_scraper", "artifact_writer",
-                     "diagram_generator", "memory_query"):
+        for name in (
+            "web_search",
+            "web_scraper",
+            "artifact_writer",
+            "diagram_generator",
+            "memory_query",
+        ):
             self.assertIn(name, registry.tool_names)
 
 
@@ -586,6 +644,7 @@ class TestToolRegistry(unittest.TestCase):
 # Integration smoke tests (requires live services)
 # Skip these in CI — they're opt-in
 # ---------------------------------------------------------------------------
+
 
 class IntegrationTests(unittest.TestCase):
     """Marked skip by default — remove the skip decorator to run against live services."""
@@ -607,14 +666,16 @@ class IntegrationTests(unittest.TestCase):
     @unittest.skip("Requires Graphviz on PATH")
     def test_live_diagram_render(self):
         tool = DiagramGeneratorTool(output_dir=tempfile.mkdtemp())
-        result = run(tool.execute(
-            diagram_name="live_test",
-            components=[
-                {"id": "a", "label": "Service A"},
-                {"id": "b", "label": "Service B"},
-            ],
-            relationships=[{"from": "a", "to": "b", "label": "calls"}],
-        ))
+        result = run(
+            tool.execute(
+                diagram_name="live_test",
+                components=[
+                    {"id": "a", "label": "Service A"},
+                    {"id": "b", "label": "Service B"},
+                ],
+                relationships=[{"from": "a", "to": "b", "label": "calls"}],
+            )
+        )
         self.assertTrue(result.success)
         self.assertTrue(result.data["rendered"])
 

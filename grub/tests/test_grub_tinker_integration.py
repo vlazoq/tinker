@@ -52,8 +52,8 @@ from pathlib import Path
 
 import pytest
 
-from grub.feedback         import TinkerBridge
-from grub.contracts.task   import GrubTask, TaskPriority
+from grub.feedback import TinkerBridge
+from grub.contracts.task import GrubTask
 from grub.contracts.result import MinionResult, ResultStatus, TestSummary
 
 # _enrich_review_context is a module-level utility in the micro loop.
@@ -115,8 +115,18 @@ def _insert_task(
             staleness_hours, dependency_depth, last_subsystem_work_hours,
             attempt_count, dependencies, outputs, tags)
            VALUES (?,?,?,?,?,?,?,?,0.5,0,?,?,0.0,0,0.0,0,'[]','[]','[]')""",
-        (id, title, description, type, subsystem, status,
-         priority_score, json.dumps(metadata or {}), now, now),
+        (
+            id,
+            title,
+            description,
+            type,
+            subsystem,
+            status,
+            priority_score,
+            json.dumps(metadata or {}),
+            now,
+            now,
+        ),
     )
 
 
@@ -132,7 +142,7 @@ def tasks_db(tmp_path) -> Path:
     """
     db = tmp_path / "tinker_tasks.sqlite"
     con = sqlite3.connect(str(db))
-    con.execute("PRAGMA journal_mode=WAL")   # enable once; persists in the DB file
+    con.execute("PRAGMA journal_mode=WAL")  # enable once; persists in the DB file
     con.executescript(_FULL_SCHEMA)
     con.commit()
     con.close()
@@ -143,24 +153,24 @@ def tasks_db(tmp_path) -> Path:
 def bridge(tasks_db, tmp_path) -> TinkerBridge:
     """A TinkerBridge wired to the test database."""
     return TinkerBridge(
-        tinker_tasks_db      = str(tasks_db),
-        tinker_artifacts_dir = str(tmp_path / "tinker_artifacts"),
-        grub_artifacts_dir   = str(tmp_path / "grub_artifacts"),
+        tinker_tasks_db=str(tasks_db),
+        tinker_artifacts_dir=str(tmp_path / "tinker_artifacts"),
+        grub_artifacts_dir=str(tmp_path / "grub_artifacts"),
     )
 
 
 def _make_success_result(task_id: str = "grub-task-1") -> MinionResult:
     return MinionResult(
-        task_id              = task_id,
-        minion_name          = "coder",
-        status               = ResultStatus.SUCCESS,
-        score                = 0.88,
-        files_written        = ["billing/module.py", "billing/tests.py"],
-        summary              = "Billing module implemented with 100% test coverage.",
-        feedback_for_tinker  = "Consider adding idempotency keys to the billing API.",
-        test_results         = TestSummary(passed=12, failed=0, errors=0, skipped=1),
-        iterations           = 2,
-        duration_seconds     = 14.3,
+        task_id=task_id,
+        minion_name="coder",
+        status=ResultStatus.SUCCESS,
+        score=0.88,
+        files_written=["billing/module.py", "billing/tests.py"],
+        summary="Billing module implemented with 100% test coverage.",
+        feedback_for_tinker="Consider adding idempotency keys to the billing API.",
+        test_results=TestSummary(passed=12, failed=0, errors=0, skipped=1),
+        iterations=2,
+        duration_seconds=14.3,
     )
 
 
@@ -168,24 +178,30 @@ def _make_success_result(task_id: str = "grub-task-1") -> MinionResult:
 # 1. Full happy-path loop
 # ===========================================================================
 
+
 class TestFullLoop:
     """End-to-end: Tinker → Grub → Tinker with a successful result."""
 
     def test_fetch_reads_pending_implementation_tasks(self, bridge, tasks_db):
         """Grub can read a task that Tinker created."""
         con = sqlite3.connect(str(tasks_db))
-        _insert_task(con, id="t-001", title="Implement billing", subsystem="billing",
-                     metadata={"artifact_path": "tinker_artifacts/billing_design.md"})
+        _insert_task(
+            con,
+            id="t-001",
+            title="Implement billing",
+            subsystem="billing",
+            metadata={"artifact_path": "tinker_artifacts/billing_design.md"},
+        )
         con.commit()
         con.close()
 
         tasks = bridge.fetch_implementation_tasks()
 
         assert len(tasks) == 1
-        assert tasks[0].title         == "Implement billing"
-        assert tasks[0].subsystem     == "billing"
+        assert tasks[0].title == "Implement billing"
+        assert tasks[0].subsystem == "billing"
         assert tasks[0].tinker_task_id == "t-001"
-        assert tasks[0].artifact_path  == "tinker_artifacts/billing_design.md"
+        assert tasks[0].artifact_path == "tinker_artifacts/billing_design.md"
 
     def test_report_result_marks_original_task_complete(self, bridge, tasks_db):
         """After reporting a result the original Tinker task is status='complete'."""
@@ -226,7 +242,7 @@ class TestFullLoop:
         assert len(rows) == 1, "Expected exactly one review task"
         review = rows[0]
         assert review[2] == "review"
-        assert review[3] == "pending"   # ready for Tinker to pick up
+        assert review[3] == "pending"  # ready for Tinker to pick up
 
     def test_review_task_metadata_contains_grub_result(self, bridge, tasks_db):
         """The review task's metadata embeds the full MinionResult as JSON."""
@@ -239,16 +255,14 @@ class TestFullLoop:
         bridge.report_result(result, tinker_task_id="t-001")
 
         con = sqlite3.connect(str(tasks_db))
-        row = con.execute(
-            "SELECT metadata FROM tasks WHERE type='review'"
-        ).fetchone()
+        row = con.execute("SELECT metadata FROM tasks WHERE type='review'").fetchone()
         con.close()
 
         meta = json.loads(row[0])
         grub_result = meta.get("grub_task_result")
         assert grub_result is not None, "metadata must contain 'grub_task_result'"
-        assert grub_result["status"]      == "success"
-        assert grub_result["score"]       == pytest.approx(0.88, abs=0.001)
+        assert grub_result["status"] == "success"
+        assert grub_result["score"] == pytest.approx(0.88, abs=0.001)
         assert grub_result["minion_name"] == "coder"
         assert "billing/module.py" in grub_result["files_written"]
 
@@ -264,9 +278,13 @@ class TestFullLoop:
         """
         # Step 1: Tinker creates an implementation task
         con = sqlite3.connect(str(tasks_db))
-        _insert_task(con, id="t-full", title="Implement auth module",
-                     subsystem="auth",
-                     metadata={"artifact_path": "tinker_artifacts/auth_design.md"})
+        _insert_task(
+            con,
+            id="t-full",
+            title="Implement auth module",
+            subsystem="auth",
+            metadata={"artifact_path": "tinker_artifacts/auth_design.md"},
+        )
         con.commit()
         con.close()
 
@@ -277,13 +295,13 @@ class TestFullLoop:
 
         # Step 3: Minion produces result
         result = MinionResult(
-            task_id              = grub_task.id,
-            minion_name          = "coder",
-            status               = ResultStatus.SUCCESS,
-            score                = 0.91,
-            files_written        = ["auth/handler.py"],
-            summary              = "Auth handler implemented.",
-            feedback_for_tinker  = "JWT expiry should be configurable.",
+            task_id=grub_task.id,
+            minion_name="coder",
+            status=ResultStatus.SUCCESS,
+            score=0.91,
+            files_written=["auth/handler.py"],
+            summary="Auth handler implemented.",
+            feedback_for_tinker="JWT expiry should be configurable.",
         )
 
         # Step 4: Bridge reports result
@@ -293,9 +311,7 @@ class TestFullLoop:
         # Step 5: Read back the review task from the DB
         con = sqlite3.connect(str(tasks_db))
         con.row_factory = sqlite3.Row
-        row = con.execute(
-            "SELECT * FROM tasks WHERE type='review'"
-        ).fetchone()
+        row = con.execute("SELECT * FROM tasks WHERE type='review'").fetchone()
         con.close()
         assert row is not None
 
@@ -308,14 +324,15 @@ class TestFullLoop:
             "_enrich_review_context must add grub_implementation key"
         )
         impl = enriched["grub_implementation"]
-        assert impl["status"]  == "success"
-        assert impl["score"]   == pytest.approx(0.91, abs=0.001)
+        assert impl["status"] == "success"
+        assert impl["score"] == pytest.approx(0.91, abs=0.001)
         assert "auth/handler.py" in impl["files_written"]
 
 
 # ===========================================================================
 # 2. _enrich_review_context — unit tests
 # ===========================================================================
+
 
 class TestEnrichReviewContext:
     """Tests for the micro_loop._enrich_review_context utility."""
@@ -326,38 +343,41 @@ class TestEnrichReviewContext:
             "id": str(uuid.uuid4()),
             "type": "review",
             "title": "Review Grub implementation",
-            "metadata": json.dumps({
-                "grub_task_result": grub_result or {"status": "success", "score": 0.8},
-                "source": "grub_feedback",
-            }),
+            "metadata": json.dumps(
+                {
+                    "grub_task_result": grub_result
+                    or {"status": "success", "score": 0.8},
+                    "source": "grub_feedback",
+                }
+            ),
         }
 
     def test_adds_grub_implementation_key(self):
-        task    = self._make_review_task({"status": "success", "score": 0.75})
+        task = self._make_review_task({"status": "success", "score": 0.75})
         context = {"prompt": "Review this."}
         enriched = _enrich_review_context(task, context)
         assert "grub_implementation" in enriched
 
     def test_preserves_existing_context_keys(self):
-        task    = self._make_review_task()
+        task = self._make_review_task()
         context = {"prompt": "Review.", "prior_artifacts": [{"id": "a1"}]}
         enriched = _enrich_review_context(task, context)
-        assert enriched["prompt"]           == "Review."
-        assert enriched["prior_artifacts"]  == [{"id": "a1"}]
+        assert enriched["prompt"] == "Review."
+        assert enriched["prior_artifacts"] == [{"id": "a1"}]
 
     def test_extracts_grub_result_fields(self):
         grub_data = {
-            "status":        "success",
-            "score":         0.92,
-            "minion_name":   "coder",
+            "status": "success",
+            "score": 0.92,
+            "minion_name": "coder",
             "files_written": ["src/api.py"],
-            "summary":       "API implemented.",
+            "summary": "API implemented.",
         }
-        task     = self._make_review_task(grub_data)
+        task = self._make_review_task(grub_data)
         enriched = _enrich_review_context(task, {})
-        impl     = enriched["grub_implementation"]
-        assert impl["score"]          == 0.92
-        assert impl["minion_name"]    == "coder"
+        impl = enriched["grub_implementation"]
+        assert impl["score"] == 0.92
+        assert impl["minion_name"] == "coder"
         assert "src/api.py" in impl["files_written"]
 
     def test_handles_metadata_as_dict(self):
@@ -377,7 +397,9 @@ class TestEnrichReviewContext:
         task = {
             "id": "t1",
             "type": "review",
-            "metadata": json.dumps({"grub_task_result": {"status": "failed", "score": 0.1}}),
+            "metadata": json.dumps(
+                {"grub_task_result": {"status": "failed", "score": 0.1}}
+            ),
         }
         enriched = _enrich_review_context(task, {})
         assert "grub_implementation" in enriched
@@ -393,8 +415,8 @@ class TestEnrichReviewContext:
         original_context = {"prompt": "Review this.", "tokens": 500}
         enriched = _enrich_review_context(task, original_context)
         assert "grub_implementation" not in enriched
-        assert enriched["prompt"]  == original_context["prompt"]
-        assert enriched["tokens"]  == 500
+        assert enriched["prompt"] == original_context["prompt"]
+        assert enriched["tokens"] == 500
 
     def test_graceful_fallback_on_malformed_metadata(self):
         """Corrupted metadata must not crash the micro loop."""
@@ -411,14 +433,14 @@ class TestEnrichReviewContext:
 
     def test_does_not_mutate_original_context(self):
         """_enrich_review_context must return a new dict, not mutate the input."""
-        task    = self._make_review_task({"status": "success", "score": 0.7})
+        task = self._make_review_task({"status": "success", "score": 0.7})
         context = {"prompt": "Review."}
         _ = _enrich_review_context(task, context)
-        assert "grub_implementation" not in context   # original must be untouched
+        assert "grub_implementation" not in context  # original must be untouched
 
     def test_missing_metadata_key_is_graceful(self):
         """Task with no 'metadata' key at all must not crash."""
-        task     = {"id": "t1", "type": "review"}
+        task = {"id": "t1", "type": "review"}
         enriched = _enrich_review_context(task, {"prompt": "Review."})
         assert "grub_implementation" not in enriched
 
@@ -427,14 +449,17 @@ class TestEnrichReviewContext:
 # 3. Priority and ordering
 # ===========================================================================
 
+
 class TestFetchOrdering:
     """Verify that higher-priority tasks are returned first."""
 
     def test_high_priority_task_returned_before_low(self, bridge, tasks_db):
         con = sqlite3.connect(str(tasks_db))
-        _insert_task(con, id="low-001",  title="Low priority task",  priority_score=0.2)
+        _insert_task(con, id="low-001", title="Low priority task", priority_score=0.2)
         _insert_task(con, id="high-001", title="High priority task", priority_score=0.9)
-        _insert_task(con, id="mid-001",  title="Medium priority task", priority_score=0.5)
+        _insert_task(
+            con, id="mid-001", title="Medium priority task", priority_score=0.5
+        )
         con.commit()
         con.close()
 
@@ -460,8 +485,8 @@ class TestFetchOrdering:
         """Tasks of type 'design' or 'review' must be ignored."""
         con = sqlite3.connect(str(tasks_db))
         _insert_task(con, id="impl-1", title="Implement X", type="implementation")
-        _insert_task(con, id="design-1", title="Design Y",  type="design")
-        _insert_task(con, id="review-1", title="Review Z",  type="review")
+        _insert_task(con, id="design-1", title="Design Y", type="design")
+        _insert_task(con, id="review-1", title="Review Z", type="review")
         con.commit()
         con.close()
 
@@ -472,10 +497,20 @@ class TestFetchOrdering:
     def test_completed_tasks_are_not_refetched(self, bridge, tasks_db):
         """Tasks already marked complete must not be returned again."""
         con = sqlite3.connect(str(tasks_db))
-        _insert_task(con, id="done-1", title="Already done",
-                     type="implementation", status="complete")
-        _insert_task(con, id="todo-1", title="Still pending",
-                     type="implementation", status="pending")
+        _insert_task(
+            con,
+            id="done-1",
+            title="Already done",
+            type="implementation",
+            status="complete",
+        )
+        _insert_task(
+            con,
+            id="todo-1",
+            title="Still pending",
+            type="implementation",
+            status="pending",
+        )
         con.commit()
         con.close()
 
@@ -487,6 +522,7 @@ class TestFetchOrdering:
 # ===========================================================================
 # 4. Failed / partial results
 # ===========================================================================
+
 
 class TestFailedResults:
     """Verify that Grub reports failed and partial results correctly."""
@@ -500,12 +536,12 @@ class TestFailedResults:
         con.close()
 
         result = MinionResult(
-            task_id     = "grub-1",
-            minion_name = "coder",
-            status      = ResultStatus.FAILED,
-            score       = 0.0,
-            summary     = "Could not parse design artifact.",
-            notes       = "FileNotFoundError: billing_design.md not found",
+            task_id="grub-1",
+            minion_name="coder",
+            status=ResultStatus.FAILED,
+            score=0.0,
+            summary="Could not parse design artifact.",
+            notes="FileNotFoundError: billing_design.md not found",
         )
         ok = bridge.report_result(result, tinker_task_id="t-fail")
         assert ok is True
@@ -515,7 +551,9 @@ class TestFailedResults:
         con.close()
         assert row[0] == "complete"
 
-    def test_failed_result_creates_review_task_so_tinker_can_decide(self, bridge, tasks_db):
+    def test_failed_result_creates_review_task_so_tinker_can_decide(
+        self, bridge, tasks_db
+    ):
         """Even on failure, Tinker gets a review task so it can decide to
         redesign or provide more context."""
         con = sqlite3.connect(str(tasks_db))
@@ -524,11 +562,11 @@ class TestFailedResults:
         con.close()
 
         result = MinionResult(
-            task_id     = "grub-1",
-            minion_name = "coder",
-            status      = ResultStatus.FAILED,
-            score       = 0.0,
-            summary     = "Failed: design artifact missing.",
+            task_id="grub-1",
+            minion_name="coder",
+            status=ResultStatus.FAILED,
+            score=0.0,
+            summary="Failed: design artifact missing.",
         )
         bridge.report_result(result, tinker_task_id="t-fail")
 
@@ -547,39 +585,40 @@ class TestFailedResults:
         con.close()
 
         result = MinionResult(
-            task_id     = "grub-2",
-            minion_name = "coder",
-            status      = ResultStatus.PARTIAL,
-            score       = 0.45,
-            summary     = "3 of 7 requirements implemented.",
+            task_id="grub-2",
+            minion_name="coder",
+            status=ResultStatus.PARTIAL,
+            score=0.45,
+            summary="3 of 7 requirements implemented.",
         )
         bridge.report_result(result, tinker_task_id="t-partial")
 
         con = sqlite3.connect(str(tasks_db))
-        row = con.execute(
-            "SELECT metadata FROM tasks WHERE type='review'"
-        ).fetchone()
+        row = con.execute("SELECT metadata FROM tasks WHERE type='review'").fetchone()
         con.close()
 
-        meta   = json.loads(row[0])
-        gr     = meta["grub_task_result"]
-        assert gr["status"]  == "partial"
-        assert gr["score"]   == pytest.approx(0.45, abs=0.001)
+        meta = json.loads(row[0])
+        gr = meta["grub_task_result"]
+        assert gr["status"] == "partial"
+        assert gr["score"] == pytest.approx(0.45, abs=0.001)
 
 
 # ===========================================================================
 # 5. Edge cases / error handling
 # ===========================================================================
 
+
 class TestEdgeCases:
     """Verify graceful behaviour under abnormal conditions."""
 
     def test_report_to_missing_db_returns_false(self, tmp_path):
         bridge = TinkerBridge(
-            tinker_tasks_db = str(tmp_path / "ghost.sqlite"),
+            tinker_tasks_db=str(tmp_path / "ghost.sqlite"),
         )
         result = MinionResult(
-            task_id="t", minion_name="coder", status=ResultStatus.SUCCESS,
+            task_id="t",
+            minion_name="coder",
+            status=ResultStatus.SUCCESS,
         )
         ok = bridge.report_result(result, tinker_task_id="any-id")
         assert ok is False
@@ -590,16 +629,20 @@ class TestEdgeCases:
 
     def test_write_implementation_note_creates_markdown_file(self, bridge, tasks_db):
         result = MinionResult(
-            task_id       = "grub-1",
-            minion_name   = "coder",
-            status        = ResultStatus.SUCCESS,
-            score         = 0.88,
-            summary       = "Payment module implemented.",
-            files_written = ["payments/core.py", "payments/tests.py"],
-            test_results  = TestSummary(passed=8, failed=0, errors=0),
+            task_id="grub-1",
+            minion_name="coder",
+            status=ResultStatus.SUCCESS,
+            score=0.88,
+            summary="Payment module implemented.",
+            files_written=["payments/core.py", "payments/tests.py"],
+            test_results=TestSummary(passed=8, failed=0, errors=0),
         )
-        task = GrubTask(title="Implement payments", description="D",
-                        subsystem="payments", id="grub-1")
+        task = GrubTask(
+            title="Implement payments",
+            description="D",
+            subsystem="payments",
+            id="grub-1",
+        )
         path = bridge.write_implementation_note(result, task)
 
         assert path != ""
@@ -639,6 +682,7 @@ class TestEdgeCases:
 # 6. WAL mode verification
 # ===========================================================================
 
+
 class TestWALMode:
     """
     Verify that SQLite WAL (Write-Ahead Logging) journal mode is active.
@@ -674,8 +718,11 @@ class TestWALMode:
         con.close()
 
         result = MinionResult(
-            task_id="g-wal", minion_name="coder",
-            status=ResultStatus.SUCCESS, score=0.9, summary="WAL test.",
+            task_id="g-wal",
+            minion_name="coder",
+            status=ResultStatus.SUCCESS,
+            score=0.9,
+            summary="WAL test.",
         )
         bridge.report_result(result, tinker_task_id="t-wal")
 
@@ -692,6 +739,7 @@ class TestWALMode:
 # ===========================================================================
 # 7. Concurrent writes
 # ===========================================================================
+
 
 class TestConcurrentWrites:
     """
@@ -716,9 +764,9 @@ class TestConcurrentWrites:
     @staticmethod
     def _make_bridge(tasks_db: Path, tmp_path: Path) -> TinkerBridge:
         return TinkerBridge(
-            tinker_tasks_db      = str(tasks_db),
-            tinker_artifacts_dir = str(tmp_path / "ta"),
-            grub_artifacts_dir   = str(tmp_path / "ga"),
+            tinker_tasks_db=str(tasks_db),
+            tinker_artifacts_dir=str(tmp_path / "ta"),
+            grub_artifacts_dir=str(tmp_path / "ga"),
         )
 
     def test_concurrent_reports_different_tasks_all_succeed(self, tasks_db, tmp_path):
@@ -741,13 +789,15 @@ class TestConcurrentWrites:
         def report(idx: int) -> None:
             try:
                 r = MinionResult(
-                    task_id     = f"grub-diff-{idx}",
-                    minion_name = "coder",
-                    status      = ResultStatus.SUCCESS,
-                    score       = 0.7 + idx * 0.01,
-                    summary     = f"Implemented task {idx}.",
+                    task_id=f"grub-diff-{idx}",
+                    minion_name="coder",
+                    status=ResultStatus.SUCCESS,
+                    score=0.7 + idx * 0.01,
+                    summary=f"Implemented task {idx}.",
                 )
-                ok_flags[idx] = bridge.report_result(r, tinker_task_id=f"conc-diff-{idx:03d}")
+                ok_flags[idx] = bridge.report_result(
+                    r, tinker_task_id=f"conc-diff-{idx:03d}"
+                )
             except Exception as exc:
                 errors.append(exc)
 
@@ -764,10 +814,10 @@ class TestConcurrentWrites:
 
         con = sqlite3.connect(str(tasks_db))
         complete_count = con.execute(
-            f"SELECT COUNT(*) FROM tasks WHERE status='complete' AND id LIKE 'conc-diff-%'"
+            "SELECT COUNT(*) FROM tasks WHERE status='complete' AND id LIKE 'conc-diff-%'"
         ).fetchone()[0]
         review_count = con.execute(
-            f"SELECT COUNT(*) FROM tasks WHERE type='review' AND id LIKE 'review-conc-diff-%'"
+            "SELECT COUNT(*) FROM tasks WHERE type='review' AND id LIKE 'review-conc-diff-%'"
         ).fetchone()[0]
         con.close()
 
@@ -798,11 +848,11 @@ class TestConcurrentWrites:
         def report() -> None:
             try:
                 r = MinionResult(
-                    task_id     = "grub-shared",
-                    minion_name = "coder",
-                    status      = ResultStatus.SUCCESS,
-                    score       = 0.85,
-                    summary     = "Shared task completed.",
+                    task_id="grub-shared",
+                    minion_name="coder",
+                    status=ResultStatus.SUCCESS,
+                    score=0.85,
+                    summary="Shared task completed.",
                 )
                 bridge.report_result(r, tinker_task_id="shared-task")
             except Exception as exc:
@@ -850,12 +900,12 @@ class TestConcurrentWrites:
         def report(idx: int) -> None:
             try:
                 r = MinionResult(
-                    task_id     = f"grub-integ-{idx}",
-                    minion_name = "coder",
-                    status      = ResultStatus.SUCCESS,
-                    score       = 0.8,
-                    summary     = f"Integrity test {idx}.",
-                    files_written = [f"module_{idx}.py"],
+                    task_id=f"grub-integ-{idx}",
+                    minion_name="coder",
+                    status=ResultStatus.SUCCESS,
+                    score=0.8,
+                    summary=f"Integrity test {idx}.",
+                    files_written=[f"module_{idx}.py"],
                 )
                 bridge.report_result(r, tinker_task_id=f"integ-{idx:03d}")
             except Exception as exc:
@@ -900,6 +950,7 @@ class TestConcurrentWrites:
 # 8. Concurrent fetch + report interleaved
 # ===========================================================================
 
+
 class TestConcurrentFetchReport:
     """
     Interleaved reads (fetch_implementation_tasks) and writes (report_result)
@@ -919,14 +970,14 @@ class TestConcurrentFetchReport:
         No deadlocks (all threads must complete within the timeout), no
         exceptions from either readers or writers.
         """
-        N_TASKS     = 5
-        N_READERS   = 3
-        READS_EACH  = 10
+        N_TASKS = 5
+        N_READERS = 3
+        READS_EACH = 10
 
         bridge = TinkerBridge(
-            tinker_tasks_db      = str(tasks_db),
-            tinker_artifacts_dir = str(tmp_path / "ta"),
-            grub_artifacts_dir   = str(tmp_path / "ga"),
+            tinker_tasks_db=str(tasks_db),
+            tinker_artifacts_dir=str(tmp_path / "ta"),
+            grub_artifacts_dir=str(tmp_path / "ga"),
         )
 
         con = sqlite3.connect(str(tasks_db))
@@ -935,7 +986,7 @@ class TestConcurrentFetchReport:
         con.commit()
         con.close()
 
-        fetch_errors:  list[Exception] = []
+        fetch_errors: list[Exception] = []
         report_errors: list[Exception] = []
 
         def do_fetch() -> None:
@@ -948,20 +999,19 @@ class TestConcurrentFetchReport:
         def do_report(idx: int) -> None:
             try:
                 r = MinionResult(
-                    task_id     = f"grub-inter-{idx}",
-                    minion_name = "coder",
-                    status      = ResultStatus.SUCCESS,
-                    score       = 0.75,
-                    summary     = f"Interleaved task {idx} done.",
+                    task_id=f"grub-inter-{idx}",
+                    minion_name="coder",
+                    status=ResultStatus.SUCCESS,
+                    score=0.75,
+                    summary=f"Interleaved task {idx} done.",
                 )
                 bridge.report_result(r, tinker_task_id=f"inter-{idx:03d}")
             except Exception as exc:
                 report_errors.append(exc)
 
-        threads = (
-            [threading.Thread(target=do_fetch)           for _ in range(N_READERS)] +
-            [threading.Thread(target=do_report, args=(i,)) for i in range(N_TASKS)]
-        )
+        threads = [threading.Thread(target=do_fetch) for _ in range(N_READERS)] + [
+            threading.Thread(target=do_report, args=(i,)) for i in range(N_TASKS)
+        ]
         for t in threads:
             t.start()
         alive = [t.join(timeout=30) or t.is_alive() for t in threads]
@@ -970,19 +1020,21 @@ class TestConcurrentFetchReport:
             "At least one thread did not complete within 30 s — possible deadlock. "
             "Check journal_mode=WAL is active on all connections."
         )
-        assert not fetch_errors,  f"Reader thread exceptions: {fetch_errors}"
+        assert not fetch_errors, f"Reader thread exceptions: {fetch_errors}"
         assert not report_errors, f"Writer thread exceptions: {report_errors}"
 
-    def test_completed_tasks_not_returned_after_concurrent_report(self, tasks_db, tmp_path):
+    def test_completed_tasks_not_returned_after_concurrent_report(
+        self, tasks_db, tmp_path
+    ):
         """
         After concurrent reports mark tasks as complete, subsequent fetches
         must not return those tasks — no stale reads from WAL snapshots.
         """
         N = 8
         bridge = TinkerBridge(
-            tinker_tasks_db      = str(tasks_db),
-            tinker_artifacts_dir = str(tmp_path / "ta"),
-            grub_artifacts_dir   = str(tmp_path / "ga"),
+            tinker_tasks_db=str(tasks_db),
+            tinker_artifacts_dir=str(tmp_path / "ta"),
+            grub_artifacts_dir=str(tmp_path / "ga"),
         )
 
         con = sqlite3.connect(str(tasks_db))
@@ -994,8 +1046,11 @@ class TestConcurrentFetchReport:
         # Concurrently report all tasks complete
         def report(idx: int) -> None:
             r = MinionResult(
-                task_id="g", minion_name="coder",
-                status=ResultStatus.SUCCESS, score=0.8, summary="done",
+                task_id="g",
+                minion_name="coder",
+                status=ResultStatus.SUCCESS,
+                score=0.8,
+                summary="done",
             )
             bridge.report_result(r, tinker_task_id=f"stale-{idx:03d}")
 
@@ -1017,6 +1072,7 @@ class TestConcurrentFetchReport:
 # ===========================================================================
 # 9. Artifact discovery
 # ===========================================================================
+
 
 class TestArtifactDiscovery:
     """
@@ -1041,9 +1097,9 @@ class TestArtifactDiscovery:
         con.commit()
         con.close()
         return TinkerBridge(
-            tinker_tasks_db      = str(db),
-            tinker_artifacts_dir = str(art_dir),
-            grub_artifacts_dir   = str(tmp_path / "ga"),
+            tinker_tasks_db=str(db),
+            tinker_artifacts_dir=str(art_dir),
+            grub_artifacts_dir=str(tmp_path / "ga"),
         )
 
     def test_finds_exact_design_file(self, tmp_path):
@@ -1084,9 +1140,9 @@ class TestArtifactDiscovery:
         con.commit()
         con.close()
         bridge = TinkerBridge(
-            tinker_tasks_db      = str(db),
-            tinker_artifacts_dir = str(tmp_path / "nonexistent_dir"),
-            grub_artifacts_dir   = str(tmp_path / "ga"),
+            tinker_tasks_db=str(db),
+            tinker_artifacts_dir=str(tmp_path / "nonexistent_dir"),
+            grub_artifacts_dir=str(tmp_path / "ga"),
         )
         assert bridge._find_artifact("billing") == ""
 
@@ -1094,6 +1150,7 @@ class TestArtifactDiscovery:
 # ===========================================================================
 # 10. Database persistence
 # ===========================================================================
+
 
 class TestDatabasePersistence:
     """
@@ -1117,14 +1174,17 @@ class TestDatabasePersistence:
         con.close()
 
         result = MinionResult(
-            task_id="g-1", minion_name="coder",
-            status=ResultStatus.SUCCESS, score=0.9, summary="Persisted.",
+            task_id="g-1",
+            minion_name="coder",
+            status=ResultStatus.SUCCESS,
+            score=0.9,
+            summary="Persisted.",
         )
         bridge.report_result(result, tinker_task_id="persist-1")
 
         # Open a completely new connection — no shared state with bridge
         con2 = sqlite3.connect(str(tasks_db))
-        row  = con2.execute("SELECT status FROM tasks WHERE id='persist-1'").fetchone()
+        row = con2.execute("SELECT status FROM tasks WHERE id='persist-1'").fetchone()
         con2.close()
         assert row is not None
         assert row[0] == "complete"
@@ -1136,8 +1196,11 @@ class TestDatabasePersistence:
         con.close()
 
         result = MinionResult(
-            task_id="g-2", minion_name="coder",
-            status=ResultStatus.SUCCESS, score=0.85, summary="Review test.",
+            task_id="g-2",
+            minion_name="coder",
+            status=ResultStatus.SUCCESS,
+            score=0.85,
+            summary="Review test.",
         )
         bridge.report_result(result, tinker_task_id="persist-2")
 
@@ -1157,14 +1220,14 @@ class TestDatabasePersistence:
         observe each other's writes — there is no per-instance in-memory cache.
         """
         bridge_a = TinkerBridge(
-            tinker_tasks_db      = str(tasks_db),
-            tinker_artifacts_dir = str(tmp_path / "ta"),
-            grub_artifacts_dir   = str(tmp_path / "ga_a"),
+            tinker_tasks_db=str(tasks_db),
+            tinker_artifacts_dir=str(tmp_path / "ta"),
+            grub_artifacts_dir=str(tmp_path / "ga_a"),
         )
         bridge_b = TinkerBridge(
-            tinker_tasks_db      = str(tasks_db),
-            tinker_artifacts_dir = str(tmp_path / "ta"),
-            grub_artifacts_dir   = str(tmp_path / "ga_b"),
+            tinker_tasks_db=str(tasks_db),
+            tinker_artifacts_dir=str(tmp_path / "ta"),
+            grub_artifacts_dir=str(tmp_path / "ga_b"),
         )
 
         con = sqlite3.connect(str(tasks_db))
@@ -1174,8 +1237,11 @@ class TestDatabasePersistence:
 
         # Bridge A reports
         result = MinionResult(
-            task_id="g-cross", minion_name="coder",
-            status=ResultStatus.SUCCESS, score=0.8, summary="Cross-bridge done.",
+            task_id="g-cross",
+            minion_name="coder",
+            status=ResultStatus.SUCCESS,
+            score=0.8,
+            summary="Cross-bridge done.",
         )
         ok = bridge_a.report_result(result, tinker_task_id="cross-1")
         assert ok is True
@@ -1198,6 +1264,7 @@ class TestDatabasePersistence:
 # ===========================================================================
 # 11. Fixture isolation (C2)
 # ===========================================================================
+
 
 class TestFixtureIsolation:
     """
@@ -1223,14 +1290,14 @@ class TestFixtureIsolation:
             con.close()
 
         bridge_a = TinkerBridge(
-            tinker_tasks_db      = str(db_a),
-            tinker_artifacts_dir = str(tmp_path / "ta_a"),
-            grub_artifacts_dir   = str(tmp_path / "ga_a"),
+            tinker_tasks_db=str(db_a),
+            tinker_artifacts_dir=str(tmp_path / "ta_a"),
+            grub_artifacts_dir=str(tmp_path / "ga_a"),
         )
         bridge_b = TinkerBridge(
-            tinker_tasks_db      = str(db_b),
-            tinker_artifacts_dir = str(tmp_path / "ta_b"),
-            grub_artifacts_dir   = str(tmp_path / "ga_b"),
+            tinker_tasks_db=str(db_b),
+            tinker_artifacts_dir=str(tmp_path / "ta_b"),
+            grub_artifacts_dir=str(tmp_path / "ga_b"),
         )
 
         # Insert a task only in db_a
@@ -1264,15 +1331,18 @@ class TestFixtureIsolation:
         con2.commit()
         con2.close()
 
-        rows = sqlite3.connect(str(other_db)).execute(
-            "SELECT id FROM tasks WHERE id='iso-write-1'"
-        ).fetchall()
+        rows = (
+            sqlite3.connect(str(other_db))
+            .execute("SELECT id FROM tasks WHERE id='iso-write-1'")
+            .fetchall()
+        )
         assert rows == [], "Data from tasks_db fixture leaked into a separate DB"
 
 
 # ===========================================================================
 # 12. Failure modes (C3)
 # ===========================================================================
+
 
 class TestFailureModes:
     """
@@ -1310,7 +1380,9 @@ class TestFailureModes:
         try:
             bridge = TinkerBridge(tinker_tasks_db=str(db))
             result = MinionResult(
-                task_id="g-ro", minion_name="coder", status=ResultStatus.SUCCESS,
+                task_id="g-ro",
+                minion_name="coder",
+                status=ResultStatus.SUCCESS,
             )
             ok = bridge.report_result(result, tinker_task_id="ro-task")
             assert ok is False, (
@@ -1341,7 +1413,9 @@ class TestFailureModes:
 
         bridge = TinkerBridge(tinker_tasks_db=str(db))
         result = MinionResult(
-            task_id="g-c", minion_name="coder", status=ResultStatus.SUCCESS,
+            task_id="g-c",
+            minion_name="coder",
+            status=ResultStatus.SUCCESS,
         )
         ok = bridge.report_result(result, tinker_task_id="any-id")
         assert ok is False
@@ -1352,8 +1426,12 @@ class TestFailureModes:
         skip or recover gracefully — not propagate a JSONDecodeError.
         """
         con = sqlite3.connect(str(tasks_db))
-        _insert_task(con, id="bad-meta", title="Bad metadata task",
-                     metadata={"artifact_path": "ok.md"})
+        _insert_task(
+            con,
+            id="bad-meta",
+            title="Bad metadata task",
+            metadata={"artifact_path": "ok.md"},
+        )
         # Overwrite metadata with garbage after insertion
         con.execute(
             "UPDATE tasks SET metadata = ? WHERE id = 'bad-meta'",
@@ -1365,7 +1443,7 @@ class TestFailureModes:
         bridge = TinkerBridge(tinker_tasks_db=str(tasks_db))
         # Must not raise — bad JSON should be handled gracefully
         try:
-            tasks = bridge.fetch_implementation_tasks()
+            _tasks = bridge.fetch_implementation_tasks()
         except Exception as exc:
             raise AssertionError(
                 f"fetch_implementation_tasks() raised {type(exc).__name__} on "
@@ -1378,6 +1456,7 @@ class TestFailureModes:
 # ===========================================================================
 # 13. Schema completeness (C4)
 # ===========================================================================
+
 
 class TestSchemaCompleteness:
     """
@@ -1400,16 +1479,16 @@ class TestSchemaCompleteness:
         con = sqlite3.connect(str(tasks_db))
         _insert_task(
             con,
-            id            = "schema-t1",
-            title         = "Full schema task",
-            description   = "Detailed description here.",
-            type          = "implementation",
-            subsystem     = "payments",
-            priority_score= 0.9,
-            metadata      = {
+            id="schema-t1",
+            title="Full schema task",
+            description="Detailed description here.",
+            type="implementation",
+            subsystem="payments",
+            priority_score=0.9,
+            metadata={
                 "artifact_path": "tinker_artifacts/payments_design.md",
-                "target_files":  ["src/payments/core.py", "src/payments/tests.py"],
-                "context":       {"framework": "fastapi", "db": "postgres"},
+                "target_files": ["src/payments/core.py", "src/payments/tests.py"],
+                "context": {"framework": "fastapi", "db": "postgres"},
             },
         )
         con.commit()
@@ -1421,9 +1500,9 @@ class TestSchemaCompleteness:
 
         # All identity fields
         assert t.tinker_task_id == "schema-t1"
-        assert t.title          == "Full schema task"
-        assert t.description    == "Detailed description here."
-        assert t.subsystem      == "payments"
+        assert t.title == "Full schema task"
+        assert t.description == "Detailed description here."
+        assert t.subsystem == "payments"
 
         # Metadata fields
         assert t.artifact_path == "tinker_artifacts/payments_design.md"
@@ -1441,18 +1520,21 @@ class TestSchemaCompleteness:
         con.close()
 
         result = MinionResult(
-            task_id             = "grub-schema-1",
-            minion_name         = "coder",
-            status              = ResultStatus.PARTIAL,
-            score               = 0.72,
-            files_written       = ["src/auth.py", "src/auth_test.py", "docs/auth.md"],
-            summary             = "Partial: 5 of 8 requirements met.",
-            feedback_for_tinker = "JWT expiry needs to be configurable.",
-            notes               = "Blocked by missing crypto dependency.",
-            iterations          = 3,
-            duration_seconds    = 47.8,
-            test_results        = TestSummary(
-                passed=5, failed=2, errors=1, skipped=0,
+            task_id="grub-schema-1",
+            minion_name="coder",
+            status=ResultStatus.PARTIAL,
+            score=0.72,
+            files_written=["src/auth.py", "src/auth_test.py", "docs/auth.md"],
+            summary="Partial: 5 of 8 requirements met.",
+            feedback_for_tinker="JWT expiry needs to be configurable.",
+            notes="Blocked by missing crypto dependency.",
+            iterations=3,
+            duration_seconds=47.8,
+            test_results=TestSummary(
+                passed=5,
+                failed=2,
+                errors=1,
+                skipped=0,
                 output="FAILED test_auth_token_expiry\nFAILED test_refresh_token",
             ),
         )
@@ -1462,34 +1544,32 @@ class TestSchemaCompleteness:
 
         con = sqlite3.connect(str(tasks_db))
         con.row_factory = sqlite3.Row
-        row = con.execute(
-            "SELECT metadata FROM tasks WHERE type='review'"
-        ).fetchone()
+        row = con.execute("SELECT metadata FROM tasks WHERE type='review'").fetchone()
         con.close()
         assert row is not None
 
         meta = json.loads(row["metadata"])
-        gr   = meta["grub_task_result"]
+        gr = meta["grub_task_result"]
 
         # All scalar fields
-        assert gr["task_id"]     == "grub-schema-1"
+        assert gr["task_id"] == "grub-schema-1"
         assert gr["minion_name"] == "coder"
-        assert gr["status"]      == "partial"
-        assert gr["score"]       == pytest.approx(0.72, abs=0.001)
-        assert gr["summary"]     == "Partial: 5 of 8 requirements met."
+        assert gr["status"] == "partial"
+        assert gr["score"] == pytest.approx(0.72, abs=0.001)
+        assert gr["summary"] == "Partial: 5 of 8 requirements met."
         assert gr["feedback_for_tinker"] == "JWT expiry needs to be configurable."
-        assert gr["iterations"]  == 3
+        assert gr["iterations"] == 3
 
         # List fields
-        assert "src/auth.py"      in gr["files_written"]
+        assert "src/auth.py" in gr["files_written"]
         assert "src/auth_test.py" in gr["files_written"]
-        assert "docs/auth.md"     in gr["files_written"]
+        assert "docs/auth.md" in gr["files_written"]
 
         # Nested test_results
         tr = gr.get("test_results", {})
-        assert tr.get("passed")  == 5
-        assert tr.get("failed")  == 2
-        assert tr.get("errors")  == 1
+        assert tr.get("passed") == 5
+        assert tr.get("failed") == 2
+        assert tr.get("errors") == 1
 
     def test_round_trip_no_field_added_or_removed(self, bridge, tasks_db):
         """
@@ -1502,21 +1582,19 @@ class TestSchemaCompleteness:
         con.close()
 
         original = MinionResult(
-            task_id     = "grub-ks-1",
-            minion_name = "tester",
-            status      = ResultStatus.SUCCESS,
-            score       = 0.95,
-            summary     = "All tests pass.",
-            files_written = ["mod.py"],
+            task_id="grub-ks-1",
+            minion_name="tester",
+            status=ResultStatus.SUCCESS,
+            score=0.95,
+            summary="All tests pass.",
+            files_written=["mod.py"],
         )
         canonical_keys = set(original.to_dict().keys())
 
         bridge.report_result(original, tinker_task_id="schema-t3")
 
         con = sqlite3.connect(str(tasks_db))
-        row = con.execute(
-            "SELECT metadata FROM tasks WHERE type='review'"
-        ).fetchone()
+        row = con.execute("SELECT metadata FROM tasks WHERE type='review'").fetchone()
         con.close()
 
         stored = json.loads(row[0])["grub_task_result"]

@@ -5,6 +5,7 @@ Tests for resilience/circuit_breaker.py
 Covers the full state machine (CLOSED → OPEN → HALF_OPEN → CLOSED),
 fast-fail behaviour, recovery probes, and the registry helpers.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,6 +24,7 @@ from resilience.circuit_breaker import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _ok() -> str:
     """A call that always succeeds."""
     return "ok"
@@ -36,6 +38,7 @@ async def _fail() -> None:
 # ---------------------------------------------------------------------------
 # CircuitBreaker state machine
 # ---------------------------------------------------------------------------
+
 
 class TestCircuitBreakerStateMachine:
     """Unit tests for CircuitBreaker transitions."""
@@ -77,20 +80,24 @@ class TestCircuitBreakerStateMachine:
 
     @pytest.mark.asyncio
     async def test_half_open_after_recovery_timeout(self):
-        breaker = CircuitBreaker(name="test", failure_threshold=1, recovery_timeout=0.01)
+        breaker = CircuitBreaker(
+            name="test", failure_threshold=1, recovery_timeout=0.01
+        )
         with pytest.raises(RuntimeError):
             await breaker.call(_fail)
         assert breaker.is_open
 
-        await asyncio.sleep(0.05)   # wait for recovery timeout
+        await asyncio.sleep(0.05)  # wait for recovery timeout
         # Trigger state check — attempt a call to drive the transition
         result = await breaker.call(_ok)
         assert result == "ok"
-        assert breaker.is_closed   # closed again after successful probe
+        assert breaker.is_closed  # closed again after successful probe
 
     @pytest.mark.asyncio
     async def test_reopens_if_probe_fails(self):
-        breaker = CircuitBreaker(name="test", failure_threshold=1, recovery_timeout=0.01)
+        breaker = CircuitBreaker(
+            name="test", failure_threshold=1, recovery_timeout=0.01
+        )
         with pytest.raises(RuntimeError):
             await breaker.call(_fail)
         await asyncio.sleep(0.05)
@@ -111,11 +118,16 @@ class TestCircuitBreakerStateMachine:
     @pytest.mark.asyncio
     async def test_state_change_callback_called(self):
         transitions = []
+
         def on_change(b, old, new):
             transitions.append((old, new))
 
-        breaker = CircuitBreaker(name="test", failure_threshold=2, recovery_timeout=0.01,
-                                 on_state_change=on_change)
+        breaker = CircuitBreaker(
+            name="test",
+            failure_threshold=2,
+            recovery_timeout=0.01,
+            on_state_change=on_change,
+        )
         for _ in range(2):
             with pytest.raises(RuntimeError):
                 await breaker.call(_fail)
@@ -147,6 +159,7 @@ class TestCircuitBreakerStateMachine:
 # ---------------------------------------------------------------------------
 # CircuitBreakerRegistry
 # ---------------------------------------------------------------------------
+
 
 class TestCircuitBreakerRegistry:
     def test_register_and_get(self):
@@ -190,10 +203,17 @@ class TestCircuitBreakerRegistry:
 # build_default_registry
 # ---------------------------------------------------------------------------
 
+
 class TestBuildDefaultRegistry:
     def test_creates_expected_breakers(self):
         registry = build_default_registry()
-        for name in ("ollama_server", "ollama_secondary", "redis", "searxng", "chromadb"):
+        for name in (
+            "ollama_server",
+            "ollama_secondary",
+            "redis",
+            "searxng",
+            "chromadb",
+        ):
             b = registry.get(name)
             assert b is not None
             assert b.is_closed

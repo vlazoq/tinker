@@ -168,12 +168,29 @@ _CREATE_INDEXES = [
 
 # Column list — must match the table definition above.
 _COLUMNS = [
-    "id", "parent_id", "title", "description", "type", "subsystem",
-    "status", "dependencies", "outputs", "confidence_gap",
-    "staleness_hours", "dependency_depth", "last_subsystem_work_hours",
-    "priority_score", "tags", "metadata", "is_exploration",
-    "created_at", "updated_at", "started_at", "completed_at",
-    "critique_notes", "attempt_count",
+    "id",
+    "parent_id",
+    "title",
+    "description",
+    "type",
+    "subsystem",
+    "status",
+    "dependencies",
+    "outputs",
+    "confidence_gap",
+    "staleness_hours",
+    "dependency_depth",
+    "last_subsystem_work_hours",
+    "priority_score",
+    "tags",
+    "metadata",
+    "is_exploration",
+    "created_at",
+    "updated_at",
+    "started_at",
+    "completed_at",
+    "critique_notes",
+    "attempt_count",
 ]
 
 # Upsert SET clause: "col = EXCLUDED.col" for every non-PK column.
@@ -252,21 +269,23 @@ _MIGRATIONS: list[tuple[int, str, list[str], list[str]]] = [
 # that are safe to retry (server restarted, network blip, pool exhausted).
 # Logical errors (bad SQL, constraint violations) are never in this set.
 
-_TRANSIENT_FRAGMENTS: frozenset[str] = frozenset({
-    "could not connect to server",
-    "connection to server",
-    "server closed the connection",
-    "ssl connection has been closed unexpectedly",
-    "connection refused",
-    "too many connections",
-    "connection pool exhausted",
-    "connection timed out",
-    "remaining connection slots are reserved",
-    # Concurrency errors — safe to retry because PostgreSQL rolls back the
-    # transaction automatically and the client can simply restart it.
-    "deadlock detected",             # SQLSTATE 40P01: two txns waiting on each other
-    "could not serialize access",    # SQLSTATE 40001: serializable snapshot conflict
-})
+_TRANSIENT_FRAGMENTS: frozenset[str] = frozenset(
+    {
+        "could not connect to server",
+        "connection to server",
+        "server closed the connection",
+        "ssl connection has been closed unexpectedly",
+        "connection refused",
+        "too many connections",
+        "connection pool exhausted",
+        "connection timed out",
+        "remaining connection slots are reserved",
+        # Concurrency errors — safe to retry because PostgreSQL rolls back the
+        # transaction automatically and the client can simply restart it.
+        "deadlock detected",  # SQLSTATE 40P01: two txns waiting on each other
+        "could not serialize access",  # SQLSTATE 40001: serializable snapshot conflict
+    }
+)
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -278,6 +297,7 @@ def _is_transient(exc: Exception) -> bool:
     """
     try:
         import psycopg2
+
         if not isinstance(exc, psycopg2.OperationalError):
             return False
     except ImportError:
@@ -290,6 +310,7 @@ def _is_transient(exc: Exception) -> bool:
 # =============================================================================
 # Row helpers
 # =============================================================================
+
 
 def _pg_row_to_dict(row: dict) -> dict:
     """Normalise a psycopg2 RealDictCursor row to a plain Python dict.
@@ -318,6 +339,7 @@ def _task_to_row(task: Task) -> dict:
 # =============================================================================
 # PostgresTaskRegistry
 # =============================================================================
+
 
 class PostgresTaskRegistry(AbstractTaskRegistry):
     """
@@ -354,21 +376,21 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
 
     def __init__(
         self,
-        dsn:                str      = "",
+        dsn: str = "",
         *,
-        min_conn:           int      = 1,
-        max_conn:           int      = 10,
-        max_retries:        int      = 3,
-        retry_base_delay:   float    = 0.5,
-        query_timeout_ms:   int | None = None,
+        min_conn: int = 1,
+        max_conn: int = 10,
+        max_retries: int = 3,
+        retry_base_delay: float = 0.5,
+        query_timeout_ms: int | None = None,
         connection_factory: Callable | None = None,
     ) -> None:
-        self._lock              = threading.Lock()
-        self._pool              = None
-        self._single            = None       # used only when connection_factory is set
-        self._max_retries       = max_retries
-        self._retry_base_delay  = retry_base_delay
-        self._query_timeout_ms  = query_timeout_ms
+        self._lock = threading.Lock()
+        self._pool = None
+        self._single = None  # used only when connection_factory is set
+        self._max_retries = max_retries
+        self._retry_base_delay = retry_base_delay
+        self._query_timeout_ms = query_timeout_ms
 
         if connection_factory is not None:
             # Test / mock mode: use a single connection, no pool, no retry.
@@ -405,9 +427,9 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
 
             self._pool = _pool.ThreadedConnectionPool(**pool_kwargs)
             log.info(
-                "PostgresTaskRegistry: connected pool "
-                "(min=%d max=%d timeout=%s) → %s",
-                min_conn, max_conn,
+                "PostgresTaskRegistry: connected pool (min=%d max=%d timeout=%s) → %s",
+                min_conn,
+                max_conn,
                 f"{query_timeout_ms}ms" if query_timeout_ms else "none",
                 effective_dsn.split("@")[-1],  # hide credentials in log
             )
@@ -464,17 +486,20 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
                 log.warning(
                     "PostgresTaskRegistry: transient error on attempt %d/%d, "
                     "retrying in %.1fs — %s",
-                    attempt, self._max_retries, delay, last_exc,
+                    attempt,
+                    self._max_retries,
+                    delay,
+                    last_exc,
                 )
                 time.sleep(delay)
 
             try:
                 conn = self._pool.getconn()
-                break   # successfully acquired
+                break  # successfully acquired
             except Exception as exc:
                 last_exc = exc
                 if not _is_transient(exc):
-                    raise   # permanent error — don't retry
+                    raise  # permanent error — don't retry
 
         if conn is None:
             # All retries exhausted; last_exc is set because we entered the loop.
@@ -493,6 +518,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         """Return a RealDictCursor so rows come back as plain dicts."""
         try:
             from psycopg2.extras import RealDictCursor
+
             return conn.cursor(cursor_factory=RealDictCursor)
         except ImportError:
             # Fallback for mock connections in tests (no real psycopg2).
@@ -534,21 +560,26 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
             applied = {row["version"] for row in cur.fetchall()}
 
         # Apply unapplied migrations in ascending version order.
-        for version, description, statements, _down in sorted(_MIGRATIONS, key=lambda m: m[0]):
+        for version, description, statements, _down in sorted(
+            _MIGRATIONS, key=lambda m: m[0]
+        ):
             if version in applied:
                 continue
 
             log.info(
                 "PostgresTaskRegistry: applying migration %d — %s",
-                version, description,
+                version,
+                description,
             )
             with self._conn() as conn:
                 cur = self._cursor(conn)
                 for sql in statements:
                     cur.execute(sql)
-                now = __import__("datetime").datetime.now(
-                    __import__("datetime").timezone.utc
-                ).isoformat()
+                now = (
+                    __import__("datetime")
+                    .datetime.now(__import__("datetime").timezone.utc)
+                    .isoformat()
+                )
                 cur.execute(
                     "INSERT INTO schema_migrations (version, description, applied_at) "
                     "VALUES (%s, %s, %s) ON CONFLICT (version) DO NOTHING",
@@ -632,19 +663,16 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
 
         log.warning(
             "PostgresTaskRegistry: rolling back migration %d — %s",
-            version, description,
+            version,
+            description,
         )
         with self._conn() as conn:
             cur = self._cursor(conn)
             for sql in down_statements:
                 cur.execute(sql)
-            cur.execute(
-                "DELETE FROM schema_migrations WHERE version = %s", (version,)
-            )
+            cur.execute("DELETE FROM schema_migrations WHERE version = %s", (version,))
 
-        log.info(
-            "PostgresTaskRegistry: migration %d rolled back successfully", version
-        )
+        log.info("PostgresTaskRegistry: migration %d rolled back successfully", version)
 
     # ── Write ─────────────────────────────────────────────────────────────────
 
@@ -657,10 +685,10 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         primary key already exists.  This is equivalent to SQLite's
         ``INSERT OR REPLACE``.
         """
-        row   = _task_to_row(task)
-        cols  = ", ".join(_COLUMNS)
-        vals  = ", ".join("%s" for _ in _COLUMNS)
-        sql   = (
+        row = _task_to_row(task)
+        cols = ", ".join(_COLUMNS)
+        vals = ", ".join("%s" for _ in _COLUMNS)
+        sql = (
             f"INSERT INTO tasks ({cols}) VALUES ({vals}) "
             f"ON CONFLICT (id) DO UPDATE SET {_UPSERT_SET}"
         )
@@ -697,9 +725,9 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         if not tasks:
             return tasks
 
-        cols   = ", ".join(_COLUMNS)
-        vals   = ", ".join("%s" for _ in _COLUMNS)
-        sql    = (
+        cols = ", ".join(_COLUMNS)
+        vals = ", ".join("%s" for _ in _COLUMNS)
+        sql = (
             f"INSERT INTO tasks ({cols}) VALUES ({vals}) "
             f"ON CONFLICT (id) DO UPDATE SET {_UPSERT_SET}"
         )
@@ -750,9 +778,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         vals = [s.value for s in statuses]
         with self._conn() as conn:
             cur = self._cursor(conn)
-            cur.execute(
-                f"SELECT * FROM tasks WHERE status IN ({placeholders})", vals
-            )
+            cur.execute(f"SELECT * FROM tasks WHERE status IN ({placeholders})", vals)
             rows = cur.fetchall()
         return [Task.from_dict(_pg_row_to_dict(r)) for r in rows]
 
@@ -760,9 +786,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         """Return all tasks belonging to a particular subsystem."""
         with self._conn() as conn:
             cur = self._cursor(conn)
-            cur.execute(
-                "SELECT * FROM tasks WHERE subsystem = %s", (subsystem.value,)
-            )
+            cur.execute("SELECT * FROM tasks WHERE subsystem = %s", (subsystem.value,))
             rows = cur.fetchall()
         return [Task.from_dict(_pg_row_to_dict(r)) for r in rows]
 
@@ -770,9 +794,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         """Return all tasks whose ``parent_id`` matches."""
         with self._conn() as conn:
             cur = self._cursor(conn)
-            cur.execute(
-                "SELECT * FROM tasks WHERE parent_id = %s", (parent_id,)
-            )
+            cur.execute("SELECT * FROM tasks WHERE parent_id = %s", (parent_id,))
             rows = cur.fetchall()
         return [Task.from_dict(_pg_row_to_dict(r)) for r in rows]
 
@@ -781,8 +803,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         with self._conn() as conn:
             cur = self._cursor(conn)
             cur.execute(
-                "SELECT * FROM tasks WHERE status = %s "
-                "ORDER BY priority_score DESC",
+                "SELECT * FROM tasks WHERE status = %s ORDER BY priority_score DESC",
                 (TaskStatus.PENDING.value,),
             )
             rows = cur.fetchall()
@@ -801,8 +822,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         with self._conn() as conn:
             cur = self._cursor(conn)
             cur.execute(
-                "SELECT * FROM tasks WHERE status = %s "
-                "ORDER BY created_at ASC LIMIT 1",
+                "SELECT * FROM tasks WHERE status = %s ORDER BY created_at ASC LIMIT 1",
                 (TaskStatus.PENDING.value,),
             )
             row = cur.fetchone()
@@ -841,6 +861,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
             or ``None`` if no PENDING tasks exist.
         """
         import datetime as _dt
+
         now = _dt.datetime.now(_dt.timezone.utc).isoformat()
 
         with self._conn() as conn:
@@ -862,7 +883,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
                 (TaskStatus.ACTIVE.value, now, now, task.id),
             )
 
-        task.status     = TaskStatus.ACTIVE
+        task.status = TaskStatus.ACTIVE
         task.updated_at = now
         task.started_at = now
         log.info("Claimed task %s → active", task.id)

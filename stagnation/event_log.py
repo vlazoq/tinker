@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Callable, Deque, Dict, Iterator, List, Optional
 
 from .models import StagnationEvent, StagnationType
@@ -32,9 +32,7 @@ class StagnationEventLog:
         self._lock = threading.RLock()
 
         # Frequency counters — updated on every append for O(1) stats
-        self._type_counts: Dict[StagnationType, int] = {
-            t: 0 for t in StagnationType
-        }
+        self._type_counts: Dict[StagnationType, int] = {t: 0 for t in StagnationType}
 
     # ── write ────────────────────────────────────────────────
 

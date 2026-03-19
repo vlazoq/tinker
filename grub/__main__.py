@@ -28,7 +28,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -42,51 +41,52 @@ _env = ROOT / ".env"
 if _env.exists():
     try:
         from dotenv import load_dotenv
+
         load_dotenv(_env)
     except ImportError:
         pass
 
 logging.basicConfig(
-    level   = logging.INFO,
-    format  = "%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-    datefmt = "%H:%M:%S",
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+    datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("grub.main")
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(
-        description="Grub — AI code implementation agent"
+    parser = argparse.ArgumentParser(description="Grub — AI code implementation agent")
+    parser.add_argument(
+        "--config",
+        default="grub_config.json",
+        help="Path to grub_config.json (default: ./grub_config.json)",
     )
     parser.add_argument(
-        "--config", default="grub_config.json",
-        help="Path to grub_config.json (default: ./grub_config.json)"
-    )
-    parser.add_argument(
-        "--mode", default="agent",
+        "--mode",
+        default="agent",
         choices=["agent", "worker"],
         help=(
             "agent  = full agent (poll Tinker, dispatch tasks) [default]\n"
             "worker = queue worker only (for Mode C multi-machine setup)"
-        )
+        ),
     )
     parser.add_argument(
-        "--worker-id", default=None,
-        help="Worker ID for queue mode (default: hostname)"
+        "--worker-id", default=None, help="Worker ID for queue mode (default: hostname)"
     )
     parser.add_argument(
-        "--run-task", default=None,
-        help="Run a single task directly (title string). For testing."
+        "--run-task",
+        default=None,
+        help="Run a single task directly (title string). For testing.",
     )
     parser.add_argument(
-        "--artifact", default=None,
-        help="Design artifact path for --run-task"
+        "--artifact", default=None, help="Design artifact path for --run-task"
     )
     return parser.parse_args()
 
 
 async def _run_agent(args) -> None:
     from grub.agent import GrubAgent
+
     agent = GrubAgent.from_config(args.config)
     await agent.run()
 
@@ -94,12 +94,12 @@ async def _run_agent(args) -> None:
 async def _run_worker(args) -> None:
     """Start a queue worker (Mode C)."""
     import socket
-    from grub.agent    import GrubAgent
-    from grub.loop     import GrubQueue, run_queue_worker
+    from grub.agent import GrubAgent
+    from grub.loop import GrubQueue, run_queue_worker
 
     worker_id = args.worker_id or socket.gethostname()
-    agent     = GrubAgent.from_config(args.config)
-    queue     = GrubQueue(agent.config.queue_db_path)
+    agent = GrubAgent.from_config(args.config)
+    queue = GrubQueue(agent.config.queue_db_path)
 
     logger.info("Starting queue worker: %s", worker_id)
     await run_queue_worker(worker_id, queue, agent.pipeline)
@@ -107,15 +107,15 @@ async def _run_worker(args) -> None:
 
 async def _run_single_task(args) -> None:
     """Run a single task directly (for testing without Tinker)."""
-    from grub.agent    import GrubAgent
+    from grub.agent import GrubAgent
     from grub.contracts.task import GrubTask
 
     agent = GrubAgent.from_config(args.config)
-    task  = GrubTask(
-        title         = args.run_task,
-        description   = f"Implement: {args.run_task}",
-        artifact_path = args.artifact or "",
-        subsystem     = "test",
+    task = GrubTask(
+        title=args.run_task,
+        description=f"Implement: {args.run_task}",
+        artifact_path=args.artifact or "",
+        subsystem="test",
     )
 
     logger.info("Running single task: %s", task.title)

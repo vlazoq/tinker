@@ -12,6 +12,7 @@ the Orchestrator (and its micro/meso/macro loops) expects:
 All methods are async so the Orchestrator can await them uniformly, even
 though the underlying registry is synchronous SQLite.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,8 +49,8 @@ class TaskEngine:
     ) -> None:
         self._problem = problem_statement
         self.registry = TaskRegistry(db_path=db_path)
-        self.scorer   = PriorityScorer()
-        self.queue    = TaskQueue(registry=self.registry, scorer=self.scorer)
+        self.scorer = PriorityScorer()
+        self.queue = TaskQueue(registry=self.registry, scorer=self.scorer)
         self.generator = TaskGenerator()
 
         # Seed with an initial task so the orchestrator always has work
@@ -168,7 +169,9 @@ class TaskEngine:
         -------
         dict : The newly queued task in orchestrator-dict format.
         """
-        target_subsystem = subsystem if subsystem is not None else Subsystem.CROSS_CUTTING
+        target_subsystem = (
+            subsystem if subsystem is not None else Subsystem.CROSS_CUTTING
+        )
         task = self.generator.make_exploration_task(
             title=title,
             description=description,

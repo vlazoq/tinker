@@ -12,7 +12,7 @@ Design notes:
 from dataclasses import dataclass
 from typing import Literal
 
-Role      = Literal["architect", "critic", "researcher", "synthesizer"]
+Role = Literal["architect", "critic", "researcher", "synthesizer"]
 LoopLevel = Literal["micro", "meso", "macro"]
 
 
@@ -21,7 +21,7 @@ class PromptTemplate:
     role: Role
     loop_level: LoopLevel
     system: str
-    user: str            # may contain {placeholder} tokens
+    user: str  # may contain {placeholder} tokens
 
 
 # ============================================================================
@@ -95,7 +95,7 @@ OUTPUT SCHEMA (strict — all fields required):
 ## RELEVANT CONTEXT
 {context}
 
-Produce your design_proposal JSON now. Think carefully before writing. Output JSON only."""
+Produce your design_proposal JSON now. Think carefully before writing. Output JSON only.""",
 )
 
 
@@ -163,7 +163,7 @@ OUTPUT SCHEMA:
 ## CONSTRAINTS
 {constraints}
 
-Produce your meso_design JSON now. Output JSON only."""
+Produce your meso_design JSON now. Output JSON only.""",
 )
 
 
@@ -230,7 +230,7 @@ OUTPUT SCHEMA:
 ## RESEARCH FINDINGS RELEVANT TO THIS VERSION
 {research_notes}
 
-Propose the new macro architecture version. Output JSON only."""
+Propose the new macro architecture version. Output JSON only.""",
 )
 
 
@@ -294,7 +294,7 @@ OUTPUT SCHEMA (strict — all fields required, no prose outside JSON):
 ## CRITIQUE FOCUS AREAS (pay extra attention to these)
 {focus_areas}
 
-Produce your critique JSON now. Be rigorous. Be adversarial. Find every flaw. Output JSON only."""
+Produce your critique JSON now. Be rigorous. Be adversarial. Find every flaw. Output JSON only.""",
 )
 
 
@@ -358,7 +358,7 @@ OUTPUT SCHEMA:
 ## CRITIQUE FOCUS AREAS
 {focus_areas}
 
-Produce your meso_critique JSON. Be thorough. Find systemic flaws. Output JSON only."""
+Produce your meso_critique JSON. Be thorough. Find systemic flaws. Output JSON only.""",
 )
 
 
@@ -429,7 +429,7 @@ OUTPUT SCHEMA:
 ## CRITIQUE FOCUS AREAS
 {focus_areas}
 
-Produce your macro_critique JSON. Be uncompromising. Output JSON only."""
+Produce your macro_critique JSON. Be uncompromising. Output JSON only.""",
 )
 
 
@@ -484,7 +484,7 @@ OUTPUT SCHEMA:
 ## ARCHITECTURE CONTEXT
 {architecture_context}
 
-Synthesize the tool results into your research_note JSON. Do not speculate beyond the tool results. Output JSON only."""
+Synthesize the tool results into your research_note JSON. Do not speculate beyond the tool results. Output JSON only.""",
 )
 
 
@@ -545,7 +545,7 @@ OUTPUT SCHEMA:
 ## SYNTHESIS DIRECTIVE
 {synthesis_directive}
 
-Produce your meso_synthesis JSON. Be precise. Compress without losing meaning. Output JSON only."""
+Produce your meso_synthesis JSON. Be precise. Compress without losing meaning. Output JSON only.""",
 )
 
 
@@ -610,7 +610,7 @@ Version: {prior_version}
 ## RESEARCH NOTES FROM THIS CYCLE
 {research_notes_json}
 
-Produce the macro_synthesis JSON. This is the definitive architectural record. Output JSON only."""
+Produce the macro_synthesis JSON. This is the definitive architectural record. Output JSON only.""",
 )
 
 
@@ -619,14 +619,14 @@ Produce the macro_synthesis JSON. This is the definitive architectural record. O
 # ============================================================================
 
 TEMPLATE_REGISTRY: dict[str, PromptTemplate] = {
-    "architect.micro":    ARCHITECT_MICRO,
-    "architect.meso":     ARCHITECT_MESO,
-    "architect.macro":    ARCHITECT_MACRO,
-    "critic.micro":       CRITIC_MICRO,
-    "critic.meso":        CRITIC_MESO,
-    "critic.macro":       CRITIC_MACRO,
-    "researcher.micro":   RESEARCHER,
-    "researcher.meso":    RESEARCHER,   # same template; context differentiates
-    "synthesizer.meso":   SYNTHESIZER_MESO,
-    "synthesizer.macro":  SYNTHESIZER_MACRO,
+    "architect.micro": ARCHITECT_MICRO,
+    "architect.meso": ARCHITECT_MESO,
+    "architect.macro": ARCHITECT_MACRO,
+    "critic.micro": CRITIC_MICRO,
+    "critic.meso": CRITIC_MESO,
+    "critic.macro": CRITIC_MACRO,
+    "researcher.micro": RESEARCHER,
+    "researcher.meso": RESEARCHER,  # same template; context differentiates
+    "synthesizer.meso": SYNTHESIZER_MESO,
+    "synthesizer.macro": SYNTHESIZER_MACRO,
 }

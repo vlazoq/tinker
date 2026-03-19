@@ -60,6 +60,7 @@ from .base import BaseTool, ToolSchema
 # Playwright is optional — fall back gracefully if not installed.
 try:
     from playwright.async_api import async_playwright, TimeoutError as PWTimeout
+
     _PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     # Playwright is not installed.  Set _PLAYWRIGHT_AVAILABLE = False so _execute()
@@ -82,7 +83,7 @@ except ImportError:
 # How long (in milliseconds) to wait for a page to load before giving up.
 # Read from an environment variable so operators can tune this without code changes.
 # Default is 20,000 ms (20 seconds) which is generous for slow sites.
-DEFAULT_TIMEOUT_MS = int(os.getenv("SCRAPER_TIMEOUT_MS", "20000"))   # 20 s
+DEFAULT_TIMEOUT_MS = int(os.getenv("SCRAPER_TIMEOUT_MS", "20000"))  # 20 s
 
 
 class WebScraperTool(BaseTool):
@@ -248,10 +249,11 @@ class WebScraperTool(BaseTool):
             # This is deliberately simple — we only want http/https links,
             # and we cap at 50 to keep the result manageable.
             import re
+
             links = re.findall(r'href=["\']([^"\']+)["\']', html)
             # Filter to only absolute URLs (skip relative paths like "/about")
             # and limit to the first 50.
-            links = [l for l in links if l.startswith("http")][:50]
+            links = [lnk for lnk in links if lnk.startswith("http")][:50]
 
         return {
             "url": url,
@@ -307,7 +309,9 @@ class WebScraperTool(BaseTool):
                 # Navigate to the URL. "domcontentloaded" means we wait until
                 # the HTML is parsed and the DOM is built, but we don't wait
                 # for all images/fonts to finish downloading (faster).
-                await page.goto(url, timeout=self._timeout_ms, wait_until="domcontentloaded")
+                await page.goto(
+                    url, timeout=self._timeout_ms, wait_until="domcontentloaded"
+                )
                 if wait_for_selector:
                     # Wait for a specific element to appear — useful for SPAs
                     # where the main content is loaded by JavaScript after the DOM.
@@ -344,6 +348,7 @@ class WebScraperTool(BaseTool):
             httpx.HTTPStatusError if the server returns 4xx or 5xx.
         """
         import httpx
+
         headers = {
             # Identify ourselves as "Tinker-Researcher" — a polite, honest User-Agent.
             "User-Agent": (
@@ -355,7 +360,7 @@ class WebScraperTool(BaseTool):
             # Convert ms to seconds for httpx (httpx uses seconds for timeouts).
             timeout=self._timeout_ms / 1000,
             # follow_redirects=True automatically follows HTTP 301/302 redirects.
-            follow_redirects=True
+            follow_redirects=True,
         ) as client:
             resp = await client.get(url, headers=headers)
             # Raise an exception for 4xx/5xx responses so BaseTool catches it.
@@ -366,12 +371,12 @@ class WebScraperTool(BaseTool):
     # Implementation
     # ------------------------------------------------------------------
 
-    async def _execute(           # type: ignore[override]
+    async def _execute(  # type: ignore[override]
         self,
         url: str,
         include_links: bool = False,
         wait_for_selector: str | None = None,
-        **_: Any,   # absorb any unexpected kwargs the caller might pass
+        **_: Any,  # absorb any unexpected kwargs the caller might pass
     ) -> dict:
         """
         Fetch and extract the content of a web page.
@@ -400,7 +405,7 @@ class WebScraperTool(BaseTool):
         if _PLAYWRIGHT_AVAILABLE:
             try:
                 html = await self._fetch_with_playwright(url, wait_for_selector)
-            except (PWTimeout, Exception):           # noqa: BLE001
+            except (PWTimeout, Exception):  # noqa: BLE001
                 # Playwright failed (timeout, browser crash, network error, etc.).
                 # Fall back to the simpler httpx approach.
                 # Fall back to httpx

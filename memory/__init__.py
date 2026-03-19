@@ -71,15 +71,15 @@ from .manager import MemoryManager
 from .schemas import Artifact, ResearchNote, Task, MemoryConfig
 
 # Advanced components — exposed for callers that need direct access.
-from .embeddings import EmbeddingPipeline   # converts text to semantic vectors
-from .compression import MemoryCompressor   # compresses old session artifacts
+from .embeddings import EmbeddingPipeline  # converts text to semantic vectors
+from .compression import MemoryCompressor  # compresses old session artifacts
 
 __all__ = [
-    "MemoryManager",      # the main interface: store, search, compress
-    "Artifact",           # a single output produced during a session
-    "ResearchNote",       # a semantically-indexed research finding
-    "Task",               # a unit of work tracked in the task registry
-    "MemoryConfig",       # all configuration knobs in one place
+    "MemoryManager",  # the main interface: store, search, compress
+    "Artifact",  # a single output produced during a session
+    "ResearchNote",  # a semantically-indexed research finding
+    "Task",  # a unit of work tracked in the task registry
+    "MemoryConfig",  # all configuration knobs in one place
     "EmbeddingPipeline",  # wraps the sentence-transformer model
-    "MemoryCompressor",   # summarises and archives old session artifacts
+    "MemoryCompressor",  # summarises and archives old session artifacts
 ]

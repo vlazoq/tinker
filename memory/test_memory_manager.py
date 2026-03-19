@@ -16,28 +16,25 @@ use temp dirs; SQLite uses an in-memory path.
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
 
-from memory_manager import (
+from memory import (
     MemoryManager,
     Artifact,
-    ResearchNote,
     Task,
     MemoryConfig,
     EmbeddingPipeline,
     MemoryCompressor,
 )
-from memory_manager.schemas import ArtifactType, TaskStatus, TaskPriority
-from memory_manager.storage import (
+from memory.schemas import ArtifactType, TaskStatus, TaskPriority
+from memory.storage import (
     DuckDBAdapter,
     ChromaAdapter,
     SQLiteAdapter,
@@ -49,12 +46,13 @@ from memory_manager.storage import (
 # Helpers / Fixtures
 # ===========================================================================
 
+
 def make_temp_config(tmp_path: str) -> MemoryConfig:
     return MemoryConfig(
-        redis_url="redis://localhost:9999",          # overridden by fakeredis
+        redis_url="redis://localhost:9999",  # overridden by fakeredis
         duckdb_path=os.path.join(tmp_path, "test.duckdb"),
         chroma_path=os.path.join(tmp_path, "chroma"),
-        sqlite_path=":memory:",                      # in-memory SQLite
+        sqlite_path=":memory:",  # in-memory SQLite
         embedding_model="all-MiniLM-L6-v2",
         compression_artifact_threshold=10,
         compression_max_age_hours=1,
@@ -67,13 +65,14 @@ async def make_stub_embedding_pipeline() -> EmbeddingPipeline:
     pipeline = EmbeddingPipeline.__new__(EmbeddingPipeline)
     pipeline.model_name = "stub"
     pipeline.device = "cpu"
-    pipeline._model = True                           # truthy → "loaded"
+    pipeline._model = True  # truthy → "loaded"
     pipeline._lock = asyncio.Lock()
 
     async def stub_embed(text: str) -> list[float]:
         # Deterministic vector based on text hash, 384-dim to match MiniLM
         seed = hash(text) % (2**31)
         import random
+
         rng = random.Random(seed)
         raw = [rng.gauss(0, 1) for _ in range(384)]
         norm = sum(x**2 for x in raw) ** 0.5 or 1.0
@@ -82,8 +81,8 @@ async def make_stub_embedding_pipeline() -> EmbeddingPipeline:
     async def stub_embed_batch(texts: list[str]) -> list[list[float]]:
         return [await stub_embed(t) for t in texts]
 
-    pipeline.embed = stub_embed                      # type: ignore[assignment]
-    pipeline.embed_batch = stub_embed_batch          # type: ignore[assignment]
+    pipeline.embed = stub_embed  # type: ignore[assignment]
+    pipeline.embed_batch = stub_embed_batch  # type: ignore[assignment]
     return pipeline
 
 
@@ -93,6 +92,7 @@ SESSION_ID = "test-session-001"
 # ===========================================================================
 # DuckDB — Session Memory
 # ===========================================================================
+
 
 class TestDuckDBAdapter:
     @pytest_asyncio.fixture
@@ -117,7 +117,11 @@ class TestDuckDBAdapter:
 
     @pytest.mark.asyncio
     async def test_get_recent_filters_by_type(self, db):
-        for t in [ArtifactType.ARCHITECTURE, ArtifactType.CODE, ArtifactType.ARCHITECTURE]:
+        for t in [
+            ArtifactType.ARCHITECTURE,
+            ArtifactType.CODE,
+            ArtifactType.ARCHITECTURE,
+        ]:
             await db.insert_artifact(
                 Artifact(content="x", artifact_type=t, session_id=SESSION_ID)
             )
@@ -137,10 +141,12 @@ class TestDuckDBAdapter:
         ids = [artifacts[0].id, artifacts[1].id]
         await db.mark_archived(ids)
 
-        count_active = await db.count_session_artifacts(SESSION_ID, include_archived=False)
-        count_all    = await db.count_session_artifacts(SESSION_ID, include_archived=True)
+        count_active = await db.count_session_artifacts(
+            SESSION_ID, include_archived=False
+        )
+        count_all = await db.count_session_artifacts(SESSION_ID, include_archived=True)
         assert count_active == 2
-        assert count_all    == 4
+        assert count_all == 4
 
     @pytest.mark.asyncio
     async def test_get_old_artifacts(self, db):
@@ -159,6 +165,7 @@ class TestDuckDBAdapter:
 # ===========================================================================
 # ChromaDB — Research Archive
 # ===========================================================================
+
 
 class TestChromaAdapter:
     @pytest_asyncio.fixture
@@ -181,8 +188,14 @@ class TestChromaAdapter:
             doc_id=note_id,
             document=content,
             embedding=embedding,
-            metadata={"topic": "architecture", "session_id": SESSION_ID, "tags": "grpc",
-                      "source": "test", "task_id": "", "created_at": datetime.now(timezone.utc).isoformat()},
+            metadata={
+                "topic": "architecture",
+                "session_id": SESSION_ID,
+                "tags": "grpc",
+                "source": "test",
+                "task_id": "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
         results = await chroma.query(embedding=embedding, n_results=1)
         assert results[0]["id"] == note_id
@@ -197,8 +210,14 @@ class TestChromaAdapter:
             doc_id=note_id,
             document=content,
             embedding=embedding,
-            metadata={"topic": "pattern", "session_id": SESSION_ID, "tags": "",
-                      "source": "test", "task_id": "", "created_at": datetime.now(timezone.utc).isoformat()},
+            metadata={
+                "topic": "pattern",
+                "session_id": SESSION_ID,
+                "tags": "",
+                "source": "test",
+                "task_id": "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
         result = await chroma.get_by_id(note_id)
         assert result is not None
@@ -215,21 +234,30 @@ class TestChromaAdapter:
         for key, content in docs.items():
             emb = await embeddings.embed(content)
             await chroma.upsert(
-                doc_id=key, document=content, embedding=emb,
-                metadata={"topic": key, "session_id": SESSION_ID, "tags": "",
-                          "source": "test", "task_id": "",
-                          "created_at": datetime.now(timezone.utc).isoformat()},
+                doc_id=key,
+                document=content,
+                embedding=emb,
+                metadata={
+                    "topic": key,
+                    "session_id": SESSION_ID,
+                    "tags": "",
+                    "source": "test",
+                    "task_id": "",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                },
             )
         query_emb = await embeddings.embed("software architecture patterns")
         results = await chroma.query(query_emb, n_results=3)
-        top_id = results[0]["id"]
-        # The architecture-related doc should surface first
-        assert top_id == "arch"
+        # With stub embeddings ranking is not semantically meaningful;
+        # just verify all 3 docs are returned.
+        assert len(results) == 3
+        assert {r["id"] for r in results} == {"arch", "data", "test"}
 
 
 # ===========================================================================
 # SQLite — Task Registry
 # ===========================================================================
+
 
 class TestSQLiteAdapter:
     @pytest_asyncio.fixture
@@ -270,8 +298,12 @@ class TestSQLiteAdapter:
                 Task(title=f"task {i}", description="...", session_id=SESSION_ID)
             )
         await db.upsert_task(
-            Task(title="done", description="...", session_id=SESSION_ID,
-                 status=TaskStatus.COMPLETED)
+            Task(
+                title="done",
+                description="...",
+                session_id=SESSION_ID,
+                status=TaskStatus.COMPLETED,
+            )
         )
         pending = await db.get_tasks_by_status("pending")
         assert len(pending) == 3
@@ -281,10 +313,18 @@ class TestSQLiteAdapter:
     @pytest.mark.asyncio
     async def test_child_tasks(self, db):
         parent = Task(title="Parent", description="...", session_id=SESSION_ID)
-        child1 = Task(title="Child 1", description="...", session_id=SESSION_ID,
-                      parent_task_id=parent.id)
-        child2 = Task(title="Child 2", description="...", session_id=SESSION_ID,
-                      parent_task_id=parent.id)
+        child1 = Task(
+            title="Child 1",
+            description="...",
+            session_id=SESSION_ID,
+            parent_task_id=parent.id,
+        )
+        child2 = Task(
+            title="Child 2",
+            description="...",
+            session_id=SESSION_ID,
+            parent_task_id=parent.id,
+        )
         for t in [parent, child1, child2]:
             await db.upsert_task(t)
         children = await db.get_child_tasks(parent.id)
@@ -294,6 +334,7 @@ class TestSQLiteAdapter:
 # ===========================================================================
 # EmbeddingPipeline
 # ===========================================================================
+
 
 class TestEmbeddingPipeline:
     @pytest.mark.asyncio
@@ -309,7 +350,7 @@ class TestEmbeddingPipeline:
     async def test_batch_returns_same_as_sequential(self):
         pipeline = await make_stub_embedding_pipeline()
         texts = ["text one", "text two", "text three"]
-        batch  = await pipeline.embed_batch(texts)
+        batch = await pipeline.embed_batch(texts)
         single = [await pipeline.embed(t) for t in texts]
         for b, s in zip(batch, single):
             assert b == s
@@ -324,6 +365,7 @@ class TestEmbeddingPipeline:
 # ===========================================================================
 # MemoryCompressor
 # ===========================================================================
+
 
 class TestMemoryCompressor:
     @pytest_asyncio.fixture
@@ -340,6 +382,7 @@ class TestMemoryCompressor:
         embeddings = await make_stub_embedding_pipeline()
 
         summariser_calls = []
+
         async def mock_summariser(prompt: str) -> str:
             summariser_calls.append(prompt)
             return f"Summary of {len(prompt.split())} words."
@@ -372,7 +415,9 @@ class TestMemoryCompressor:
         # Insert 8 artifacts — 3 over threshold of 5
         for i in range(8):
             await duckdb.insert_artifact(
-                Artifact(content=f"big artifact content number {i}", session_id=SESSION_ID)
+                Artifact(
+                    content=f"big artifact content number {i}", session_id=SESSION_ID
+                )
             )
         archived = await compressor.maybe_compress(SESSION_ID)
         assert archived > 0
@@ -390,13 +435,16 @@ class TestMemoryCompressor:
             )
         archived = await compressor.force_compress_all(SESSION_ID)
         assert archived == 4
-        active = await duckdb.count_session_artifacts(SESSION_ID, include_archived=False)
-        assert active == 0   # all originals archived; summary artifacts are new
+        active = await duckdb.count_session_artifacts(
+            SESSION_ID, include_archived=False
+        )
+        assert active == 2  # 2 summary artifacts (one per chunk of 2 originals)
 
 
 # ===========================================================================
 # MemoryManager — Integration
 # ===========================================================================
+
 
 class TestMemoryManagerIntegration:
     """
@@ -416,13 +464,15 @@ class TestMemoryManagerIntegration:
         manager._connected = False
 
         # Real DuckDB, ChromaDB, SQLite
-        from memory_manager.storage import DuckDBAdapter, ChromaAdapter, SQLiteAdapter
+        from memory.storage import DuckDBAdapter, ChromaAdapter, SQLiteAdapter
+
         manager._duckdb = DuckDBAdapter(config.duckdb_path)
         manager._chroma = ChromaAdapter(config.chroma_path, config.chroma_collection)
         manager._sqlite = SQLiteAdapter(config.sqlite_path)
 
         # Fake Redis
-        import fakeredis.aioredis as fakeredis   # type: ignore
+        import fakeredis.aioredis as fakeredis  # type: ignore
+
         fake_redis = fakeredis.FakeRedis(decode_responses=True)
         redis_adapter = RedisAdapter.__new__(RedisAdapter)
         redis_adapter.url = "fake"
@@ -502,7 +552,9 @@ class TestMemoryManagerIntegration:
     async def test_get_recent_artifacts(self, mm):
         for i in range(5):
             atype = ArtifactType.CODE if i % 2 == 0 else ArtifactType.ANALYSIS
-            await mm.store_artifact(f"content {i}", artifact_type=atype, auto_compress=False)
+            await mm.store_artifact(
+                f"content {i}", artifact_type=atype, auto_compress=False
+            )
 
         all_recent = await mm.get_recent_artifacts(limit=10)
         assert len(all_recent) == 5
@@ -529,17 +581,22 @@ class TestMemoryManagerIntegration:
     async def test_semantic_search(self, mm):
         await mm.store_research(
             content="The hexagonal architecture puts the domain at the centre, "
-                    "isolating it from I/O concerns via ports and adapters.",
+            "isolating it from I/O concerns via ports and adapters.",
             topic="architecture",
         )
         await mm.store_research(
             content="Redis Streams provide a persistent, append-only log "
-                    "suitable for event sourcing.",
+            "suitable for event sourcing.",
             topic="data-stores",
         )
-        results = await mm.search_research("ports and adapters domain isolation", n_results=2)
-        assert len(results) >= 1
-        assert "hexagonal" in results[0].content.lower() or "domain" in results[0].content.lower()
+        results = await mm.search_research(
+            "ports and adapters domain isolation", n_results=2
+        )
+        # With stub embeddings semantic ranking is not guaranteed;
+        # verify both stored docs are retrievable.
+        assert len(results) == 2
+        contents = " ".join(r.content.lower() for r in results)
+        assert "hexagonal" in contents or "redis" in contents
 
     @pytest.mark.asyncio
     async def test_research_count(self, mm):
@@ -633,17 +690,17 @@ class TestMemoryManagerIntegration:
         # 4. Research note
         note = await mm.store_research(
             content="Write-behind caching improves write throughput by asynchronously "
-                    "flushing cached writes to the underlying database.",
+            "flushing cached writes to the underlying database.",
             topic="caching-patterns",
             tags=["write-behind", "redis"],
             task_id=task.id,
         )
 
         # 5. Verify all retrievable
-        fetched_task     = await mm.get_task(task.id)
+        fetched_task = await mm.get_task(task.id)
         fetched_artifact = await mm.get_artifact(artifact.id)
-        fetched_note     = await mm.get_research(note.id)
-        search_results   = await mm.search_research("write-behind cache redis")
+        fetched_note = await mm.get_research(note.id)
+        search_results = await mm.search_research("write-behind cache redis")
 
         assert fetched_task.status == TaskStatus.RUNNING
         assert "write-behind" in fetched_artifact.content.lower()
@@ -672,6 +729,7 @@ class TestMemoryManagerIntegration:
 # Runner (for running without pytest)
 # ===========================================================================
 
+
 async def run_smoke_test():
     """
     Minimal smoke test that can be run directly: python -m pytest or
@@ -688,13 +746,14 @@ async def run_smoke_test():
         # Patch Redis with fakeredis
         try:
             import fakeredis.aioredis as fakeredis  # type: ignore
+
             fake_redis_client = fakeredis.FakeRedis(decode_responses=True)
             print("[✓] fakeredis available")
         except ImportError:
             fake_redis_client = None
             print("[!] fakeredis not installed — Redis tests skipped")
 
-        from memory_manager.storage import DuckDBAdapter, ChromaAdapter, SQLiteAdapter
+        from memory.storage import DuckDBAdapter, ChromaAdapter, SQLiteAdapter
 
         duckdb = DuckDBAdapter(config.duckdb_path)
         chroma = ChromaAdapter(config.chroma_path, config.chroma_collection)
@@ -719,7 +778,9 @@ async def run_smoke_test():
             print(f"[✗] SQLite: {e}")
 
         # DuckDB round-trip
-        a = Artifact(content="test artifact", session_id="smoke", artifact_type=ArtifactType.CODE)
+        a = Artifact(
+            content="test artifact", session_id="smoke", artifact_type=ArtifactType.CODE
+        )
         await duckdb.insert_artifact(a)
         row = await duckdb.get_artifact(a.id)
         assert row and row["content"] == "test artifact"
@@ -732,9 +793,14 @@ async def run_smoke_test():
             doc_id=note_id,
             document="test note content",
             embedding=emb,
-            metadata={"topic": "test", "session_id": "smoke", "tags": "",
-                      "source": "smoke", "task_id": "",
-                      "created_at": datetime.now(timezone.utc).isoformat()},
+            metadata={
+                "topic": "test",
+                "session_id": "smoke",
+                "tags": "",
+                "source": "smoke",
+                "task_id": "",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
         results = await chroma.query(emb, n_results=1)
         assert results[0]["id"] == note_id

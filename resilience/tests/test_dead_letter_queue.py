@@ -5,6 +5,7 @@ Tests for resilience/dead_letter_queue.py
 Verifies DLQ enqueue, status transitions, stats, and purge operations
 using a temporary in-memory SQLite database (`:memory:`).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -17,7 +18,7 @@ async def dlq(tmp_path):
     """Provide a fresh DLQ backed by a temp file for each test."""
     db_path = str(tmp_path / "test_dlq.sqlite")
     q = DeadLetterQueue(db_path=db_path)
-    await q.initialize()
+    await q.connect()
     yield q
     await q.close()
 
@@ -49,7 +50,7 @@ class TestDeadLetterQueueEnqueue:
     @pytest.mark.asyncio
     async def test_mark_discarded(self, dlq):
         item_id = await dlq.enqueue("op", {}, "error")
-        await dlq.mark_discarded(item_id, notes="no longer relevant")
+        await dlq.mark_discarded(item_id, reason="no longer relevant")
         pending = await dlq.pending_items()
         assert len(pending) == 0
 

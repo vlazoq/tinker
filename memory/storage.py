@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -27,6 +26,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Redis — Working Memory
 # ---------------------------------------------------------------------------
+
 
 class RedisAdapter:
     """
@@ -51,11 +51,12 @@ class RedisAdapter:
 
     async def connect(self) -> None:
         try:
-            import redis.asyncio as aioredis        # type: ignore
+            import redis.asyncio as aioredis  # type: ignore
+
             client = await aioredis.from_url(
                 self.url, encoding="utf-8", decode_responses=True
             )
-            await client.ping()          # verify reachability before accepting
+            await client.ping()  # verify reachability before accepting
             self._client = client
             logger.info("Redis connected at %s", self.url)
         except ImportError:
@@ -68,7 +69,8 @@ class RedisAdapter:
                 "RedisAdapter: Redis not reachable at %s (%s) — "
                 "working memory disabled. "
                 "On Windows: start Redis with 'docker compose up -d'",
-                self.url, exc,
+                self.url,
+                exc,
             )
 
     async def close(self) -> None:
@@ -111,7 +113,7 @@ class RedisAdapter:
             return []
         prefix = f"tinker:{session_id}:"
         raw_keys = await self._client.keys(f"{prefix}*")
-        return [k[len(prefix):] for k in raw_keys]
+        return [k[len(prefix) :] for k in raw_keys]
 
     async def flush_session(self, session_id: str) -> int:
         """Delete every key belonging to a session. Returns count deleted."""
@@ -170,7 +172,8 @@ class DuckDBAdapter:
         self._lock = asyncio.Lock()
 
     def _open(self):
-        import duckdb                            # type: ignore
+        import duckdb  # type: ignore
+
         conn = duckdb.connect(self.path)
         conn.execute(_DUCKDB_SCHEMA)
         return conn
@@ -187,34 +190,41 @@ class DuckDBAdapter:
     async def _run(self, fn):
         """Execute a blocking DuckDB call in a thread-pool executor."""
         loop = asyncio.get_running_loop()
-        async with self._lock:                  # serialise writes
+        async with self._lock:  # serialise writes
             return await loop.run_in_executor(None, fn)
 
     # -- Write --------------------------------------------------------------
 
     async def insert_artifact(self, artifact) -> None:
         d = artifact.to_dict()
-        await self._run(lambda: self._conn.execute(
-            """INSERT OR REPLACE INTO artifacts
+        await self._run(
+            lambda: self._conn.execute(
+                """INSERT OR REPLACE INTO artifacts
                (id, session_id, task_id, artifact_type, content, metadata, archived, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            [
-                d["id"], d["session_id"], d.get("task_id"),
-                d["artifact_type"], d["content"],
-                json.dumps(d.get("metadata", {})),
-                d.get("archived", False),
-                d["created_at"],
-            ],
-        ))
+                [
+                    d["id"],
+                    d["session_id"],
+                    d.get("task_id"),
+                    d["artifact_type"],
+                    d["content"],
+                    json.dumps(d.get("metadata", {})),
+                    d.get("archived", False),
+                    d["created_at"],
+                ],
+            )
+        )
 
     async def mark_archived(self, artifact_ids: list[str]) -> None:
         if not artifact_ids:
             return
         placeholders = ",".join("?" * len(artifact_ids))
-        await self._run(lambda: self._conn.execute(
-            f"UPDATE artifacts SET archived = TRUE WHERE id IN ({placeholders})",
-            artifact_ids,
-        ))
+        await self._run(
+            lambda: self._conn.execute(
+                f"UPDATE artifacts SET archived = TRUE WHERE id IN ({placeholders})",
+                artifact_ids,
+            )
+        )
 
     # -- Read ---------------------------------------------------------------
 
@@ -271,6 +281,7 @@ class DuckDBAdapter:
         limit: int = 5,
     ) -> list[dict]:
         """Return artifacts associated with a specific task, newest first."""
+
         def _query():
             rows = self._conn.execute(
                 "SELECT * FROM artifacts WHERE task_id = ? ORDER BY created_at DESC LIMIT ?",
@@ -352,6 +363,7 @@ class DuckDBAdapter:
 # ChromaDB — Research Archive
 # ---------------------------------------------------------------------------
 
+
 class ChromaAdapter:
     """
     Async-compatible ChromaDB adapter for the Research Archive.
@@ -365,7 +377,8 @@ class ChromaAdapter:
         self._collection = None
 
     def _open(self):
-        import chromadb                          # type: ignore
+        import chromadb  # type: ignore
+
         client = chromadb.PersistentClient(path=self.path)
         collection = client.get_or_create_collection(
             name=self.collection_name,
@@ -381,7 +394,7 @@ class ChromaAdapter:
         )
 
     async def close(self) -> None:
-        pass   # ChromaDB PersistentClient flushes on GC
+        pass  # ChromaDB PersistentClient flushes on GC
 
     async def _run(self, fn):
         loop = asyncio.get_running_loop()
@@ -396,12 +409,14 @@ class ChromaAdapter:
         embedding: list[float],
         metadata: dict,
     ) -> None:
-        await self._run(lambda: self._collection.upsert(
-            ids=[doc_id],
-            documents=[document],
-            embeddings=[embedding],
-            metadatas=[metadata],
-        ))
+        await self._run(
+            lambda: self._collection.upsert(
+                ids=[doc_id],
+                documents=[document],
+                embeddings=[embedding],
+                metadatas=[metadata],
+            )
+        )
 
     # -- Read ---------------------------------------------------------------
 
@@ -424,17 +439,21 @@ class ChromaAdapter:
         result = await self._run(_q)
         out = []
         for i, doc_id in enumerate(result["ids"][0]):
-            out.append({
-                "id": doc_id,
-                "document": result["documents"][0][i],
-                "metadata": result["metadatas"][0][i],
-                "distance": result["distances"][0][i],
-            })
+            out.append(
+                {
+                    "id": doc_id,
+                    "document": result["documents"][0][i],
+                    "metadata": result["metadatas"][0][i],
+                    "distance": result["distances"][0][i],
+                }
+            )
         return out
 
     async def get_by_id(self, doc_id: str) -> Optional[dict]:
         def _get():
-            return self._collection.get(ids=[doc_id], include=["documents", "metadatas"])
+            return self._collection.get(
+                ids=[doc_id], include=["documents", "metadatas"]
+            )
 
         result = await self._run(_get)
         if not result["ids"]:
@@ -487,7 +506,8 @@ class SQLiteAdapter:
         self._conn = None
 
     async def connect(self) -> None:
-        import aiosqlite                         # type: ignore
+        import aiosqlite  # type: ignore
+
         self._conn = await aiosqlite.connect(self.path)
         self._conn.row_factory = aiosqlite.Row
         await self._conn.executescript(_SQLITE_SCHEMA)
@@ -538,9 +558,7 @@ class SQLiteAdapter:
             row = await cur.fetchone()
             return dict(row) if row else None
 
-    async def get_tasks_by_status(
-        self, status: str, limit: int = 50
-    ) -> list[dict]:
+    async def get_tasks_by_status(self, status: str, limit: int = 50) -> list[dict]:
         async with self._conn.execute(
             "SELECT * FROM tasks WHERE status = ? ORDER BY priority DESC, created_at ASC LIMIT ?",
             [status, limit],

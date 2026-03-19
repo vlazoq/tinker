@@ -20,12 +20,13 @@ import math
 import re
 from abc import ABC, abstractmethod
 from collections import Counter
-from typing import List, Optional
+from typing import List
 
 
 # ─────────────────────────────────────────────────────────────
 # Abstract interface
 # ─────────────────────────────────────────────────────────────
+
 
 class EmbeddingBackend(ABC):
     @abstractmethod
@@ -49,6 +50,7 @@ class EmbeddingBackend(ABC):
 # Ollama backend (production)
 # ─────────────────────────────────────────────────────────────
 
+
 class OllamaEmbeddingBackend(EmbeddingBackend):
     """
     Calls the local Ollama /api/embeddings endpoint.
@@ -69,6 +71,7 @@ class OllamaEmbeddingBackend(EmbeddingBackend):
     def _get_requests(self):
         if self._requests is None:
             import requests  # type: ignore
+
             self._requests = requests
         return self._requests
 
@@ -94,6 +97,7 @@ class OllamaEmbeddingBackend(EmbeddingBackend):
 # ─────────────────────────────────────────────────────────────
 # TF-IDF fallback backend (no dependencies, deterministic)
 # ─────────────────────────────────────────────────────────────
+
 
 class FallbackTFIDFBackend(EmbeddingBackend):
     """
@@ -156,6 +160,7 @@ class FallbackTFIDFBackend(EmbeddingBackend):
 # Factory
 # ─────────────────────────────────────────────────────────────
 
+
 def make_embedding_backend(
     model: str = "nomic-embed-text",
     ollama_url: str = "http://localhost:11434",
@@ -170,9 +175,8 @@ def make_embedding_backend(
         return FallbackTFIDFBackend()
     try:
         import urllib.request
-        with urllib.request.urlopen(
-            f"{ollama_url}/api/tags", timeout=3
-        ) as resp:
+
+        with urllib.request.urlopen(f"{ollama_url}/api/tags", timeout=3) as resp:
             if resp.status == 200:
                 return OllamaEmbeddingBackend(model=model, base_url=ollama_url)
     except Exception:

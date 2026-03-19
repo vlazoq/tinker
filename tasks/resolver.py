@@ -66,12 +66,13 @@ log = logging.getLogger(__name__)
 # DependencyCycleError is defined in the central exceptions module and
 # re-exported here so ``from tasks.resolver import DependencyCycleError``
 # continues to work.
-from exceptions import DependencyCycleError  # noqa: F401  (intentional re-export)
+from exceptions import DependencyCycleError  # noqa: E402, F401  (intentional re-export)
 
 
 # =============================================================================
 # DependencyResolver class
 # =============================================================================
+
 
 class DependencyResolver:
     """
@@ -121,7 +122,7 @@ class DependencyResolver:
             task.status = TaskStatus.BLOCKED
             # Store the blocking IDs in metadata for debugging and display
             task.metadata["blocking_deps"] = blocking
-            task.touch()         # Update the updated_at timestamp
+            task.touch()  # Update the updated_at timestamp
             registry.save(task)  # Persist the BLOCKED status
             log.debug(
                 "Task '%s' blocked by %d dep(s): %s", task.id, len(blocking), blocking
@@ -172,8 +173,11 @@ class DependencyResolver:
                 candidate.touch()
                 registry.save(candidate)
                 unblocked.append(candidate)
-                log.info("Task '%s' unblocked after completion of '%s'",
-                         candidate.id, completed_task.id)
+                log.info(
+                    "Task '%s' unblocked after completion of '%s'",
+                    candidate.id,
+                    completed_task.id,
+                )
 
         return unblocked
 
@@ -204,9 +208,7 @@ class DependencyResolver:
         log.info("resolve_all unblocked %d task(s)", len(unblocked))
         return unblocked
 
-    def build_dependency_graph(
-        self, registry: "TaskRegistry"
-    ) -> dict[str, set[str]]:
+    def build_dependency_graph(self, registry: "TaskRegistry") -> dict[str, set[str]]:
         """Build a complete dependency adjacency dict for all tasks.
 
         Returns a dict where:
@@ -245,14 +247,14 @@ class DependencyResolver:
         Use ``topological_order()`` if you want an exception on cycle detection.
         """
         graph = self.build_dependency_graph(registry)
-        visited: set[str] = set()     # Nodes we've fully explored
-        rec_stack: set[str] = set()   # Nodes in the current DFS path
+        visited: set[str] = set()  # Nodes we've fully explored
+        rec_stack: set[str] = set()  # Nodes in the current DFS path
         cycles: list[list[str]] = []
 
         def dfs(node: str, path: list[str]) -> None:
             """Recursive DFS helper."""
             visited.add(node)
-            rec_stack.add(node)    # This node is now on the current path
+            rec_stack.add(node)  # This node is now on the current path
 
             for dep in graph.get(node, set()):
                 if dep not in visited:

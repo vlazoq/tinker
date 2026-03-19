@@ -225,7 +225,6 @@ _FORMAT_TEMPLATES: dict[AgentRole, str] = {
 
 
 class StubPromptBuilder(_PromptBuilderProtocol):
-
     def build_system_identity(self, role: AgentRole) -> str:
         return _ROLE_IDENTITIES.get(role, f"You are a Tinker agent with role: {role}.")
 

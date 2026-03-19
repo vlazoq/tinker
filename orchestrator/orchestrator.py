@@ -79,6 +79,7 @@ In Tinker, every AI call is a network call that can take seconds.  Using
 asyncio means the orchestrator can manage timeouts, check the shutdown flag,
 and write state snapshots without getting stuck waiting.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -89,11 +90,14 @@ from typing import Any, Optional
 
 from .config import OrchestratorConfig
 from .state import OrchestratorState, LoopLevel, LoopStatus
+
 # run_micro_loop contains the detailed step-by-step logic for one micro iteration.
 # MicroLoopError is raised when a micro loop fails unrecoverably.
 from .micro_loop import run_micro_loop, MicroLoopError
+
 # run_meso_loop synthesises artifacts for one subsystem.
 from .meso_loop import run_meso_loop
+
 # run_macro_loop produces and commits the full architectural snapshot.
 from .macro_loop import run_macro_loop
 
@@ -101,14 +105,16 @@ from .macro_loop import run_macro_loop
 # orchestrator works in minimal deployments without the resilience package.
 try:
     from resilience.backpressure import BackpressureController, BackpressureAction
+
     _BACKPRESSURE_AVAILABLE = True
 except ImportError:
     BackpressureController = None  # type: ignore[assignment,misc]
-    BackpressureAction = None      # type: ignore[assignment,misc]
+    BackpressureAction = None  # type: ignore[assignment,misc]
     _BACKPRESSURE_AVAILABLE = False
 
 try:
     from observability.audit_log import AuditEventType
+
     _AUDIT_AVAILABLE = True
 except ImportError:
     AuditEventType = None  # type: ignore[assignment,misc]
@@ -116,6 +122,7 @@ except ImportError:
 
 try:
     from capacity.planner import CapacityPlanner
+
     _CAPACITY_AVAILABLE = True
 except ImportError:
     CapacityPlanner = None  # type: ignore[assignment,misc]
@@ -151,7 +158,7 @@ class Orchestrator:
 
     def __init__(
         self,
-        *,                              # everything after * must be a keyword argument
+        *,  # everything after * must be a keyword argument
         config: Optional[OrchestratorConfig] = None,
         task_engine: Any,
         context_assembler: Any,
@@ -357,7 +364,6 @@ class Orchestrator:
         methods it calls.
         """
         while not self._shutdown_event.is_set():
-
             # ── Macro loop timer check ────────────────────────────────────────
             # The macro loop fires on a wall-clock timer, not after a fixed
             # number of micro loops.  Check elapsed time here.
@@ -401,7 +407,10 @@ class Orchestrator:
                 # If we've hit the failure threshold, something is seriously
                 # wrong (network issue, quota exceeded, etc.).  Sleep before
                 # hammering the API again.
-                if self.state.consecutive_failures >= self.config.max_consecutive_failures:
+                if (
+                    self.state.consecutive_failures
+                    >= self.config.max_consecutive_failures
+                ):
                     logger.warning(
                         "Backing off for %.1fs after %d consecutive failures",
                         self.config.failure_backoff_seconds,
@@ -488,14 +497,17 @@ class Orchestrator:
             if action == BackpressureAction.WARN:
                 logger.warning(
                     "Backpressure WARN: %s (queue=%d, failures=%d)",
-                    recommendation.reason, queue_depth, failure_streak,
+                    recommendation.reason,
+                    queue_depth,
+                    failure_streak,
                 )
                 return
 
             if action == BackpressureAction.SLOW_DOWN:
                 logger.warning(
                     "Backpressure SLOW_DOWN: sleeping %.1fs — %s",
-                    recommendation.wait_seconds, recommendation.reason,
+                    recommendation.wait_seconds,
+                    recommendation.reason,
                 )
                 await self._interruptible_sleep(recommendation.wait_seconds)
 
@@ -503,7 +515,8 @@ class Orchestrator:
                 logger.warning(
                     "Backpressure PAUSE_GENERATION: pausing task generation "
                     "for %.1fs — %s",
-                    recommendation.wait_seconds, recommendation.reason,
+                    recommendation.wait_seconds,
+                    recommendation.reason,
                 )
                 # Tell the task engine to pause if it supports the flag.
                 # The finally block guarantees the flag is cleared even if
@@ -770,6 +783,7 @@ class Orchestrator:
         record : MicroLoopRecord from the just-completed micro loop.
         """
         from stagnation.models import MicroLoopContext
+
         ctx = MicroLoopContext(
             loop_index=record.iteration,
             # Architect output is not stored on the record to keep it small.
@@ -786,9 +800,7 @@ class Orchestrator:
         )
         try:
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(
-                None, self.stagnation_monitor.check, ctx
-            )
+            return await loop.run_in_executor(None, self.stagnation_monitor.check, ctx)
         except Exception as exc:
             logger.warning("StagnationMonitor.check() raised unexpectedly: %s", exc)
             return []
@@ -858,10 +870,14 @@ class Orchestrator:
                 target = self.config.meso_trigger_count
                 self.state.subsystem_micro_counts[avoid] = target
                 logger.info(
-                    "[Stagnation] Forced early meso on subsystem=%s to pivot away", avoid
+                    "[Stagnation] Forced early meso on subsystem=%s to pivot away",
+                    avoid,
                 )
 
-        elif itype in (InterventionType.ALTERNATIVE_FORCING, InterventionType.INJECT_CONTRADICTION):
+        elif itype in (
+            InterventionType.ALTERNATIVE_FORCING,
+            InterventionType.INJECT_CONTRADICTION,
+        ):
             # Record the intent; prompt-level injection is a future improvement.
             # The log entry alone is useful for post-run analysis.
             logger.info(
@@ -870,7 +886,10 @@ class Orchestrator:
                 itype.value,
             )
 
-        elif itype in (InterventionType.SPAWN_EXPLORATION, InterventionType.ESCALATE_LOOP):
+        elif itype in (
+            InterventionType.SPAWN_EXPLORATION,
+            InterventionType.ESCALATE_LOOP,
+        ):
             # Inject a fresh exploration task to break the saturation / starvation.
             if hasattr(self.task_engine, "enqueue_exploration_task"):
                 await self.task_engine.enqueue_exploration_task(
@@ -882,8 +901,10 @@ class Orchestrator:
                         "propose a new line of inquiry."
                     ),
                 )
-                logger.info("[Stagnation] Exploration task enqueued to break %s",
-                            directive.stagnation_type.value)
+                logger.info(
+                    "[Stagnation] Exploration task enqueued to break %s",
+                    directive.stagnation_type.value,
+                )
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
 
@@ -952,6 +973,7 @@ class Orchestrator:
             # (which sets a threading.Event) is safe — it won't corrupt the
             # event loop the way a raw signal.signal() callback might on Unix.
             import sys
+
             if sys.platform == "win32":
                 try:
                     signal.signal(
@@ -965,7 +987,8 @@ class Orchestrator:
                 except Exception as exc:
                     logger.warning(
                         "Could not install Windows SIGINT handler (%s) — "
-                        "Ctrl-C will still stop the process via KeyboardInterrupt", exc
+                        "Ctrl-C will still stop the process via KeyboardInterrupt",
+                        exc,
                     )
             else:
                 # Non-Windows environment with no signal support (e.g. a

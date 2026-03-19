@@ -65,9 +65,7 @@ class StagnationMonitor:
         embedding_backend: Optional[EmbeddingBackend] = None,
     ):
         self.config = config or StagnationMonitorConfig()
-        self.event_log = StagnationEventLog(
-            max_size=self.config.event_log_max_size
-        )
+        self.event_log = StagnationEventLog(max_size=self.config.event_log_max_size)
 
         # Resolve the embedding backend
         self._embed_backend = embedding_backend or make_embedding_backend(

@@ -41,13 +41,13 @@ from __future__ import annotations
 import json
 import re
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Extraction strategies (tried in order, from most strict to most lenient)
 # ---------------------------------------------------------------------------
+
 
 def _try_direct(text: str) -> dict | list | None:
     """
@@ -125,12 +125,12 @@ def _try_first_brace(text: str) -> dict | list | None:
 
     Returns the parsed object, or None if nothing parseable is found.
     """
-    for start_char, end_char in [('{', '}'), ('[', ']')]:
+    for start_char, end_char in [("{", "}"), ("[", "]")]:
         start = text.find(start_char)
         if start == -1:
             continue  # no opening brace/bracket found; try the other type
         # Walk character-by-character from the opening brace to find the match
-        depth = 0          # how many levels of nesting we're currently inside
+        depth = 0  # how many levels of nesting we're currently inside
         in_string = False  # are we inside a "..." string literal right now?
         escape_next = False  # is the next character escaped with a backslash?
         for i, ch in enumerate(text[start:], start=start):
@@ -138,7 +138,7 @@ def _try_first_brace(text: str) -> dict | list | None:
                 # This character is escaped — skip it, reset flag
                 escape_next = False
                 continue
-            if ch == '\\' and in_string:
+            if ch == "\\" and in_string:
                 # A backslash inside a string — next character is escaped
                 escape_next = True
                 continue
@@ -155,7 +155,7 @@ def _try_first_brace(text: str) -> dict | list | None:
                 depth -= 1
                 if depth == 0:
                     # We found the matching close — try to parse this slice
-                    candidate = text[start:i + 1]
+                    candidate = text[start : i + 1]
                     try:
                         return json.loads(candidate)
                     except json.JSONDecodeError:
@@ -185,7 +185,7 @@ def _try_relaxed(text: str) -> dict | list | None:
     json_start = None
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if stripped.startswith(('{', '[', '```')):
+        if stripped.startswith(("{", "[", "```")):
             json_start = i
             break
     if json_start is not None and json_start > 0:
@@ -204,10 +204,10 @@ def _try_relaxed(text: str) -> dict | list | None:
 # The name string is used only for logging — it helps diagnose how often each
 # strategy is needed in practice.
 STRATEGIES = [
-    ("direct",      _try_direct),       # best case: model responded with clean JSON
-    ("fenced",      _try_fenced),       # model wrapped JSON in ```json ... ```
+    ("direct", _try_direct),  # best case: model responded with clean JSON
+    ("fenced", _try_fenced),  # model wrapped JSON in ```json ... ```
     ("first_brace", _try_first_brace),  # model added prose before the JSON
-    ("relaxed",     _try_relaxed),      # model added multi-line prose before the JSON
+    ("relaxed", _try_relaxed),  # model added multi-line prose before the JSON
 ]
 
 
@@ -249,7 +249,10 @@ def extract_json(text: str) -> tuple[dict | list | None, str | None]:
 
     # All strategies failed — log a warning with the beginning of the text
     # so developers can see what the model actually returned.
-    logger.warning("All JSON extraction strategies failed for text (first 200 chars): %r", text[:200])
+    logger.warning(
+        "All JSON extraction strategies failed for text (first 200 chars): %r",
+        text[:200],
+    )
     return None, None
 
 

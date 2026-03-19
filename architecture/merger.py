@@ -57,7 +57,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
 
 from .schema import (
     ArchitectureState,
@@ -69,12 +68,6 @@ from .schema import (
     Relationship,
     SubsystemSummary,
     _to_dict,
-    _from_dict_component,
-    _from_dict_relationship,
-    _from_dict_decision,
-    _from_dict_rejected,
-    _from_dict_question,
-    _from_dict_subsystem,
     _from_dict_confidence,
 )
 
@@ -107,7 +100,8 @@ def merge_update(state: ArchitectureState, update: dict[str, Any]) -> Architectu
     3. Any non-serialisable accident (e.g. a live file handle) would fail
        loudly rather than silently copying something unsafe.
     """
-    import copy, json   # json is re-imported here for clarity; already imported at module level
+    import json  # json is re-imported here for clarity; already imported at module level
+
     # Serialise the whole current state to a JSON string, then parse it back
     # to a plain dict.  This gives us a completely independent deep copy.
     data: dict = json.loads(state.model_dump_json())
@@ -128,12 +122,26 @@ def merge_update(state: ArchitectureState, update: dict[str, Any]) -> Architectu
     # `setdefault("components", {})` ensures the key exists even if it was
     # missing from older JSON files — then we pass the dict to _merge_components
     # which modifies it in-place (within the plain dict, not the dataclass).
-    _merge_components(data.setdefault("components", {}), update.get("components", []), loop)
-    _merge_relationships(data.setdefault("relationships", {}), update.get("relationships", []), loop)
-    _merge_decisions(data.setdefault("decisions", {}), update.get("decisions", []), loop)
-    _merge_rejected(data.setdefault("rejected_alternatives", {}), update.get("rejected_alternatives", []), loop)
-    _merge_questions(data.setdefault("open_questions", {}), update.get("open_questions", []), loop)
-    _merge_subsystems(data.setdefault("subsystems", {}), update.get("subsystems", []), loop)
+    _merge_components(
+        data.setdefault("components", {}), update.get("components", []), loop
+    )
+    _merge_relationships(
+        data.setdefault("relationships", {}), update.get("relationships", []), loop
+    )
+    _merge_decisions(
+        data.setdefault("decisions", {}), update.get("decisions", []), loop
+    )
+    _merge_rejected(
+        data.setdefault("rejected_alternatives", {}),
+        update.get("rejected_alternatives", []),
+        loop,
+    )
+    _merge_questions(
+        data.setdefault("open_questions", {}), update.get("open_questions", []), loop
+    )
+    _merge_subsystems(
+        data.setdefault("subsystems", {}), update.get("subsystems", []), loop
+    )
 
     # Update overall document confidence if the AI provides a new score.
     # We use absorb() so the confidence shifts gradually, not abruptly.
@@ -158,6 +166,7 @@ def merge_update(state: ArchitectureState, update: dict[str, Any]) -> Architectu
 # ── helpers ─────────────────────────────────────────────────────────
 # These small helper functions are used by all the _merge_* functions below.
 # They're private (underscore prefix) because they're implementation details.
+
 
 def _find_by_name(collection: dict, name: str) -> tuple[str | None, dict | None]:
     """
@@ -230,6 +239,7 @@ def _apply_confidence(ex: dict, cv: float | None, cn: str | None) -> None:
 #      d. If found → update the existing item's fields.
 # All functions modify `col` (the collection dict) in-place.
 
+
 def _merge_components(col: dict, items: list, loop: int) -> None:
     """
     Merge a list of component dicts from the update into the component collection.
@@ -253,8 +263,8 @@ def _merge_components(col: dict, items: list, loop: int) -> None:
     loop  : The current macro-loop number (recorded on new/updated items).
     """
     for raw in items:
-        raw = dict(raw)      # make a mutable copy so we can pop fields safely
-        cv, cn = _pop_confidence(raw)   # extract and remove confidence fields
+        raw = dict(raw)  # make a mutable copy so we can pop fields safely
+        cv, cn = _pop_confidence(raw)  # extract and remove confidence fields
         name = raw.get("name", "")
         ek, ex = _find_by_name(col, name)  # look for existing component
 
@@ -267,17 +277,19 @@ def _merge_components(col: dict, items: list, loop: int) -> None:
                 subsystem=raw.get("subsystem"),
                 tags=raw.get("tags", []),
                 metadata=raw.get("metadata", {}),
-                first_seen_loop=loop,    # stamp when we first saw this
+                first_seen_loop=loop,  # stamp when we first saw this
                 last_updated_loop=loop,
             )
             if cv is not None:
                 # Override the default confidence score if the AI specified one
-                c.confidence = ConfidenceScore(value=cv, evidence_count=1, notes=[cn] if cn else [])
+                c.confidence = ConfidenceScore(
+                    value=cv, evidence_count=1, notes=[cn] if cn else []
+                )
             # Serialise to plain dict for storage (col holds plain dicts, not dataclasses)
             col[c.id] = _to_dict(c)
         else:
             # ── UPDATE existing component ──
-            ex = dict(ex)    # make a mutable copy of the existing dict
+            ex = dict(ex)  # make a mutable copy of the existing dict
 
             # Only overwrite simple scalar fields if the update has something new
             for f in ("description", "subsystem", "tags", "metadata"):
@@ -291,8 +303,8 @@ def _merge_components(col: dict, items: list, loop: int) -> None:
                     ex.setdefault("responsibilities", []).append(r)
 
             ex["last_updated_loop"] = loop
-            _apply_confidence(ex, cv, cn)   # blend in the new confidence score
-            col[ek] = ex                    # write back the updated dict
+            _apply_confidence(ex, cv, cn)  # blend in the new confidence score
+            col[ek] = ex  # write back the updated dict
 
 
 def _merge_relationships(col: dict, items: list, loop: int) -> None:
@@ -317,32 +329,40 @@ def _merge_relationships(col: dict, items: list, loop: int) -> None:
         cv, cn = _pop_confidence(raw)
 
         # The source and target can be specified as IDs or as names
-        src  = raw.get("source_id") or raw.get("source_name", "")
-        tgt  = raw.get("target_id") or raw.get("target_name", "")
+        src = raw.get("source_id") or raw.get("source_name", "")
+        tgt = raw.get("target_id") or raw.get("target_name", "")
         kind = raw.get("kind", "depends_on")
 
         # Build a unique signature string for this relationship
-        sig  = f"{src}::{tgt}::{kind}"
+        sig = f"{src}::{tgt}::{kind}"
 
         # Search for an existing relationship with the same signature
-        ek   = next(
-            (k for k, v in col.items()
-             if f"{v.get('source_id','')}{v.get('source_name','')}::"
-                f"{v.get('target_id','')}{v.get('target_name','')}::{v.get('kind','')}" == sig),
+        ek = next(
+            (
+                k
+                for k, v in col.items()
+                if f"{v.get('source_id', '')}{v.get('source_name', '')}::"
+                f"{v.get('target_id', '')}{v.get('target_name', '')}::{v.get('kind', '')}"
+                == sig
+            ),
             None,
         )
 
         if ek is None:
             # ── CREATE new relationship ──
             r = Relationship(
-                source_id=src, target_id=tgt,
+                source_id=src,
+                target_id=tgt,
                 kind=kind,
                 description=raw.get("description", ""),
                 interface_contract=raw.get("interface_contract", ""),
-                first_seen_loop=loop, last_updated_loop=loop,
+                first_seen_loop=loop,
+                last_updated_loop=loop,
             )
             if cv is not None:
-                r.confidence = ConfidenceScore(value=cv, evidence_count=1, notes=[cn] if cn else [])
+                r.confidence = ConfidenceScore(
+                    value=cv, evidence_count=1, notes=[cn] if cn else []
+                )
             col[r.id] = _to_dict(r)
         else:
             # ── UPDATE existing relationship ──
@@ -384,14 +404,17 @@ def _merge_decisions(col: dict, items: list, loop: int) -> None:
                 title=title,
                 description=raw.get("description", ""),
                 rationale=raw.get("rationale", ""),
-                status=raw.get("status", "proposed"),   # default to proposed
+                status=raw.get("status", "proposed"),  # default to proposed
                 subsystem=raw.get("subsystem"),
                 alternatives_considered=raw.get("alternatives_considered", []),
                 tags=raw.get("tags", []),
-                first_seen_loop=loop, last_updated_loop=loop,
+                first_seen_loop=loop,
+                last_updated_loop=loop,
             )
             if cv is not None:
-                d.confidence = ConfidenceScore(value=cv, evidence_count=1, notes=[cn] if cn else [])
+                d.confidence = ConfidenceScore(
+                    value=cv, evidence_count=1, notes=[cn] if cn else []
+                )
             col[d.id] = _to_dict(d)
         else:
             # ── UPDATE existing decision ──
@@ -466,7 +489,11 @@ def _merge_questions(col: dict, items: list, loop: int) -> None:
 
         # Search for an existing question with the same text
         ek = next(
-            (k for k, v in col.items() if v.get("question", "").lower() == text.lower()),
+            (
+                k
+                for k, v in col.items()
+                if v.get("question", "").lower() == text.lower()
+            ),
             None,
         )
 
@@ -488,7 +515,14 @@ def _merge_questions(col: dict, items: list, loop: int) -> None:
             # Allow ANY of these fields to be updated, including resolved/resolution
             # This is how a question gets "answered" in a later loop.
             ex = dict(col[ek])
-            for f in ("context", "subsystem", "priority", "resolved", "resolution", "resolved_loop"):
+            for f in (
+                "context",
+                "subsystem",
+                "priority",
+                "resolved",
+                "resolution",
+                "resolved_loop",
+            ):
                 # Use `is not None` (not just `if raw.get(f)`) because False and 0
                 # are valid values that we want to store (e.g. resolved=False)
                 if raw.get(f) is not None:
@@ -528,7 +562,9 @@ def _merge_subsystems(col: dict, items: list, loop: int) -> None:
                 last_updated_loop=loop,
             )
             if cv is not None:
-                s.confidence = ConfidenceScore(value=cv, evidence_count=1, notes=[cn] if cn else [])
+                s.confidence = ConfidenceScore(
+                    value=cv, evidence_count=1, notes=[cn] if cn else []
+                )
             # Note: subsystems use the name as key, not the ID, for readability
             col[name] = _to_dict(s)
         else:

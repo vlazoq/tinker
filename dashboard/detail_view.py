@@ -18,7 +18,7 @@ from rich.syntax import Syntax
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Header, RichLog, Static
+from textual.widgets import RichLog, Static
 
 
 class DetailScreen(ModalScreen[None]):
@@ -60,29 +60,34 @@ class DetailScreen(ModalScreen[None]):
 
     BINDINGS = [
         ("escape", "dismiss", "Close"),
-        ("q",      "dismiss", "Close"),
-        ("enter",  "dismiss", "Close"),
+        ("q", "dismiss", "Close"),
+        ("enter", "dismiss", "Close"),
     ]
 
     def __init__(
         self,
-        title:     str = "Detail",
-        content:   str = "",
-        render_as: str = "text",   # "text" | "markdown" | "json"
+        title: str = "Detail",
+        content: str = "",
+        render_as: str = "text",  # "text" | "markdown" | "json"
     ) -> None:
         super().__init__()
-        self._title     = title
-        self._content   = content
+        self._title = title
+        self._content = content
         self._render_as = render_as
 
     def compose(self) -> ComposeResult:
         with Static(id="detail-container"):
             yield Static(f"  {self._title}", id="detail-title")
-            yield RichLog(id="detail-log", highlight=True, markup=False,
-                          wrap=True, max_lines=10_000)
+            yield RichLog(
+                id="detail-log",
+                highlight=True,
+                markup=False,
+                wrap=True,
+                max_lines=10_000,
+            )
             yield Static(
-                Text(" Esc / q / Enter — close", style="dim"),
-                id="detail-footer")
+                Text(" Esc / q / Enter — close", style="dim"), id="detail-footer"
+            )
 
     def on_mount(self) -> None:
         log = self.query_one("#detail-log", RichLog)
@@ -103,7 +108,7 @@ class DetailScreen(ModalScreen[None]):
 # Convenience builders
 # ──────────────────────────────────────────
 
-from .state import (
+from .state import (  # noqa: E402
     ArchitectOutput,
     ArchitectureState,
     CriticOutput,
@@ -138,7 +143,7 @@ def detail_for_task(task: TaskInfo) -> DetailScreen:
 
 def detail_for_architect(a: ArchitectOutput) -> DetailScreen:
     lines = [
-        f"# Architect Output",
+        "# Architect Output",
         f"**Timestamp** {a.timestamp}",
         f"**Task**      {a.task_id or '—'}",
         "",
@@ -157,7 +162,7 @@ def detail_for_architect(a: ArchitectOutput) -> DetailScreen:
 
 def detail_for_critic(c: CriticOutput) -> DetailScreen:
     lines = [
-        f"# Critic Output",
+        "# Critic Output",
         f"**Timestamp** {c.timestamp}",
         f"**Score**     {c.score:.1f}/10",
         f"**Task**      {c.task_id or '—'}",

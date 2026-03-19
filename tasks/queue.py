@@ -45,7 +45,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from .schema import Task, TaskStatus
-from .scorer import PriorityScorer, ScorerWeights
+from .scorer import PriorityScorer
 from .resolver import DependencyResolver
 
 # Only imported for type hints (avoids circular imports at runtime)
@@ -67,6 +67,7 @@ def _now_str() -> str:
 # =============================================================================
 # TaskQueue class
 # =============================================================================
+
 
 class TaskQueue:
     """
@@ -106,7 +107,7 @@ class TaskQueue:
     ):
         self.registry = registry
         # Use provided scorer or create one with default weights
-        self.scorer   = scorer or PriorityScorer()
+        self.scorer = scorer or PriorityScorer()
         # Use provided resolver or create a stateless one
         self.resolver = resolver or DependencyResolver()
 
@@ -172,7 +173,10 @@ class TaskQueue:
 
         log.info(
             "TaskQueue dispatched task '%s' [%s/%s] score=%.4f",
-            task.id, task.type.value, task.subsystem.value, task.priority_score,
+            task.id,
+            task.type.value,
+            task.subsystem.value,
+            task.priority_score,
         )
         return task
 
@@ -252,7 +256,7 @@ class TaskQueue:
         if task is None:
             return None
         task.status = TaskStatus.CRITIQUE
-        task.touch()             # Update the timestamp
+        task.touch()  # Update the timestamp
         self.registry.save(task)
         return task
 
@@ -291,7 +295,7 @@ class TaskQueue:
         task = self.registry.get(task_id)
         if task is None:
             return None
-        task.critique_notes = notes       # Save the rejection reason
+        task.critique_notes = notes  # Save the rejection reason
         task.status = TaskStatus.PENDING  # Put it back in the work queue
         task.touch()
         self.registry.save(task)
@@ -321,12 +325,12 @@ class TaskQueue:
         # Score the pending tasks to know which one is currently "top"
         scored = self.scorer.score_all(pending)
         return {
-            "counts":          counts,
-            "depth":           counts.get("pending", 0),
-            "top_task":        scored[0].title if scored else None,
-            "top_score":       scored[0].priority_score if scored else 0.0,
+            "counts": counts,
+            "depth": counts.get("pending", 0),
+            "top_task": scored[0].title if scored else None,
+            "top_score": scored[0].priority_score if scored else 0.0,
             # Show the exploration band as a human-readable percentage range
-            "exploration_pct": f"{self._expl_min*100:.0f}-{self._expl_max*100:.0f}%",
+            "exploration_pct": f"{self._expl_min * 100:.0f}-{self._expl_max * 100:.0f}%",
         }
 
     # =========================================================================
@@ -357,14 +361,10 @@ class TaskQueue:
 
         # Split tasks into exploration vs. regular pools
         exploration_pool = [t for t in scored if t.is_exploration]
-        regular_pool     = [t for t in scored if not t.is_exploration]
-
         # Roll dice for the exploration slot
         if exploration_pool:
             # Draw the threshold uniformly from [_expl_min, _expl_max]
-            exploration_threshold = random.uniform(
-                self._expl_min, self._expl_max
-            )
+            exploration_threshold = random.uniform(self._expl_min, self._expl_max)
             # Draw a random number; if it's below the threshold, use exploration
             if random.random() < exploration_threshold:
                 # Pick any exploration task at random (not necessarily the

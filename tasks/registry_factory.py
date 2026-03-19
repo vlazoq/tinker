@@ -48,7 +48,7 @@ import os
 from typing import Any
 
 from .abstract_registry import AbstractTaskRegistry
-from .registry          import SQLiteTaskRegistry
+from .registry import SQLiteTaskRegistry
 from .postgres_registry import PostgresTaskRegistry
 
 
@@ -83,9 +83,8 @@ def create_task_registry(
         installed.
     """
     effective_backend = (
-        backend
-        or os.getenv("TINKER_DB_BACKEND", "sqlite")
-    ).lower().strip()
+        (backend or os.getenv("TINKER_DB_BACKEND", "sqlite")).lower().strip()
+    )
 
     if effective_backend == "sqlite":
         db_path = kwargs.get("db_path") or os.getenv(
@@ -94,7 +93,7 @@ def create_task_registry(
         return SQLiteTaskRegistry(db_path=db_path)
 
     if effective_backend in ("postgres", "postgresql"):
-        dsn      = kwargs.get("dsn")      or os.getenv("TINKER_POSTGRES_DSN", "")
+        dsn = kwargs.get("dsn") or os.getenv("TINKER_POSTGRES_DSN", "")
         min_conn = kwargs.get("min_conn", 1)
         max_conn = kwargs.get("max_conn", 10)
         return PostgresTaskRegistry(dsn=dsn, min_conn=min_conn, max_conn=max_conn)

@@ -69,7 +69,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -80,15 +80,17 @@ logger = logging.getLogger(__name__)
 try:
     import prometheus_client as _prom
     from prometheus_client import Counter, Gauge, Histogram, start_http_server
+
     _PROM_AVAILABLE = True
 except ImportError:
-    _prom = None                    # type: ignore[assignment]
+    _prom = None  # type: ignore[assignment]
     _PROM_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
 # TinkerMetrics
 # ---------------------------------------------------------------------------
+
 
 class TinkerMetrics:
     """
@@ -207,7 +209,9 @@ class TinkerMetrics:
         except OSError as exc:
             # Port already in use or permission denied.  Log and continue —
             # a failed metrics server should never crash Tinker.
-            logger.warning("Could not start metrics server on port %d: %s", self._port, exc)
+            logger.warning(
+                "Could not start metrics server on port %d: %s", self._port, exc
+            )
             self._enabled = False
 
     # ── Hooks called by the Orchestrator ────────────────────────────────────

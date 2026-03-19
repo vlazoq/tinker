@@ -48,7 +48,9 @@ from .base import BaseTool, ToolSchema
 # then fall back to the bare SEARXNG_URL for backwards compatibility with older configs.
 # The "or" chains the two os.getenv calls: if the first returns None, try the second.
 # Honour both the Tinker-prefixed name (canonical) and the bare name (legacy)
-SEARXNG_URL = os.getenv("TINKER_SEARXNG_URL") or os.getenv("SEARXNG_URL", "http://localhost:8080")
+SEARXNG_URL = os.getenv("TINKER_SEARXNG_URL") or os.getenv(
+    "SEARXNG_URL", "http://localhost:8080"
+)
 
 
 class WebSearchTool(BaseTool):
@@ -148,7 +150,9 @@ class WebSearchTool(BaseTool):
                         "default": "en",
                     },
                 },
-                "required": ["query"],   # only "query" is mandatory; the rest have defaults
+                "required": [
+                    "query"
+                ],  # only "query" is mandatory; the rest have defaults
             },
             returns=(
                 "List of dicts: [{title, url, snippet, engine, score}] "
@@ -160,13 +164,13 @@ class WebSearchTool(BaseTool):
     # Implementation
     # ------------------------------------------------------------------
 
-    async def _execute(                     # type: ignore[override]
+    async def _execute(  # type: ignore[override]
         self,
         query: str,
         num_results: int = 10,
         categories: list[str] | None = None,
         language: str = "en",
-        **_: Any,   # absorb any extra kwargs the caller passes; we don't use them
+        **_: Any,  # absorb any extra kwargs the caller passes; we don't use them
     ) -> list[dict]:
         """
         Execute the web search and return a list of result dicts.
@@ -201,8 +205,8 @@ class WebSearchTool(BaseTool):
         # Build the form data that SearXNG's /search endpoint expects.
         # SearXNG uses a POST request with form-encoded data (not JSON body).
         payload = {
-            "q": query,              # "q" is the standard search query parameter name
-            "format": "json",        # ask SearXNG to return JSON instead of HTML
+            "q": query,  # "q" is the standard search query parameter name
+            "format": "json",  # ask SearXNG to return JSON instead of HTML
             "language": language,
             # SearXNG expects categories as a comma-separated string, e.g. "general,it"
             "categories": ",".join(categories),
@@ -212,6 +216,7 @@ class WebSearchTool(BaseTool):
         # This is "lazy importing" — if httpx isn't installed, this tool fails with
         # a clear ImportError when called, rather than breaking all of tools/ at import time.
         import httpx
+
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             # POST to the /search endpoint with form data.
             resp = await client.post(f"{self._url}/search", data=payload)
@@ -230,11 +235,17 @@ class WebSearchTool(BaseTool):
         for r in results[:num_results]:
             trimmed.append(
                 {
-                    "title":   r.get("title", ""),
-                    "url":     r.get("url", ""),
-                    "snippet": r.get("content", ""),   # SearXNG calls it "content"; we call it "snippet"
-                    "engine":  r.get("engine", ""),    # which underlying search engine returned this
-                    "score":   round(r.get("score", 0.0), 4),  # relevance score, rounded for readability
+                    "title": r.get("title", ""),
+                    "url": r.get("url", ""),
+                    "snippet": r.get(
+                        "content", ""
+                    ),  # SearXNG calls it "content"; we call it "snippet"
+                    "engine": r.get(
+                        "engine", ""
+                    ),  # which underlying search engine returned this
+                    "score": round(
+                        r.get("score", 0.0), 4
+                    ),  # relevance score, rounded for readability
                 }
             )
         return trimmed

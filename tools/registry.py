@@ -252,7 +252,7 @@ class ToolRegistry:
         # Step 1: look up the tool. If it's missing, return a "not found" error.
         try:
             tool = self.get_tool(tool_name)
-        except KeyError as exc:
+        except (KeyError, ToolNotFoundError) as exc:
             # We return an error ToolResult rather than raising, so the caller
             # never has to wrap this call in a try/except.
             return ToolResult(
@@ -272,7 +272,9 @@ class ToolRegistry:
 
         # Step 3: log the outcome at different levels depending on success/failure.
         if result.success:
-            logger.debug("Tool '%s' succeeded in %.1f ms", tool_name, result.duration_ms)
+            logger.debug(
+                "Tool '%s' succeeded in %.1f ms", tool_name, result.duration_ms
+            )
         else:
             logger.warning(
                 "Tool '%s' failed in %.1f ms: %s",
@@ -405,11 +407,13 @@ class ToolRegistry:
             if scrape_result.success:
                 data = scrape_result.data or {}
                 # The scraper returns a dict; pull the "text" field.
-                scraped_text = data.get("text", "") if isinstance(data, dict) else str(data)
+                scraped_text = (
+                    data.get("text", "") if isinstance(data, dict) else str(data)
+                )
 
         # Step 4: build the list of source URLs from all search results.
         sources = []
-        for r in (search_data.get("results") or []):
+        for r in search_data.get("results") or []:
             url = r.get("url", "")
             if url:
                 sources.append(url)
@@ -431,11 +435,12 @@ class ToolRegistry:
 # Factory — build the default registry with all standard tools
 # ---------------------------------------------------------------------------
 
+
 def build_default_registry(
     searxng_url: str | None = None,
     artifact_output_dir: str | None = None,
     diagram_output_dir: str | None = None,
-    memory_manager=None,          # MemoryManagerProtocol | None
+    memory_manager=None,  # MemoryManagerProtocol | None
 ) -> ToolRegistry:
     """
     Create and return a ToolRegistry pre-loaded with all built-in Tinker tools.

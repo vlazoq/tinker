@@ -18,42 +18,59 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import sys
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tinker Observability Dashboard")
-    parser.add_argument("--mock",    action="store_true", default=True,
-                        help="Run with synthetic mock Orchestrator (default)")
-    parser.add_argument("--redis",   metavar="URL", default=None,
-                        help="Redis URL for pub/sub mode")
-    parser.add_argument("--refresh", metavar="SEC", type=float, default=1.0,
-                        help="UI refresh interval (seconds)")
-    parser.add_argument("--log-level", metavar="LEVEL", default="DEBUG",
-                        dest="log_level")
+    parser.add_argument(
+        "--mock",
+        action="store_true",
+        default=True,
+        help="Run with synthetic mock Orchestrator (default)",
+    )
+    parser.add_argument(
+        "--redis", metavar="URL", default=None, help="Redis URL for pub/sub mode"
+    )
+    parser.add_argument(
+        "--refresh",
+        metavar="SEC",
+        type=float,
+        default=1.0,
+        help="UI refresh interval (seconds)",
+    )
+    parser.add_argument(
+        "--log-level", metavar="LEVEL", default="DEBUG", dest="log_level"
+    )
     args = parser.parse_args()
 
     # ── stdlib log bridge ─────────────────────────────────────────
     from .log_handler import install_stdlib_bridge
+
     logging.basicConfig(level=logging.DEBUG)
     install_stdlib_bridge()
 
     # ── choose subscriber ─────────────────────────────────────────
     if args.redis:
         from .subscriber import RedisSubscriber
+
         subscriber = RedisSubscriber(redis_url=args.redis)
-        use_mock   = False
+        use_mock = False
     else:
         from .subscriber import QueueSubscriber
+
         subscriber = QueueSubscriber()
-        use_mock   = True
+        use_mock = True
 
     # ── loguru sink (if loguru is installed) ──────────────────────
     try:
         from loguru import logger
         from .log_handler import loguru_sink
-        logger.add(loguru_sink, format="{time}|{level}|{name}:{function}:{line}|{message}",
-                   colorize=False)
+
+        logger.add(
+            loguru_sink,
+            format="{time}|{level}|{name}:{function}:{line}|{message}",
+            colorize=False,
+        )
     except ImportError:
         pass
 
