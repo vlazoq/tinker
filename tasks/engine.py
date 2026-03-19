@@ -87,6 +87,26 @@ class TaskEngine:
             None, self.queue.complete_task, task_id, out
         )
 
+    async def fail_task(
+        self,
+        task_id: str,
+        reason: str = "",
+    ) -> None:
+        """
+        Mark a task as FAILED with an optional reason.
+
+        Called by the orchestrator when an agent produces an unusable result
+        or an exception is raised during execution.
+
+        Parameters
+        ----------
+        task_id : ID of the task to fail.
+        reason  : Human-readable explanation stored in task metadata.
+        """
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.queue.fail_task, task_id, reason
+        )
+
     async def generate_tasks(
         self,
         parent_task: dict,

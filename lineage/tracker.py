@@ -126,6 +126,11 @@ class LineageTracker:
             await self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS lineage_child_idx ON lineage_edges (child_id)"
             )
+            # Composite index speeds up the common cycle-detection pattern:
+            # "does (child_id, parent_id) pair already exist as (parent_id, child_id)?"
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS lineage_pair_idx ON lineage_edges (parent_id, child_id)"
+            )
             await self._conn.commit()
             logger.info("LineageTracker connected to %s", self._db_path)
         except ImportError:
@@ -268,63 +273,65 @@ class LineageTracker:
         self, entity_id: str, max_depth: int = 10
     ) -> list[dict]:
         """
-        Recursively get all ancestors of an entity up to ``max_depth`` levels.
+        Iteratively get all ancestors of an entity up to ``max_depth`` levels.
 
-        Useful for answering "what inputs produced this final artifact?".
+        Uses BFS to avoid Python's recursion limit for deep provenance graphs.
 
         Parameters
         ----------
         entity_id : Starting entity ID.
-        max_depth : Maximum recursion depth (prevents infinite loops).
+        max_depth : Maximum traversal depth (prevents infinite loops).
 
         Returns
         -------
-        list[dict] : All ancestor edges, ordered from root to immediate parents.
+        list[dict] : All ancestor edges, breadth-first from immediate parents outward.
         """
-        visited = set()
-        all_edges = []
+        visited: set[str] = set()
+        all_edges: list[dict] = []
+        # Queue holds (entity_id, current_depth) pairs
+        queue: list[tuple[str, int]] = [(entity_id, 0)]
 
-        async def _recurse(eid: str, depth: int) -> None:
+        while queue:
+            eid, depth = queue.pop(0)
             if depth >= max_depth or eid in visited:
-                return
+                continue
             visited.add(eid)
             parents = await self.get_parents(eid)
             for edge in parents:
                 all_edges.append(edge)
-                await _recurse(edge["parent_id"], depth + 1)
+                queue.append((edge["parent_id"], depth + 1))
 
-        await _recurse(entity_id, 0)
         return all_edges
 
     async def get_descendants(self, entity_id: str, max_depth: int = 10) -> list[dict]:
         """
-        Recursively get all descendants of an entity (downstream impact analysis).
+        Iteratively get all descendants of an entity (downstream impact analysis).
 
-        Useful for answering "if I change task X, what artifacts and syntheses
-        will be affected?".
+        Uses BFS to avoid Python's recursion limit for deep lineage graphs.
 
         Parameters
         ----------
         entity_id : Starting entity ID.
-        max_depth : Maximum recursion depth.
+        max_depth : Maximum traversal depth.
 
         Returns
         -------
-        list[dict] : All descendant edges, ordered from immediate children outward.
+        list[dict] : All descendant edges, breadth-first from immediate children outward.
         """
         visited: set[str] = set()
         all_edges: list[dict] = []
+        queue: list[tuple[str, int]] = [(entity_id, 0)]
 
-        async def _recurse(eid: str, depth: int) -> None:
+        while queue:
+            eid, depth = queue.pop(0)
             if depth >= max_depth or eid in visited:
-                return
+                continue
             visited.add(eid)
             children = await self.get_children(eid)
             for edge in children:
                 all_edges.append(edge)
-                await _recurse(edge["child_id"], depth + 1)
+                queue.append((edge["child_id"], depth + 1))
 
-        await _recurse(entity_id, 0)
         return all_edges
 
     async def get_by_type(self, entity_type: str, role: str = "either") -> list[dict]:

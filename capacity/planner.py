@@ -202,6 +202,22 @@ class CapacityPlanner:
         else:
             self._snapshots.append(CapacitySnapshot(artifact_count=total))
 
+    def record_redis_memory(self, used_mb: float) -> None:
+        """
+        Record current Redis working-memory usage in megabytes.
+
+        Call this periodically (e.g. via ``INFO memory`` from the Redis client)
+        to populate the ``redis_memory_mb`` field in snapshots.
+
+        Parameters
+        ----------
+        used_mb : Redis ``used_memory`` in megabytes.
+        """
+        if self._snapshots:
+            self._snapshots[-1].redis_memory_mb = used_mb
+        else:
+            self._snapshots.append(CapacitySnapshot(redis_memory_mb=used_mb))
+
     def set_threshold(self, resource: str, max_value: float) -> None:
         """
         Set a capacity threshold that triggers an alert if exceeded.
@@ -245,6 +261,19 @@ class CapacityPlanner:
             if est > max_t:
                 alerts.append(f"TOKEN RATE EXCEEDED: {est:,}/day > {max_t:,}/day limit")
 
+        if "artifact_count" in self._thresholds:
+            current_count = rpt.get("current_artifact_count", 0)
+            max_count = int(self._thresholds["artifact_count"])
+            if current_count > max_count:
+                alerts.append(
+                    f"ARTIFACT COUNT EXCEEDED: {current_count} > {max_count} limit"
+                )
+            elif current_count > max_count * 0.8:
+                alerts.append(
+                    f"ARTIFACT COUNT WARNING: {current_count} = "
+                    f"{current_count / max_count * 100:.0f}% of {max_count} limit"
+                )
+
         # Disk-full projection using actual partition free space
         disk_full_hours = rpt.get("estimated_disk_full_in_hours")
         if disk_full_hours is not None and disk_full_hours < self._disk_hours_warning:
@@ -287,6 +316,7 @@ class CapacityPlanner:
         rpt["current_disk_mb"] = round(latest.disk_mb, 2)
         rpt["disk_free_gb"] = round(latest.disk_free_gb, 2)
         rpt["current_artifact_count"] = latest.artifact_count
+        rpt["redis_memory_mb"] = round(latest.redis_memory_mb, 2)
 
         # Calculate hourly rates if we have enough data
         elapsed_hours = (time.monotonic() - self._start_time) / 3600

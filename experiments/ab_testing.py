@@ -294,9 +294,10 @@ class ABTestingFramework:
             control = next(iter(exp.variants))
             return control, exp.variants[control]
 
-        # Deterministic hash assignment
+        # Deterministic hash assignment — SHA-256 avoids FIPS-mode MD5 restrictions
+        # while remaining just as fast for this use case (non-cryptographic hashing).
         hash_input = f"{self._seed}:{experiment_name}:{unit_id}"
-        hash_val = int(hashlib.md5(hash_input.encode()).hexdigest(), 16)
+        hash_val = int(hashlib.sha256(hash_input.encode()).hexdigest(), 16)
         variant_names = list(exp.variants.keys())
         assigned = variant_names[hash_val % len(variant_names)]
         return assigned, exp.variants[assigned]
@@ -418,6 +419,25 @@ class ABTestingFramework:
         if exp:
             exp.active = False
             logger.info("A/B experiment '%s' deactivated", experiment_name)
+
+    def reset_experiment(self, experiment_name: str) -> None:
+        """
+        Clear all recorded outcomes for an experiment without removing it.
+
+        Useful when starting a new measurement window (e.g. after a config change)
+        while keeping the same experiment definition.
+
+        Parameters
+        ----------
+        experiment_name : Name of the experiment to reset.
+        """
+        exp = self._experiments.get(experiment_name)
+        if not exp:
+            logger.warning("reset_experiment: experiment '%s' not found", experiment_name)
+            return
+        for variant in exp.variants:
+            exp.outcomes[variant] = []
+        logger.info("A/B experiment '%s' outcomes cleared", experiment_name)
 
     def all_reports(self) -> dict[str, dict]:
         """Analyse all experiments and return a dict of reports."""

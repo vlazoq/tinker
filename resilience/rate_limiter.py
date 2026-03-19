@@ -129,38 +129,37 @@ class TokenBucketRateLimiter:
         This method is safe to call concurrently from multiple coroutines.
         """
         effective_cost = cost if cost is not None else self._cost
-        t0 = time.monotonic()
+        total_slept = 0.0
 
-        async with self._lock:
-            self._refill()
-            wait_time = 0.0
-
-            if self._tokens < effective_cost:
-                # Calculate how long until we have enough tokens
-                deficit = effective_cost - self._tokens
-                wait_time = deficit / self._rate
-
-            if wait_time > 0:
-                self._calls_throttled += 1
-                logger.debug(
-                    "RateLimiter '%s': throttling %.2fs (tokens=%.2f, need=%.2f)",
-                    self.name,
-                    wait_time,
-                    self._tokens,
-                    effective_cost,
-                )
-
-        if wait_time > 0:
-            await asyncio.sleep(wait_time)
+        while True:
             async with self._lock:
                 self._refill()
+                if self._tokens >= effective_cost:
+                    # Enough tokens available — consume and return.
+                    self._tokens -= effective_cost
+                    self._total_calls += 1
+                    self._total_wait_seconds += total_slept
+                    return
+                # Not enough tokens yet: compute how long to wait for the deficit
+                # and release the lock while sleeping so other coroutines can run.
+                deficit = effective_cost - self._tokens
+                wait_time = deficit / self._rate
+                if total_slept == 0.0:
+                    # Only count as throttled on the first wait, not on re-checks.
+                    self._calls_throttled += 1
+                    logger.debug(
+                        "RateLimiter '%s': throttling %.2fs (tokens=%.2f, need=%.2f)",
+                        self.name,
+                        wait_time,
+                        self._tokens,
+                        effective_cost,
+                    )
 
-        async with self._lock:
-            self._tokens -= effective_cost
-            self._tokens = max(0.0, self._tokens)
-            self._total_calls += 1
-            elapsed = time.monotonic() - t0
-            self._total_wait_seconds += elapsed
+            # Sleep outside the lock so the bucket can refill and other callers
+            # can make progress.  After waking we re-enter the lock to re-check
+            # (another coroutine may have consumed tokens during our sleep).
+            await asyncio.sleep(wait_time)
+            total_slept += wait_time
 
     def record_tokens(self, token_count: int) -> None:
         """
@@ -177,6 +176,11 @@ class TokenBucketRateLimiter:
 
     def stats(self) -> dict:
         """Return current rate limiter statistics for monitoring/alerting."""
+        throttle_pct = (
+            round(self._calls_throttled / self._total_calls * 100, 1)
+            if self._total_calls
+            else 0.0
+        )
         return {
             "name": self.name,
             "rate_per_second": self._rate,
@@ -184,9 +188,17 @@ class TokenBucketRateLimiter:
             "current_tokens": round(self._tokens, 2),
             "total_calls": self._total_calls,
             "calls_throttled": self._calls_throttled,
+            "throttle_pct": throttle_pct,
             "total_wait_seconds": round(self._total_wait_seconds, 2),
             "total_llm_tokens": self._total_tokens_used,
         }
+
+    def reset_stats(self) -> None:
+        """Reset all counters (useful for per-interval reporting or tests)."""
+        self._total_calls = 0
+        self._total_wait_seconds = 0.0
+        self._total_tokens_used = 0
+        self._calls_throttled = 0
 
     async def __aenter__(self):
         await self.acquire()
