@@ -610,6 +610,23 @@ class Orchestrator:
             self.state.current_task_id = record.task_id
             self.state.current_subsystem = record.subsystem
 
+            # ── Per-loop cost attribution ───────────────────────────────────
+            # Log token consumption for this micro loop so operators can
+            # track per-iteration cost without querying the metrics system.
+            arch_tokens = record.architect_tokens or 0
+            critic_tokens = record.critic_tokens or 0
+            total_tokens = arch_tokens + critic_tokens
+            logger.info(
+                "micro[%d] cost — architect_tokens=%d critic_tokens=%d "
+                "total_tokens=%d task=%s subsystem=%s",
+                self.state.total_micro_loops,
+                arch_tokens,
+                critic_tokens,
+                total_tokens,
+                record.task_id,
+                record.subsystem,
+            )
+
             # Add the record to the rolling history (capped at 100 entries).
             self.state.add_micro_record(record)
 
@@ -878,11 +895,27 @@ class Orchestrator:
             InterventionType.ALTERNATIVE_FORCING,
             InterventionType.INJECT_CONTRADICTION,
         ):
-            # Record the intent; prompt-level injection is a future improvement.
-            # The log entry alone is useful for post-run analysis.
+            # Build a one-shot prompt hint that micro_loop.py will inject into
+            # the Architect's context on the next call, then clear automatically.
+            if itype == InterventionType.ALTERNATIVE_FORCING:
+                hint = (
+                    "[STAGNATION INTERVENTION — ALTERNATIVE FORCING] "
+                    "You have been cycling through similar solutions. "
+                    "Deliberately propose an approach you have NOT tried before. "
+                    "Reject any solution that resembles previous proposals and "
+                    "instead explore a fundamentally different design direction."
+                )
+            else:  # INJECT_CONTRADICTION
+                hint = (
+                    "[STAGNATION INTERVENTION — INJECT CONTRADICTION] "
+                    "Actively challenge your current assumptions. "
+                    "Identify the core hypothesis behind your recent proposals "
+                    "and argue the opposite: what if that hypothesis is wrong? "
+                    "Build your next proposal around the counter-hypothesis."
+                )
+            self.state.pending_stagnation_hint = hint
             logger.info(
-                "[Stagnation] %s noted — prompt injection not yet wired "
-                "(will be addressed in a future micro_loop.py update)",
+                "[Stagnation] %s — prompt hint queued for next micro loop",
                 itype.value,
             )
 

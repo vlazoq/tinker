@@ -306,6 +306,45 @@ class TaskQueue:
     # Queue introspection
     # =========================================================================
 
+    def prune_to_max_depth(self, max_depth: int) -> int:
+        """
+        Evict the lowest-priority PENDING tasks when the queue exceeds
+        ``max_depth``.
+
+        Keeps the ``max_depth`` highest-scored tasks and marks the rest as
+        FAILED with an eviction reason recorded in their metadata.  This
+        prevents the queue from growing unbounded when the system generates
+        tasks faster than it can process them.
+
+        Parameters
+        ----------
+        max_depth : Maximum number of PENDING tasks to retain.
+
+        Returns
+        -------
+        int : The number of tasks evicted (0 if the queue was already within
+              the limit).
+        """
+        pending = self.registry.by_status(TaskStatus.PENDING)
+        if len(pending) <= max_depth:
+            return 0
+
+        # Score and sort so we can identify the tail (lowest-priority tasks)
+        scored = self.scorer.score_all(pending)  # sorted descending
+        to_evict = scored[max_depth:]
+
+        for task in to_evict:
+            task.mark_failed("evicted by max-depth pruning")
+            task.metadata["eviction_reason"] = "max_depth_pruning"
+            self.registry.save(task)
+
+        log.info(
+            "TaskQueue pruned %d task(s) to enforce max_depth=%d",
+            len(to_evict),
+            max_depth,
+        )
+        return len(to_evict)
+
     def depth(self) -> int:
         """Return the number of PENDING tasks (how much work is waiting)."""
         return len(self.registry.by_status(TaskStatus.PENDING))

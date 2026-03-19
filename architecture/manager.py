@@ -517,6 +517,59 @@ class ArchitectureStateManager:
         # Take the last one (alphabetically latest = most recent timestamp)
         return ArchitectureState.model_validate_json(candidates[-1].read_text())
 
+    def rollback(self, n: int = 1) -> ArchitectureState:
+        """
+        Restore the architecture state to ``n`` snapshots ago.
+
+        Useful when a macro loop produces a bad update and you want to undo it.
+        The rolled-back state is written as the new live file *and* added to
+        the history archive (so the rollback itself is part of the audit trail).
+        If ``auto_git`` is enabled, the restoration is committed to Git.
+
+        Parameters
+        ----------
+        n : How many snapshots to step back.  1 (default) restores the previous
+            state; 2 restores the one before that, and so on.
+
+        Returns
+        -------
+        The restored ArchitectureState.
+
+        Raises
+        ------
+        ValueError : If there are fewer than ``n + 1`` snapshots available
+                     (i.e. there is no snapshot to roll back to).
+        """
+        snapshots = sorted(self._hist_dir.glob("loop_*_*.json"))
+        # We need at least n+1 snapshots: the current one plus n predecessors.
+        if len(snapshots) <= n:
+            raise ValueError(
+                f"Cannot roll back {n} step(s): only {len(snapshots)} snapshot(s) exist"
+            )
+        # The most recent snapshot is snapshots[-1]; n steps back is snapshots[-(n+1)].
+        target_path = snapshots[-(n + 1)]
+        state = ArchitectureState.model_validate_json(target_path.read_text())
+        self._state = state
+
+        # Write the restored state as both the live file and a new archive entry
+        # so the rollback appears as a distinct event in the history directory.
+        self._persist(state)
+        self._archive_snapshot(state)
+
+        if self.auto_git:
+            self._git_commit(
+                f"rollback(n={n}): restored loop {state.macro_loop} "
+                f"from {target_path.name}"
+            )
+
+        logger.info(
+            "Rolled back %d step(s) to loop %d (source: %s)",
+            n,
+            state.macro_loop,
+            target_path.name,
+        )
+        return state
+
     def list_snapshots(self) -> list[dict]:
         """
         Return a summary list of all historical snapshots in the history/ directory.

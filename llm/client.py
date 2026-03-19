@@ -269,8 +269,9 @@ class OllamaClient:
         model       : Override the model name.  Defaults to ``config.model``.
         temperature : Creativity knob (0.0 = deterministic, 1.0 = creative).
         max_tokens  : Override the reply length limit.  Defaults to config value.
-        stream      : If True, request a streaming response.  Currently not
-                      supported by the rest of Tinker, so always pass False.
+        stream      : If True, request a streaming NDJSON response.  Chunks
+                      are aggregated into the same dict shape as a non-streaming
+                      call, so callers need not branch on this flag.
 
         Returns
         -------
@@ -404,22 +405,25 @@ class OllamaClient:
         """
         t0 = time.monotonic()  # record start time for elapsed logging
         session = await self._get_session()
+        is_streaming = payload.get("stream", False)
         try:
             # ``data=json.dumps(payload)`` manually serialises to JSON string
             # (instead of using ``json=payload``) because aiohttp's json= kwarg
             # sets Content-Type automatically, but we already set it in headers.
             async with session.post(url, data=json.dumps(payload)) as resp:
                 elapsed = time.monotonic() - t0
-                body = await resp.text()  # read the full response body as a string
                 logger.debug(
-                    "POST %s  status=%d  attempt=%d  elapsed=%.2fs",
+                    "POST %s  status=%d  attempt=%d  elapsed=%.2fs  stream=%s",
                     url,
                     resp.status,
                     attempt,
                     elapsed,
+                    is_streaming,
                 )
 
                 # --- Map HTTP status codes to our exception hierarchy ---
+                # For streaming responses we must check the status before
+                # starting to read chunks, so we do it up front regardless.
 
                 if resp.status == 429:
                     # 429 = "Too Many Requests" — server is asking us to slow down
@@ -430,6 +434,7 @@ class OllamaClient:
 
                 if resp.status in self.retry.retryable_status_codes:
                     # 5xx server errors — worth retrying
+                    body = await resp.text()
                     raise ModelServerError(
                         f"HTTP {resp.status} from {url}: {body[:200]}",
                         context={"url": url, "status": resp.status},
@@ -437,19 +442,28 @@ class OllamaClient:
 
                 if resp.status >= 400:
                     # Any other 4xx error is a client mistake — don't retry
+                    body = await resp.text()
                     raise ModelClientError(
                         f"HTTP {resp.status} from {url}: {body[:200]}",
                         context={"url": url, "status": resp.status},
                     )
 
                 # --- Parse the response body ---
-                try:
-                    return json.loads(body)
-                except json.JSONDecodeError as exc:
-                    raise ResponseParseError(
-                        f"Could not parse JSON from {url}: {body[:200]}",
-                        context={"url": url},
-                    ) from exc
+
+                if is_streaming:
+                    # Streaming path: read NDJSON lines and aggregate them
+                    # into a single response dict that matches the shape of a
+                    # non-streaming response so callers don't need to branch.
+                    return await self._read_stream(resp, url)
+                else:
+                    body = await resp.text()
+                    try:
+                        return json.loads(body)
+                    except json.JSONDecodeError as exc:
+                        raise ResponseParseError(
+                            f"Could not parse JSON from {url}: {body[:200]}",
+                            context={"url": url},
+                        ) from exc
 
         # --- Translate aiohttp network errors into our own exception types ---
 
@@ -477,3 +491,69 @@ class OllamaClient:
                 f"HTTP client error: {exc}",
                 context={"url": url},
             ) from exc
+
+    @staticmethod
+    async def _read_stream(resp: Any, url: str) -> dict[str, Any]:
+        """
+        Consume an NDJSON streaming response (``stream=True``) and aggregate
+        the chunks into a single dict that mirrors the non-streaming shape::
+
+            {
+                "choices": [{"message": {"role": "assistant", "content": "<full text>"}}],
+                "usage": {"prompt_tokens": N, "completion_tokens": M, "total_tokens": T},
+            }
+
+        Each chunk from Ollama's OpenAI-compat endpoint looks like::
+
+            {"choices": [{"delta": {"content": "…"}, "finish_reason": null}]}
+
+        The final chunk carries usage::
+
+            {"choices": [{"delta": {}, "finish_reason": "stop"}], "usage": {…}}
+
+        Lines starting with ``data: `` (SSE format) are stripped before JSON
+        parsing.  Empty lines and ``data: [DONE]`` sentinels are skipped.
+        """
+        content_parts: list[str] = []
+        usage: dict[str, int] = {}
+
+        async for raw_line in resp.content:
+            line = raw_line.decode("utf-8", errors="replace").strip()
+            if not line or line == "data: [DONE]":
+                continue
+            # Strip the "data: " prefix used by SSE-style streaming
+            if line.startswith("data: "):
+                line = line[6:]
+            try:
+                chunk = json.loads(line)
+            except json.JSONDecodeError:
+                logger.debug("Skipping non-JSON stream line: %r", line[:80])
+                continue
+
+            # Accumulate content from delta chunks
+            for choice in chunk.get("choices", []):
+                delta = choice.get("delta", {})
+                piece = delta.get("content")
+                if piece:
+                    content_parts.append(piece)
+
+            # Capture usage from whichever chunk carries it (usually the last)
+            if chunk.get("usage"):
+                usage = chunk["usage"]
+
+        full_content = "".join(content_parts)
+        if not usage:
+            # Estimate token counts when the server didn't report them
+            estimated = max(1, len(full_content) // 4)
+            usage = {
+                "prompt_tokens": 0,
+                "completion_tokens": estimated,
+                "total_tokens": estimated,
+            }
+
+        return {
+            "choices": [
+                {"message": {"role": "assistant", "content": full_content}}
+            ],
+            "usage": usage,
+        }

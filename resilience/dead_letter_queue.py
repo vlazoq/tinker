@@ -67,7 +67,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -429,3 +429,132 @@ class DeadLetterQueue:
             except Exception as exc:
                 logger.error("DLQ.purge_resolved failed: %s", exc)
                 return 0
+
+
+# ---------------------------------------------------------------------------
+# Auto-replay scheduler
+# ---------------------------------------------------------------------------
+
+
+class DLQAutoReplayer:
+    """
+    Background asyncio task that periodically retries pending DLQ items.
+
+    Usage::
+
+        async def my_handler(item: dict) -> None:
+            await replay_operation(item["operation"], item["payload"])
+
+        replayer = DLQAutoReplayer(dlq, handler=my_handler, interval=60.0)
+        await replayer.start()
+        # … later …
+        await replayer.stop()
+
+    The handler receives the raw DLQ item dict (same shape as ``pending_items()``
+    returns).  If the handler raises, the item's ``retry_count`` is incremented
+    and it stays pending.  If the handler succeeds, the item is marked resolved.
+
+    Parameters
+    ----------
+    dlq          : The DeadLetterQueue to drain.
+    handler      : Async callable ``(item: dict) -> None`` that replays one item.
+    interval     : Seconds between replay passes.  Default 60.
+    batch_size   : Max items to attempt per pass.  Default 10.
+    max_retries  : Items that have been retried this many times are discarded
+                   rather than retried again.  Default 5.
+    """
+
+    def __init__(
+        self,
+        dlq: DeadLetterQueue,
+        handler: Callable[[dict], Awaitable[None]],
+        interval: float = 60.0,
+        batch_size: int = 10,
+        max_retries: int = 5,
+    ) -> None:
+        self._dlq = dlq
+        self._handler = handler
+        self._interval = interval
+        self._batch_size = batch_size
+        self._max_retries = max_retries
+        self._task: Optional[asyncio.Task] = None
+
+    async def start(self) -> None:
+        """Start the background replay loop."""
+        if self._task is not None and not self._task.done():
+            logger.warning("DLQAutoReplayer is already running")
+            return
+        self._task = asyncio.create_task(self._run(), name="dlq-auto-replayer")
+        logger.info(
+            "DLQAutoReplayer started (interval=%.0fs, batch=%d, max_retries=%d)",
+            self._interval,
+            self._batch_size,
+            self._max_retries,
+        )
+
+    async def stop(self) -> None:
+        """Cancel the background loop and wait for it to finish."""
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        self._task = None
+        logger.info("DLQAutoReplayer stopped")
+
+    async def _run(self) -> None:
+        """Main replay loop — runs until cancelled."""
+        while True:
+            try:
+                await self._replay_pass()
+            except Exception as exc:
+                logger.error("DLQAutoReplayer._replay_pass error: %s", exc)
+            await asyncio.sleep(self._interval)
+
+    async def _replay_pass(self) -> None:
+        """Attempt to replay one batch of pending DLQ items."""
+        items = await self._dlq.pending_items(limit=self._batch_size)
+        if not items:
+            return
+
+        resolved = failed = discarded = 0
+        for item in items:
+            item_id: str = item["id"]
+
+            # Discard items that have exhausted their retry budget
+            if item.get("retry_count", 0) >= self._max_retries:
+                await self._dlq.mark_discarded(
+                    item_id,
+                    reason=f"Exceeded max_retries={self._max_retries}",
+                )
+                discarded += 1
+                logger.warning(
+                    "DLQ item %s discarded after %d retries",
+                    item_id[:8],
+                    item["retry_count"],
+                )
+                continue
+
+            # Attempt replay
+            try:
+                await self._handler(item)
+                await self._dlq.mark_resolved(item_id, notes="auto-replayed")
+                resolved += 1
+            except Exception as exc:
+                await self._dlq.increment_retry(item_id)
+                failed += 1
+                logger.warning(
+                    "DLQ replay failed for item %s (retry %d): %s",
+                    item_id[:8],
+                    item.get("retry_count", 0) + 1,
+                    exc,
+                )
+
+        if resolved or failed or discarded:
+            logger.info(
+                "DLQAutoReplayer pass: resolved=%d failed=%d discarded=%d",
+                resolved,
+                failed,
+                discarded,
+            )

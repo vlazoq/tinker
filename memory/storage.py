@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -44,10 +45,21 @@ class RedisAdapter:
         self.url = url
         self.default_ttl = default_ttl
         self._client = None
+        # In-process fallback used when Redis is unavailable.
+        # Maps  "<session_id>:<key>"  →  (value, expiry_monotonic_seconds)
+        # expiry = None means the entry never expires.
+        self._fallback: dict[str, tuple[Any, Optional[float]]] = {}
 
     @property
     def available(self) -> bool:
         return self._client is not None
+
+    def _fallback_sweep(self) -> None:
+        """Remove expired entries from the fallback dict (O(n) sweep)."""
+        now = time.monotonic()
+        expired = [k for k, (_, exp) in self._fallback.items() if exp is not None and now > exp]
+        for k in expired:
+            del self._fallback[k]
 
     async def connect(self) -> None:
         try:
@@ -87,30 +99,48 @@ class RedisAdapter:
         value: Any,
         ttl: Optional[int] = None,
     ) -> None:
+        effective_ttl = ttl if ttl is not None else self.default_ttl
         if not self._client:
+            # Fallback path: store in-process with TTL eviction
+            self._fallback_sweep()
+            fkey = self._key(session_id, key)
+            expiry = (time.monotonic() + effective_ttl) if effective_ttl > 0 else None
+            self._fallback[fkey] = (value, expiry)
             return
         payload = json.dumps(value)
-        ttl = ttl if ttl is not None else self.default_ttl
-        if ttl > 0:
-            await self._client.setex(self._key(session_id, key), ttl, payload)
+        if effective_ttl > 0:
+            await self._client.setex(self._key(session_id, key), effective_ttl, payload)
         else:
             await self._client.set(self._key(session_id, key), payload)
 
     async def get(self, session_id: str, key: str) -> Optional[Any]:
         if not self._client:
-            return None
+            # Fallback path: check in-process dict, evicting expired entries
+            self._fallback_sweep()
+            fkey = self._key(session_id, key)
+            entry = self._fallback.get(fkey)
+            if entry is None:
+                return None
+            value, expiry = entry
+            if expiry is not None and time.monotonic() > expiry:
+                del self._fallback[fkey]
+                return None
+            return value
         raw = await self._client.get(self._key(session_id, key))
         return json.loads(raw) if raw is not None else None
 
     async def delete(self, session_id: str, key: str) -> None:
         if not self._client:
+            self._fallback.pop(self._key(session_id, key), None)
             return
         await self._client.delete(self._key(session_id, key))
 
     async def keys(self, session_id: str) -> list[str]:
         """Return all keys for a session (strips the namespace prefix)."""
         if not self._client:
-            return []
+            self._fallback_sweep()
+            prefix = f"tinker:{session_id}:"
+            return [k[len(prefix):] for k in self._fallback if k.startswith(prefix)]
         prefix = f"tinker:{session_id}:"
         raw_keys = await self._client.keys(f"{prefix}*")
         return [k[len(prefix) :] for k in raw_keys]
@@ -118,7 +148,11 @@ class RedisAdapter:
     async def flush_session(self, session_id: str) -> int:
         """Delete every key belonging to a session. Returns count deleted."""
         if not self._client:
-            return 0
+            prefix = f"tinker:{session_id}:"
+            to_del = [k for k in self._fallback if k.startswith(prefix)]
+            for k in to_del:
+                del self._fallback[k]
+            return len(to_del)
         ks = await self._client.keys(f"tinker:{session_id}:*")
         if ks:
             return await self._client.delete(*ks)

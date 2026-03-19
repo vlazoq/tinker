@@ -356,6 +356,12 @@ class OrchestratorState:
     # subsystem (triggering a natural pivot to new work) then clears this field.
     stagnation_avoid_subsystem: Optional[str] = None
 
+    # When ALTERNATIVE_FORCING or INJECT_CONTRADICTION fires, a short
+    # instruction string is stored here.  micro_loop.py injects it into the
+    # Architect's context on the *next* call, then clears this field so that
+    # the prompt injection is one-shot (it doesn't persist across many loops).
+    pending_stagnation_hint: Optional[str] = None
+
     # ── Shutdown ─────────────────────────────────────────────────────────────
 
     # Set to True when shutdown has been requested (via signal or API call).
