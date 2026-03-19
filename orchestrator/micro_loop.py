@@ -15,7 +15,11 @@ iteration does one complete cycle of architectural reasoning:
   3. Ask the Architect AI to reason about the task.
   4. Optionally: if the Architect flagged knowledge gaps, look them up via the
      Tool Layer and ask the Architect again with enriched context.
-  5. Ask the Critic AI to review and score the Architect's output.
+  5. Refinement loop: ask the Critic AI to score the Architect's output.
+     If the score is below cfg.min_critic_score and iterations remain,
+     inject the Critic's feedback into the Architect's context and re-run
+     both until the threshold is met or cfg.max_refinement_iterations is
+     exhausted.  When min_critic_score == 0.0 (the default) this runs once.
   6. Store the combined result as an "artifact" in memory.
   7. Mark the task as complete in the task engine.
   8. Ask the task engine to generate follow-up tasks.

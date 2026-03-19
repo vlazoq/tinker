@@ -129,7 +129,9 @@ class MachineConfig:
     model             : The Ollama model identifier, e.g. ``"qwen3:7b"``.
     context_window    : Maximum number of tokens (roughly: word-pieces) the
                         model can read in one request.  Longer conversations
-                        must be trimmed to fit.  Default: 8192 tokens.
+                        must be trimmed to fit.  Defaults: 8192 for the server
+                        (override via TINKER_SERVER_CTX), 4096 for the secondary
+                        (override via TINKER_SECONDARY_CTX).
     max_output_tokens : Maximum length of the model's reply.  Default: 2048.
     request_timeout   : How many seconds to wait for a complete reply before
                         giving up.  Default: 120 seconds (2 minutes).

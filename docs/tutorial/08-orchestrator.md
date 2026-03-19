@@ -53,9 +53,10 @@ run_micro_loop — one complete task cycle.
 Steps:
   1. Pick a task from the queue
   2. Assemble context from memory
-  3. Call Architect AI
+  3. Call Architect AI (with validation retry if output is incomplete)
   4. Maybe do a web search (if Architect requested it)
-  5. Call Critic AI
+  5. Refinement loop: Call Critic AI — if score < min_critic_score and
+     iterations remain, inject feedback and re-run Architect + Critic
   6. Store artifact in memory
   7. Generate follow-up tasks from knowledge gaps
   8. Mark task complete

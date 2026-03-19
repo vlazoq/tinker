@@ -33,7 +33,9 @@ How the three loops use this config
   Micro loop — ``meso_trigger_count``, ``max_consecutive_failures``,
                ``failure_backoff_seconds``, ``micro_loop_idle_seconds``,
                ``architect_timeout``, ``critic_timeout``,
-               ``max_researcher_calls_per_loop``, ``context_max_artifacts``
+               ``max_researcher_calls_per_loop``, ``context_max_artifacts``,
+               ``min_critic_score``, ``max_refinement_iterations``,
+               ``max_validation_retries``
 
   Meso loop  — ``meso_min_artifacts``, ``synthesizer_timeout``
 
