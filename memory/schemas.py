@@ -578,3 +578,33 @@ class MemoryConfig:
         24  # also compress artifacts older than this (in hours)
     )
     compression_summary_chunk: int = 20  # summarise this many artifacts per LLM call
+
+    def __post_init__(self) -> None:
+        """Validate all configuration values at construction time."""
+        if self.redis_default_ttl < 0:
+            raise ValueError(
+                f"redis_default_ttl must be >= 0, got {self.redis_default_ttl}"
+            )
+        if self.compression_artifact_threshold < 1:
+            raise ValueError(
+                f"compression_artifact_threshold must be >= 1, "
+                f"got {self.compression_artifact_threshold}"
+            )
+        if self.compression_max_age_hours < 1:
+            raise ValueError(
+                f"compression_max_age_hours must be >= 1, "
+                f"got {self.compression_max_age_hours}"
+            )
+        if self.compression_summary_chunk < 1:
+            raise ValueError(
+                f"compression_summary_chunk must be >= 1, "
+                f"got {self.compression_summary_chunk}"
+            )
+        if not self.redis_url:
+            raise ValueError("redis_url must not be empty")
+        if not self.duckdb_path:
+            raise ValueError("duckdb_path must not be empty")
+        if not self.chroma_path:
+            raise ValueError("chroma_path must not be empty")
+        if not self.sqlite_path:
+            raise ValueError("sqlite_path must not be empty")

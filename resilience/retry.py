@@ -133,6 +133,16 @@ class RetryConfig:
           * Append / create-only operations     → idempotent=False
           * Anything that sends an external side-effect (email, webhook)
                                                 → idempotent=False
+    max_total_seconds : float or None
+        Hard wall-clock cap on total retry time (seconds).  When set, retries
+        stop as soon as the elapsed time since the *first* attempt exceeds
+        this value, regardless of ``max_attempts``.  ``None`` (default) means
+        "no wall-clock cap — rely on max_attempts only".
+
+        Use this to bound the worst-case latency of a call site::
+
+            RetryConfig(max_attempts=10, max_total_seconds=30)
+            # Guarantees a result or error within 30 s even if delays are long.
     """
 
     max_attempts: int = 3
@@ -142,6 +152,7 @@ class RetryConfig:
     only_if_retryable: bool = True
     reraise_after_exhaustion: bool = True
     idempotent: bool = True
+    max_total_seconds: float | None = None
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1:
@@ -151,6 +162,10 @@ class RetryConfig:
         if self.max_delay < self.base_delay:
             raise ValueError(
                 f"max_delay ({self.max_delay}) must be >= base_delay ({self.base_delay})"
+            )
+        if self.max_total_seconds is not None and self.max_total_seconds <= 0:
+            raise ValueError(
+                f"max_total_seconds must be > 0, got {self.max_total_seconds}"
             )
 
 
@@ -216,9 +231,26 @@ async def retry_async(
     Exception
         Any non-``TinkerError`` exception propagates immediately (no retry).
     """
+    import time as _time
+
     last_exc: TinkerError | None = None
+    started_at = _time.monotonic()
 
     for attempt in range(1, config.max_attempts + 1):
+        # Wall-clock cap: stop retrying if total elapsed time exceeded
+        if config.max_total_seconds is not None:
+            elapsed = _time.monotonic() - started_at
+            if elapsed >= config.max_total_seconds:
+                log.warning(
+                    "retry: wall-clock cap of %.1fs exceeded after attempt %d "
+                    "(elapsed=%.1fs) — aborting retries for %s",
+                    config.max_total_seconds,
+                    attempt - 1,
+                    elapsed,
+                    type(last_exc).__name__ if last_exc else "unknown",
+                )
+                break
+
         try:
             return await fn()
 
@@ -259,6 +291,11 @@ async def retry_async(
                 break
 
             delay = _compute_delay(attempt, config)
+            # Clamp sleep to remaining wall-clock budget if cap is active
+            if config.max_total_seconds is not None:
+                remaining = config.max_total_seconds - (_time.monotonic() - started_at)
+                delay = min(delay, max(0.0, remaining))
+
             log.warning(
                 "retry: attempt %d/%d failed (%s: %s) — sleeping %.2fs before retry",
                 attempt,

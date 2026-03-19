@@ -323,8 +323,11 @@ class AuditLog:
             await self._conn.commit()
         except Exception as exc:
             logger.error("AuditLog flush failed: %s", exc)
-            # Put events back in buffer to retry
-            self._buffer = events + self._buffer
+            # Put events back in buffer to retry — hold the lock so that
+            # concurrent flushes or log() calls cannot interleave with the
+            # prepend and lose events.
+            async with self._lock:
+                self._buffer = events + self._buffer
 
     async def _periodic_flush(self) -> None:
         """Background task: flush the buffer every few seconds."""

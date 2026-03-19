@@ -15,6 +15,31 @@ manager.py — MemoryManager: unified async interface over all four layers.
    │           │                                    │
 RedisAdapter  DuckDBAdapter  ChromaAdapter  SQLiteAdapter
 (Working Mem) (Session Mem)  (Research Arch)(Task Registry)
+
+SOLID — Single Responsibility Principle
+----------------------------------------
+MemoryManager is intentionally a unified façade — it wires four storage
+backends together and exposes them through one coherent interface.  However,
+consumers that only need *one* aspect of memory should depend on the
+narrower ``Protocol`` types defined below, not on the full ``MemoryManager``.
+
+This follows the Interface Segregation Principle (ISP, the "I" in SOLID):
+consumers declare what they actually need (ArtifactStore, ResearchStore,
+WorkingMemory, TaskStore) and MemoryManager satisfies all four, but a stub
+or alternative implementation only needs to implement the subset it provides.
+
+Usage::
+
+    # In the orchestrator — only needs artifact storage and research:
+    def __init__(self, artifact_store: ArtifactStore, research_store: ResearchStore):
+        self._artifacts = artifact_store
+        self._research = research_store
+
+    # Pass the full MemoryManager — it satisfies both protocols:
+    orchestrator = Orchestrator(
+        artifact_store=memory_manager,
+        research_store=memory_manager,
+    )
 """
 
 from __future__ import annotations
@@ -23,7 +48,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Callable, Awaitable, Optional
+from typing import Any, Callable, Awaitable, Optional, Protocol, runtime_checkable
 
 from .schemas import (
     Artifact,
@@ -38,6 +63,93 @@ from .embeddings import EmbeddingPipeline
 from .compression import MemoryCompressor
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Focused service protocols (Interface Segregation / SRP)
+#
+# Consumers should depend on the narrowest protocol they actually use.
+# MemoryManager satisfies all four — pass it wherever any protocol is needed.
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class ArtifactStore(Protocol):
+    """Minimal interface for storing and retrieving design artifacts."""
+
+    async def store_artifact(
+        self,
+        content: str,
+        artifact_type: ArtifactType = ArtifactType.RAW,
+        task_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+        session_id: Optional[str] = None,
+        auto_compress: bool = True,
+    ) -> Artifact: ...
+
+    async def get_artifact(self, artifact_id: str) -> Optional[Artifact]: ...
+
+    async def get_recent_artifacts(
+        self,
+        artifact_type: Optional[ArtifactType] = None,
+        limit: int = 20,
+        include_archived: bool = False,
+        session_id: Optional[str] = None,
+    ) -> list[Artifact]: ...
+
+
+@runtime_checkable
+class ResearchStore(Protocol):
+    """Minimal interface for storing and searching research notes."""
+
+    async def store_research(
+        self,
+        content: str,
+        topic: str,
+        tags: Optional[list[str]] = None,
+        source: str = "tinker-internal",
+        task_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+        session_id: Optional[str] = None,
+    ) -> ResearchNote: ...
+
+    async def search_research(
+        self,
+        query: str,
+        n_results: int = 5,
+        filter_topic: Optional[str] = None,
+        filter_session: Optional[str] = None,
+    ) -> list[ResearchNote]: ...
+
+
+@runtime_checkable
+class WorkingMemory(Protocol):
+    """Minimal interface for ephemeral per-task context storage."""
+
+    async def set_context(
+        self, key: str, value: Any, ttl: Optional[int] = None, session_id: Optional[str] = None
+    ) -> None: ...
+
+    async def get_context(self, key: str, session_id: Optional[str] = None) -> Optional[Any]: ...
+
+    async def delete_context(self, key: str, session_id: Optional[str] = None) -> None: ...
+
+
+@runtime_checkable
+class TaskStore(Protocol):
+    """Minimal interface for task persistence."""
+
+    async def store_task(self, task: Task) -> Task: ...
+
+    async def get_task(self, task_id: str) -> Optional[Task]: ...
+
+    async def update_task_status(
+        self,
+        task_id: str,
+        status: TaskStatus,
+        result: Optional[str] = None,
+        error: Optional[str] = None,
+    ) -> None: ...
 
 
 def _parse_row_metadata(row: dict) -> dict:

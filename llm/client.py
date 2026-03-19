@@ -406,11 +406,31 @@ class OllamaClient:
         t0 = time.monotonic()  # record start time for elapsed logging
         session = await self._get_session()
         is_streaming = payload.get("stream", False)
+
+        # Propagate distributed trace context across service boundaries.
+        # These headers allow log aggregators (Loki, Datadog, Jaeger) to
+        # correlate Tinker log lines with Ollama server logs for the same
+        # request.  We attach the current trace_id (from contextvars) and a
+        # per-request UUID so each attempt can be uniquely identified.
+        import uuid as _uuid
+        from contextvars import copy_context as _copy_ctx
+        try:
+            from agents import _current_trace_id as _tid_var
+            _trace_id = _tid_var.get("") or str(_uuid.uuid4())
+        except Exception:
+            _trace_id = str(_uuid.uuid4())
+        _request_id = str(_uuid.uuid4())
+        trace_headers = {
+            "X-Trace-ID": _trace_id,
+            "X-Request-ID": _request_id,
+            "X-Attempt": str(attempt),
+        }
+
         try:
             # ``data=json.dumps(payload)`` manually serialises to JSON string
             # (instead of using ``json=payload``) because aiohttp's json= kwarg
             # sets Content-Type automatically, but we already set it in headers.
-            async with session.post(url, data=json.dumps(payload)) as resp:
+            async with session.post(url, data=json.dumps(payload), headers=trace_headers) as resp:
                 elapsed = time.monotonic() - t0
                 logger.debug(
                     "POST %s  status=%d  attempt=%d  elapsed=%.2fs  stream=%s",

@@ -138,17 +138,29 @@ def _get_retry_async():
         return None, None
 
 
+# Module-level singleton — built once and reused across all agent calls.
+# Recreating the registry on every call would give each call its own fresh
+# token bucket, making the rate limiter a no-op.
+_rate_limiter_registry = None
+_rate_limiter_registry_initialized = False
+
+
 def _get_rate_limiter_registry():
-    """Return the default RateLimiterRegistry, or None if unavailable."""
+    """Return the process-wide RateLimiterRegistry singleton, or None if unavailable."""
+    global _rate_limiter_registry, _rate_limiter_registry_initialized
+    if _rate_limiter_registry_initialized:
+        return _rate_limiter_registry
+    _rate_limiter_registry_initialized = True
     try:
         from resilience.rate_limiter import build_default_rate_limiters
 
-        return build_default_rate_limiters()
+        _rate_limiter_registry = build_default_rate_limiters()
     except Exception as exc:
         logger.debug(
             "agents: rate_limiter not available — token tracking disabled: %s", exc
         )
-        return None
+        _rate_limiter_registry = None
+    return _rate_limiter_registry
 
 
 # ---------------------------------------------------------------------------

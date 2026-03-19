@@ -70,10 +70,15 @@ class ToolRegistry:
         registry = build_default_registry()
     """
 
-    def __init__(self) -> None:
+    def __init__(self, circuit_registry: Any = None) -> None:
         # Internal dictionary: tool name (string) → tool instance (BaseTool).
         # We use a dict so we can look tools up by name in O(1) time.
         self._tools: dict[str, BaseTool] = {}
+        # Optional circuit breaker registry — when provided, execute() wraps
+        # each tool call with a per-tool circuit breaker named "tool:<name>".
+        # This prevents a failing external service (SearXNG down, scrape timeout)
+        # from blocking every micro loop iteration with slow timeouts.
+        self._circuit_registry = circuit_registry
 
     # ------------------------------------------------------------------
     # Registration
@@ -266,9 +271,44 @@ class ToolRegistry:
         # We log only the argument *names* here, not the values, to keep logs tidy.
         logger.info("Executing tool '%s' with args: %s", tool_name, list(kwargs.keys()))
 
+        # Microservices resilience: wrap the tool call with a circuit breaker
+        # if one is registered for this tool name (keyed as "tool:<name>").
+        # If the breaker is OPEN (service down), fail fast instead of timing out.
+        breaker = None
+        if self._circuit_registry is not None:
+            breaker_name = f"tool:{tool_name}"
+            try:
+                if not hasattr(self._circuit_registry, "get_or_default"):
+                    breaker = None
+                else:
+                    breaker = self._circuit_registry.get_or_default(breaker_name)
+                    if breaker is None:
+                        # Auto-register a breaker for this tool on first use
+                        try:
+                            breaker = self._circuit_registry.register(
+                                breaker_name, failure_threshold=3, recovery_timeout=30.0
+                            )
+                        except ValueError:
+                            # Already registered by another concurrent call
+                            breaker = self._circuit_registry.get_or_default(breaker_name)
+            except Exception:
+                breaker = None
+
         # Step 2: actually run the tool. BaseTool.execute() wraps the real logic
         # in timing and error handling, so we always get a ToolResult back.
-        result = await tool.execute(**kwargs)
+        if breaker is not None:
+            try:
+                result = await breaker.call(tool.execute, **kwargs)
+            except Exception as exc:
+                # Circuit open or breaker call failed — return a graceful error
+                return ToolResult(
+                    success=False,
+                    tool_name=tool_name,
+                    data=None,
+                    error=f"Tool '{tool_name}' unavailable (circuit open or breaker error): {exc}",
+                )
+        else:
+            result = await tool.execute(**kwargs)
 
         # Step 3: log the outcome at different levels depending on success/failure.
         if result.success:
