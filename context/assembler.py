@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from exceptions import ContextError, ConfigurationError
+from exceptions import ConfigurationError
 
 # AgentRole is the single source of truth for role names throughout Tinker.
 # It lives in llm.types because the model router uses it to decide which
@@ -54,16 +54,18 @@ class Task:
 @dataclass
 class MemoryItem:
     """A single retrieved piece of memory (artifact or research note)."""
+
     id: str
     content: str
-    score: float          # semantic similarity [0, 1]
-    source: str           # "session" | "archive" | "critique"
+    score: float  # semantic similarity [0, 1]
+    source: str  # "session" | "archive" | "critique"
     timestamp: float = field(default_factory=time.time)
 
 
 @dataclass
 class AssembledContext:
     """The finished product: a prompt string + assembly metadata."""
+
     prompt: str
     tokens_used: int
     tokens_budget: int
@@ -93,13 +95,13 @@ SECTION_PRIORITY = [
 # Default fractional allocation of the *total* token budget per section.
 # Must sum to ≤ 1.0.  Remainder is kept as a safety margin.
 DEFAULT_ALLOCATION: dict[str, float] = {
-    "system_identity"  : 0.05,
-    "task"             : 0.10,
-    "arch_state"       : 0.25,
-    "recent_artifacts" : 0.25,
-    "prior_critique"   : 0.15,
-    "research_notes"   : 0.15,
-    "output_format"    : 0.05,
+    "system_identity": 0.05,
+    "task": 0.10,
+    "arch_state": 0.25,
+    "recent_artifacts": 0.25,
+    "prior_critique": 0.15,
+    "research_notes": 0.15,
+    "output_format": 0.05,
 }
 
 
@@ -187,6 +189,7 @@ class TokenBudgetManager:
 # and in memory/manager.py + prompt_builder.py (for production).
 # ---------------------------------------------------------------------------
 
+
 class _MemoryManagerProtocol:
     """Protocol / stub for the real MemoryManager (Component 2)."""
 
@@ -224,6 +227,7 @@ class _PromptBuilderProtocol:
 # Context Assembler
 # ---------------------------------------------------------------------------
 
+
 class ContextAssembler:
     """
     Assembles a complete, token-budgeted prompt for a single model call.
@@ -251,10 +255,10 @@ class ContextAssembler:
         retrieval_top_k: int = 5,
         retrieval_timeout: float = 3.0,
     ):
-        self.memory  = memory_manager
+        self.memory = memory_manager
         self.builder = prompt_builder
-        self.budget  = budget_manager or TokenBudgetManager()
-        self.top_k   = retrieval_top_k
+        self.budget = budget_manager or TokenBudgetManager()
+        self.top_k = retrieval_top_k
         self.timeout = retrieval_timeout
 
     # ------------------------------------------------------------------
@@ -275,9 +279,9 @@ class ContextAssembler:
         in `.warnings` and `.sections_dropped`.
         """
         t0 = time.perf_counter()
-        warnings:         list[str] = []
+        warnings: list[str] = []
         sections_included: list[str] = []
-        sections_dropped:  list[str] = []
+        sections_dropped: list[str] = []
 
         # --- 1. Fetch all memory sections concurrently --------------------
         query = f"{task.goal} {task.description}"
@@ -291,18 +295,18 @@ class ContextAssembler:
 
         # --- 2. Build static sections (never fail) -----------------------
         system_identity = self.builder.build_system_identity(role)
-        output_format   = self.builder.build_output_format(role, loop_level)
-        task_text       = task.to_text()
+        output_format = self.builder.build_output_format(role, loop_level)
+        task_text = task.to_text()
 
         # --- 3. Assemble sections in priority order ----------------------
         sections: dict[str, str] = {
-            "system_identity"  : system_identity,
-            "task"             : task_text,
-            "arch_state"       : arch_state or "",
-            "recent_artifacts" : self._format_items(artifacts, "Recent Artifacts"),
-            "prior_critique"   : self._format_items(critique,  "Prior Critique"),
-            "research_notes"   : self._format_items(research,  "Research Notes"),
-            "output_format"    : output_format,
+            "system_identity": system_identity,
+            "task": task_text,
+            "arch_state": arch_state or "",
+            "recent_artifacts": self._format_items(artifacts, "Recent Artifacts"),
+            "prior_critique": self._format_items(critique, "Prior Critique"),
+            "research_notes": self._format_items(research, "Research Notes"),
+            "output_format": output_format,
         }
 
         prompt_parts: list[str] = []
@@ -315,7 +319,7 @@ class ContextAssembler:
                 continue
 
             budget_tokens = self.budget.budget_for(section_name)
-            remaining     = self.budget.remaining_tokens(tokens_used)
+            remaining = self.budget.remaining_tokens(tokens_used)
             effective_cap = min(budget_tokens, remaining)
 
             # Temporarily shrink the budget manager's allocation to the
@@ -339,13 +343,13 @@ class ContextAssembler:
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         return AssembledContext(
-            prompt             = prompt,
-            tokens_used        = tokens_used,
-            tokens_budget      = self.budget.total_tokens,
-            sections_included  = sections_included,
-            sections_dropped   = sections_dropped,
-            assembly_time_ms   = round(elapsed_ms, 2),
-            warnings           = warnings,
+            prompt=prompt,
+            tokens_used=tokens_used,
+            tokens_budget=self.budget.total_tokens,
+            sections_included=sections_included,
+            sections_dropped=sections_dropped,
+            assembly_time_ms=round(elapsed_ms, 2),
+            warnings=warnings,
         )
 
     # ------------------------------------------------------------------
@@ -362,25 +366,36 @@ class ContextAssembler:
         Fire all memory retrievals concurrently.  Each is individually
         guarded; failures return empty results and append to warnings.
         """
-        arch_coro      = self._safe_fetch(
+        arch_coro = self._safe_fetch(
             self.memory.get_arch_state_summary(),
-            "arch_state", warnings, default="",
+            "arch_state",
+            warnings,
+            default="",
         )
         artifacts_coro = self._safe_fetch(
             self.memory.semantic_search_session(query, self.top_k),
-            "recent_artifacts", warnings, default=[],
+            "recent_artifacts",
+            warnings,
+            default=[],
         )
-        research_coro  = self._safe_fetch(
+        research_coro = self._safe_fetch(
             self.memory.semantic_search_archive(query, self.top_k),
-            "research_notes", warnings, default=[],
+            "research_notes",
+            warnings,
+            default=[],
         )
-        critique_coro  = self._safe_fetch(
+        critique_coro = self._safe_fetch(
             self.memory.get_prior_critique(task_id),
-            "prior_critique", warnings, default=[],
+            "prior_critique",
+            warnings,
+            default=[],
         )
 
         results = await asyncio.gather(
-            arch_coro, artifacts_coro, research_coro, critique_coro,
+            arch_coro,
+            artifacts_coro,
+            research_coro,
+            critique_coro,
         )
         return results  # type: ignore[return-value]
 
@@ -429,7 +444,7 @@ class ContextAssembler:
     @staticmethod
     def _wrap_section(name: str, content: str) -> str:
         divider = "=" * 60
-        title   = name.replace("_", " ").upper()
+        title = name.replace("_", " ").upper()
         return f"{divider}\n{title}\n{divider}\n{content}"
 
     # ------------------------------------------------------------------
@@ -471,8 +486,11 @@ class ContextAssembler:
             description=task.get("description", ""),
             goal=task.get("title", task.get("description", "architecture design task")),
             constraints=task.get("constraints", []),
-            metadata={k: v for k, v in task.items()
-                      if k not in ("id", "description", "title", "constraints")},
+            metadata={
+                k: v
+                for k, v in task.items()
+                if k not in ("id", "description", "title", "constraints")
+            },
         )
 
         try:

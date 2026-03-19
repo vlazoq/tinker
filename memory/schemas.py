@@ -51,6 +51,7 @@ from typing import Any, Optional
 # Enumerations
 # ---------------------------------------------------------------------------
 
+
 class ArtifactType(str, Enum):
     """
     The category of content an Artifact contains.
@@ -73,14 +74,15 @@ class ArtifactType(str, Enum):
                    automatically by the MemoryCompressor.
     RAW          : Unclassified content; the default when no type is specified.
     """
-    ARCHITECTURE   = "architecture"
-    ANALYSIS       = "analysis"
-    DECISION       = "decision"
-    DIAGRAM        = "diagram"
-    CODE           = "code"
-    EVALUATION     = "evaluation"
-    SUMMARY        = "summary"          # produced by the compression step
-    RAW            = "raw"
+
+    ARCHITECTURE = "architecture"
+    ANALYSIS = "analysis"
+    DECISION = "decision"
+    DIAGRAM = "diagram"
+    CODE = "code"
+    EVALUATION = "evaluation"
+    SUMMARY = "summary"  # produced by the compression step
+    RAW = "raw"
 
 
 class TaskStatus(str, Enum):
@@ -102,11 +104,12 @@ class TaskStatus(str, Enum):
     FAILED    : The task encountered an unrecoverable error.
     ARCHIVED  : The task has been moved to long-term storage (no longer active).
     """
-    PENDING    = "pending"
-    RUNNING    = "running"
-    COMPLETED  = "completed"
-    FAILED     = "failed"
-    ARCHIVED   = "archived"
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ARCHIVED = "archived"
 
 
 class TaskPriority(int, Enum):
@@ -124,15 +127,17 @@ class TaskPriority(int, Enum):
     HIGH     = 8  : Important but not blocking.
     CRITICAL = 10 : Must be done immediately; blocks everything else.
     """
-    LOW      = 1
-    NORMAL   = 5
-    HIGH     = 8
+
+    LOW = 1
+    NORMAL = 5
+    HIGH = 8
     CRITICAL = 10
 
 
 # ---------------------------------------------------------------------------
 # Core data models
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Artifact:
@@ -166,6 +171,7 @@ class Artifact:
     created_at    : UTC timestamp, auto-set on creation.
     archived      : True if this artifact has been compressed into a summary.
     """
+
     content: str
     artifact_type: ArtifactType = ArtifactType.RAW
     session_id: str = field(default_factory=lambda: "")
@@ -193,7 +199,7 @@ class Artifact:
         -------
         dict : A flat dictionary with all fields serialised to basic types.
         """
-        d = asdict(self)                              # convert dataclass to dict
+        d = asdict(self)  # convert dataclass to dict
         d["artifact_type"] = self.artifact_type.value  # enum → string
         d["created_at"] = self.created_at.isoformat()  # datetime → ISO string
         return d
@@ -215,8 +221,11 @@ class Artifact:
         Artifact : A fully populated Artifact instance.
         """
         d = dict(d)  # make a copy so we don't mutate the caller's dict
-        d["artifact_type"] = ArtifactType(d["artifact_type"])       # string → enum
-        d["created_at"] = datetime.fromisoformat(d["created_at"])   # ISO string → datetime
+        d["artifact_type"] = ArtifactType(d["artifact_type"])  # string → enum
+        if isinstance(d["created_at"], str):
+            d["created_at"] = datetime.fromisoformat(
+                d["created_at"]
+            )  # ISO string → datetime
         return cls(**d)
 
 
@@ -254,6 +263,7 @@ class ResearchNote:
     id         : UUID, auto-generated.
     created_at : UTC timestamp, auto-set.
     """
+
     content: str
     topic: str
     source: str = "tinker-internal"
@@ -281,7 +291,7 @@ class ResearchNote:
         """
         d = asdict(self)
         d["created_at"] = self.created_at.isoformat()
-        d["tags"] = ",".join(self.tags)   # list → comma-separated string for ChromaDB
+        d["tags"] = ",".join(self.tags)  # list → comma-separated string for ChromaDB
         return d
 
     def to_chroma_metadata(self) -> dict[str, str | int | float | bool]:
@@ -303,9 +313,9 @@ class ResearchNote:
         return {
             "topic": self.topic,
             "source": self.source,
-            "tags": ",".join(self.tags),     # list → comma-separated string
+            "tags": ",".join(self.tags),  # list → comma-separated string
             "session_id": self.session_id,
-            "task_id": self.task_id or "",   # None → "" because ChromaDB wants strings
+            "task_id": self.task_id or "",  # None → "" because ChromaDB wants strings
             "created_at": self.created_at.isoformat(),
         }
 
@@ -384,14 +394,15 @@ class Task:
     completed_at   : UTC timestamp when the task finished (completed/failed).
                      None while the task is still pending or running.
     """
+
     title: str
     description: str
     priority: TaskPriority = TaskPriority.NORMAL
     status: TaskStatus = TaskStatus.PENDING
     parent_task_id: Optional[str] = None
     session_id: str = ""
-    result: Optional[str] = None     # populated when status becomes COMPLETED
-    error: Optional[str] = None      # populated when status becomes FAILED
+    result: Optional[str] = None  # populated when status becomes COMPLETED
+    error: Optional[str] = None  # populated when status becomes FAILED
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # Auto-assigned fields
@@ -414,13 +425,14 @@ class Task:
         -------
         dict : A flat dictionary with all fields serialised to basic types.
         """
-        import json   # local import avoids a top-level circular dependency risk
+        import json  # local import avoids a top-level circular dependency risk
+
         return {
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "priority": self.priority.value,      # int enum → plain int
-            "status": self.status.value,          # str enum → plain string
+            "priority": self.priority.value,  # int enum → plain int
+            "status": self.status.value,  # str enum → plain string
             "parent_task_id": self.parent_task_id,
             "session_id": self.session_id,
             "result": self.result,
@@ -429,7 +441,9 @@ class Task:
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             # None if not yet completed; ISO string otherwise
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "completed_at": self.completed_at.isoformat()
+            if self.completed_at
+            else None,
         }
 
     @classmethod
@@ -449,9 +463,10 @@ class Task:
         Task : A fully populated Task instance with proper Python types.
         """
         import json
+
         d = dict(d)  # copy so we don't mutate the caller's dict
-        d["priority"] = TaskPriority(d["priority"])        # int → enum
-        d["status"] = TaskStatus(d["status"])              # string → enum
+        d["priority"] = TaskPriority(d["priority"])  # int → enum
+        d["status"] = TaskStatus(d["status"])  # string → enum
         d["created_at"] = datetime.fromisoformat(d["created_at"])
         d["updated_at"] = datetime.fromisoformat(d["updated_at"])
         if d.get("completed_at"):
@@ -466,6 +481,7 @@ class Task:
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MemoryConfig:
@@ -538,7 +554,7 @@ class MemoryConfig:
 
     # --- Redis ---
     redis_url: str = "redis://localhost:6379"
-    redis_default_ttl: int = 3600          # seconds; 0 = never expire
+    redis_default_ttl: int = 3600  # seconds; 0 = never expire
 
     # --- DuckDB ---
     duckdb_path: str = "tinker_session.duckdb"
@@ -551,10 +567,14 @@ class MemoryConfig:
     sqlite_path: str = "tinker_tasks.sqlite"
 
     # --- Embedding model ---
-    embedding_model: str = "all-MiniLM-L6-v2"   # fast small model; try "nomic-embed-text" for better quality
-    embedding_device: str = "cpu"                 # change to "cuda" if an NVIDIA GPU is available
+    embedding_model: str = "all-MiniLM-L6-v2"  # fast small model; try "nomic-embed-text" for better quality
+    embedding_device: str = "cpu"  # change to "cuda" if an NVIDIA GPU is available
 
     # --- Compression thresholds ---
-    compression_artifact_threshold: int = 500     # run compression when session exceeds this many artifacts
-    compression_max_age_hours: int = 24           # also compress artifacts older than this (in hours)
-    compression_summary_chunk: int = 20           # summarise this many artifacts per LLM call
+    compression_artifact_threshold: int = (
+        500  # run compression when session exceeds this many artifacts
+    )
+    compression_max_age_hours: int = (
+        24  # also compress artifacts older than this (in hours)
+    )
+    compression_summary_chunk: int = 20  # summarise this many artifacts per LLM call

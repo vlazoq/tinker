@@ -87,6 +87,7 @@ class LineageTracker:
         """Create the lineage database and schema."""
         try:
             import aiosqlite
+
             self._conn = await aiosqlite.connect(self._db_path)
             self._conn.row_factory = aiosqlite.Row
             await self._conn.execute("PRAGMA journal_mode=WAL")
@@ -155,16 +156,23 @@ class LineageTracker:
 
         async with self._lock:
             try:
-                await self._conn.execute("""
+                await self._conn.execute(
+                    """
                     INSERT INTO lineage_edges
                         (id, parent_id, parent_type, child_id, child_type, operation, metadata, created_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    edge_id, parent_id, parent_type,
-                    child_id, child_type, operation,
-                    json.dumps(metadata) if metadata else None,
-                    now,
-                ))
+                """,
+                    (
+                        edge_id,
+                        parent_id,
+                        parent_type,
+                        child_id,
+                        child_type,
+                        operation,
+                        json.dumps(metadata) if metadata else None,
+                        now,
+                    ),
+                )
                 await self._conn.commit()
                 return edge_id
             except Exception as exc:

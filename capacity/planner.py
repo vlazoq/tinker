@@ -47,7 +47,6 @@ Usage
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -60,6 +59,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CapacitySnapshot:
     """A point-in-time capacity measurement."""
+
     timestamp: float = field(default_factory=time.monotonic)
     tokens_used: int = 0
     disk_mb: float = 0.0
@@ -122,9 +122,7 @@ class CapacityPlanner:
         for path in (self._workspace_path, self._artifact_path):
             if path.exists():
                 size_bytes = sum(
-                    f.stat().st_size
-                    for f in path.rglob("*")
-                    if f.is_file()
+                    f.stat().st_size for f in path.rglob("*") if f.is_file()
                 )
                 total_mb += size_bytes / (1024 * 1024)
 
@@ -169,7 +167,7 @@ class CapacityPlanner:
                 )
             elif current_mb > max_mb * 0.8:
                 alerts.append(
-                    f"DISK WARNING: {current_mb:.0f}MB = {current_mb/max_mb*100:.0f}% "
+                    f"DISK WARNING: {current_mb:.0f}MB = {current_mb / max_mb * 100:.0f}% "
                     f"of {max_mb:.0f}MB limit"
                 )
 
@@ -177,9 +175,7 @@ class CapacityPlanner:
             est = report.get("estimated_tokens_per_day", 0)
             max_t = self._thresholds["tokens_per_day"]
             if est > max_t:
-                alerts.append(
-                    f"TOKEN RATE EXCEEDED: {est:,}/day > {max_t:,}/day limit"
-                )
+                alerts.append(f"TOKEN RATE EXCEEDED: {est:,}/day > {max_t:,}/day limit")
 
         return alerts
 

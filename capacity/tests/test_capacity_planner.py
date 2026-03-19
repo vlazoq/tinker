@@ -5,10 +5,9 @@ Tests for capacity/planner.py
 Verifies token recording, disk usage tracking, threshold alerting,
 and report generation.
 """
+
 from __future__ import annotations
 
-import time
-import pytest
 
 from capacity.planner import CapacityPlanner, CapacitySnapshot
 
@@ -52,7 +51,7 @@ class TestCapacityPlanner:
         planner.record_artifact_count(total=5)
         planner.set_threshold("disk_mb", 10000)
         alerts = planner.check_thresholds()
-        assert len(alerts) == 0   # no disk usage recorded
+        assert len(alerts) == 0  # no disk usage recorded
 
     def test_threshold_exceeded_generates_alert(self):
         planner = CapacityPlanner()

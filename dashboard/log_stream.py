@@ -5,9 +5,9 @@ from __future__ import annotations
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.widget import Widget
-from textual.widgets import RichLog, Select, Static
+from textual.widgets import RichLog, Static
 
-from .log_handler import LEVEL_COLOURS, LogBuffer, LogRecord, get_log_buffer
+from .log_handler import LEVEL_COLOURS, LogRecord, get_log_buffer
 
 LEVEL_ORDER = ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]
 
@@ -41,15 +41,16 @@ class LogStreamPanel(Widget):
     """
 
     # Minimum log level to display (index into LEVEL_ORDER)
-    _min_level_idx: int = 2   # INFO
+    _min_level_idx: int = 2  # INFO
 
     # Cursor into the log buffer (last seen position)
     _cursor: int = 0
 
     def compose(self) -> ComposeResult:
         yield Static(" Live Logs  filter: INFO+", id="log-header")
-        yield RichLog(id="log-richlog", highlight=False, markup=False,
-                      wrap=True, max_lines=500)
+        yield RichLog(
+            id="log-richlog", highlight=False, markup=False, wrap=True, max_lines=500
+        )
 
     def on_mount(self) -> None:
         buf = get_log_buffer()
@@ -89,8 +90,8 @@ class LogStreamPanel(Widget):
 
     def action_cycle_level(self) -> None:
         levels = ["DEBUG", "INFO", "WARNING", "ERROR"]
-        cur    = LEVEL_ORDER[self._min_level_idx]
-        nxt    = levels[(levels.index(cur) + 1) % len(levels)] if cur in levels else "INFO"
+        cur = LEVEL_ORDER[self._min_level_idx]
+        nxt = levels[(levels.index(cur) + 1) % len(levels)] if cur in levels else "INFO"
         self.set_min_level(nxt)
 
     def action_clear(self) -> None:

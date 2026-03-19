@@ -38,6 +38,7 @@ from typing import Any
 # Agent roles
 # ---------------------------------------------------------------------------
 
+
 class AgentRole(str, Enum):
     """
     The four AI agents that make up Tinker's thinking engine.
@@ -55,15 +56,17 @@ class AgentRole(str, Enum):
     It also inherits from ``str`` so that an AgentRole value is directly
     usable wherever a plain string is expected (e.g. when logging).
     """
-    ARCHITECT   = "architect"
-    RESEARCHER  = "researcher"
+
+    ARCHITECT = "architect"
+    RESEARCHER = "researcher"
     SYNTHESIZER = "synthesizer"
-    CRITIC      = "critic"
+    CRITIC = "critic"
 
 
 # ---------------------------------------------------------------------------
 # Machine targets
 # ---------------------------------------------------------------------------
+
 
 class Machine(str, Enum):
     """
@@ -78,7 +81,8 @@ class Machine(str, Enum):
     - SECONDARY : a lighter machine that runs smaller 2-3B models.  Used
                   for the Critic, which needs to be quick but not as deep.
     """
-    SERVER    = "server"     # i7-7700 / RTX 3090  — 7B models
+
+    SERVER = "server"  # i7-7700 / RTX 3090  — 7B models
     SECONDARY = "secondary"  # lighter machine      — 2-3B models
 
 
@@ -86,10 +90,10 @@ class Machine(str, Enum):
 # Think of this as a phone directory — given an agent role, look up which
 # machine you should call.
 ROLE_MACHINE_MAP: dict[AgentRole, Machine] = {
-    AgentRole.ARCHITECT:   Machine.SERVER,    # needs the biggest model
-    AgentRole.RESEARCHER:  Machine.SERVER,    # needs depth
-    AgentRole.SYNTHESIZER: Machine.SERVER,    # needs breadth
-    AgentRole.CRITIC:      Machine.SECONDARY, # needs speed, not raw power
+    AgentRole.ARCHITECT: Machine.SERVER,  # needs the biggest model
+    AgentRole.RESEARCHER: Machine.SERVER,  # needs depth
+    AgentRole.SYNTHESIZER: Machine.SERVER,  # needs breadth
+    AgentRole.CRITIC: Machine.SECONDARY,  # needs speed, not raw power
 }
 
 
@@ -99,13 +103,14 @@ ROLE_MACHINE_MAP: dict[AgentRole, Machine] = {
 
 # Default AI model identifiers in Ollama's naming format ("name:size").
 # You can override these with environment variables at runtime (see MachineConfig).
-DEFAULT_SERVER_MODEL    = "qwen3:7b"   # 7-billion-parameter model for the main server
+DEFAULT_SERVER_MODEL = "qwen3:7b"  # 7-billion-parameter model for the main server
 DEFAULT_SECONDARY_MODEL = "phi3:mini"  # smaller, faster model for the secondary machine
 
 
 # ---------------------------------------------------------------------------
 # Machine-level configuration
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MachineConfig:
@@ -135,12 +140,13 @@ class MachineConfig:
     build a ready-to-use config from environment variables, with sensible
     fallback values if the environment variables are not set.
     """
+
     base_url: str
     model: str
-    context_window: int = 8192         # tokens the model can accept in one call
-    max_output_tokens: int = 2048      # max tokens the model will generate
-    request_timeout: float = 120.0     # seconds before a slow reply is abandoned
-    connect_timeout: float = 10.0      # seconds to wait for the TCP handshake
+    context_window: int = 8192  # tokens the model can accept in one call
+    max_output_tokens: int = 2048  # max tokens the model will generate
+    request_timeout: float = 120.0  # seconds before a slow reply is abandoned
+    connect_timeout: float = 10.0  # seconds to wait for the TCP handshake
 
     @classmethod
     def server_defaults(cls) -> "MachineConfig":
@@ -190,6 +196,7 @@ class MachineConfig:
 # Request / Response objects
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Message:
     """
@@ -209,7 +216,8 @@ class Message:
                                   continuing a multi-turn conversation).
     content : The actual text of the message.
     """
-    role: str          # "system" | "user" | "assistant"
+
+    role: str  # "system" | "user" | "assistant"
     content: str
 
     def to_dict(self) -> dict[str, str]:
@@ -257,10 +265,11 @@ class ModelRequest:
                         Ollama (e.g. ``"qwen3:7b"``).
     resolved_machine  : Filled in by the router; which Machine was used.
     """
+
     agent_role: AgentRole
     messages: list[Message]
     temperature: float = 0.7
-    expect_json: bool = False            # If True, extract/validate JSON from reply
+    expect_json: bool = False  # If True, extract/validate JSON from reply
     json_schema_hint: str | None = None  # Optional schema description for the prompt
 
     # Populated by the router before sending — callers don't set these
@@ -292,6 +301,7 @@ class ModelResponse:
     attempts          : How many HTTP attempts were made (1 = no retries needed).
     elapsed_seconds   : Wall-clock time for the whole request, in seconds.
     """
+
     raw_text: str
     structured: dict[str, Any] | list[Any] | None
     model: str
@@ -336,6 +346,7 @@ class ModelResponse:
 # Retry config
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RetryConfig:
     """
@@ -365,10 +376,11 @@ class RetryConfig:
                             Client errors (4xx except 429) are NOT retried
                             because they mean the request itself is wrong.
     """
+
     max_attempts: int = 3
-    base_delay: float = 2.0       # seconds before first retry
-    max_delay: float = 30.0       # cap on how long we wait between retries
-    backoff_factor: float = 2.0   # multiplier applied to delay after each retry
+    base_delay: float = 2.0  # seconds before first retry
+    max_delay: float = 30.0  # cap on how long we wait between retries
+    backoff_factor: float = 2.0  # multiplier applied to delay after each retry
     retryable_status_codes: set[int] = field(
         # 429 = rate limit; 500/502/503/504 = server-side errors worth retrying
         default_factory=lambda: {429, 500, 502, 503, 504}

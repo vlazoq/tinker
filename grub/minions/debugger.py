@@ -23,13 +23,12 @@ STATUS: FULLY IMPLEMENTED
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 from .base import BaseMinion
-from ..contracts.task   import GrubTask
+from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus, TestSummary
-from ..tools.file_ops   import read_file, write_file
-from ..tools.shell      import run_tests, check_syntax
+from ..tools.file_ops import read_file, write_file
+from ..tools.shell import run_tests, check_syntax
 
 
 class DebuggerMinion(BaseMinion):
@@ -79,9 +78,9 @@ Rules:
         t0 = time.monotonic()
         self.logger.info("DebuggerMinion.run: task=%s (%s)", task.id[:8], task.title)
 
-        test_output    = task.context.get("test_output", "")
-        failing_files  = task.context.get("failing_files", task.target_files)
-        test_file      = task.context.get("test_file", "")
+        test_output = task.context.get("test_output", "")
+        failing_files = task.context.get("failing_files", task.target_files)
+        test_file = task.context.get("test_file", "")
 
         if not test_output:
             return self._make_failed_result(
@@ -100,7 +99,9 @@ Rules:
         if test_file:
             ok, content = read_file(test_file)
             if ok:
-                test_section = f"\n### Test File: {test_file}\n```python\n{content}\n```"
+                test_section = (
+                    f"\n### Test File: {test_file}\n```python\n{content}\n```"
+                )
 
         max_iter = min(self.config.max_iterations, 3)
         files_fixed = []
@@ -112,7 +113,8 @@ Rules:
             # ── Build debug prompt ────────────────────────────────────────────
             prompt = (
                 f"## Failing Test Output\n```\n{test_output[:3000]}\n```\n\n"
-                + "## Source Code\n" + "\n\n".join(code_sections)
+                + "## Source Code\n"
+                + "\n\n".join(code_sections)
                 + test_section
                 + "\n\n## Instructions\n"
                 "Identify the root cause and produce a fix. "
@@ -132,8 +134,8 @@ Rules:
 
             newly_fixed = []
             for block in code_blocks:
-                lines     = block.split("\n")
-                fpath     = None
+                lines = block.split("\n")
+                fpath = None
                 if lines and "filepath:" in lines[0].lower():
                     fpath = lines[0].split("filepath:")[-1].strip().lstrip("#").strip()
                     block = "\n".join(lines[1:]).strip()
@@ -142,9 +144,12 @@ Rules:
 
                 if fpath:
                     # Syntax check before writing
-                    import tempfile, os
-                    with tempfile.NamedTemporaryFile(suffix=".py",
-                                                     delete=False, mode="w") as tmp:
+                    import tempfile
+                    import os
+
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".py", delete=False, mode="w"
+                    ) as tmp:
                         tmp.write(block)
                         tmp_path = tmp.name
                     chk = check_syntax(tmp_path)
@@ -158,7 +163,7 @@ Rules:
                     else:
                         self.logger.warning(
                             "DebuggerMinion: fix has syntax errors, skipping: %s",
-                            chk.stderr.strip()
+                            chk.stderr.strip(),
                         )
 
             files_fixed.extend(newly_fixed)
@@ -166,16 +171,19 @@ Rules:
             # ── Re-run tests ──────────────────────────────────────────────────
             if test_file:
                 run_result = run_tests(test_file, timeout=60.0)
-                test_output = run_result.output   # update for next iteration
+                test_output = run_result.output  # update for next iteration
                 last_test_summary = self._parse_pytest_summary(run_result.output)
 
                 self.logger.info(
                     "DebuggerMinion after fix: passed=%d failed=%d",
-                    last_test_summary.passed, last_test_summary.failed
+                    last_test_summary.passed,
+                    last_test_summary.failed,
                 )
 
                 if last_test_summary.all_passed:
-                    self.logger.info("DebuggerMinion: all tests pass after %d iterations", iteration)
+                    self.logger.info(
+                        "DebuggerMinion: all tests pass after %d iterations", iteration
+                    )
                     break
                 # Reload source for next iteration
                 code_sections = []
@@ -189,46 +197,48 @@ Rules:
 
         if last_test_summary and last_test_summary.all_passed:
             return MinionResult(
-                task_id          = task.id,
-                minion_name      = self.name,
-                status           = ResultStatus.SUCCESS,
-                score            = 0.85,
-                files_written    = files_fixed,
-                test_results     = last_test_summary,
-                summary          = f"Fixed in {iteration} iteration(s). All tests pass.",
-                duration_seconds = duration,
-                iterations       = iteration,
+                task_id=task.id,
+                minion_name=self.name,
+                status=ResultStatus.SUCCESS,
+                score=0.85,
+                files_written=files_fixed,
+                test_results=last_test_summary,
+                summary=f"Fixed in {iteration} iteration(s). All tests pass.",
+                duration_seconds=duration,
+                iterations=iteration,
             )
         else:
             passed = last_test_summary.passed if last_test_summary else 0
-            total  = last_test_summary.total  if last_test_summary else 0
+            total = last_test_summary.total if last_test_summary else 0
             return MinionResult(
-                task_id          = task.id,
-                minion_name      = self.name,
-                status           = ResultStatus.PARTIAL,
-                score            = passed / max(total, 1),
-                files_written    = files_fixed,
-                test_results     = last_test_summary,
-                summary          = f"Partial fix: {passed}/{total} tests pass after {iteration} iterations.",
-                notes            = f"Remaining failures:\n{test_output[:2000]}",
-                duration_seconds = duration,
-                iterations       = iteration,
+                task_id=task.id,
+                minion_name=self.name,
+                status=ResultStatus.PARTIAL,
+                score=passed / max(total, 1),
+                files_written=files_fixed,
+                test_results=last_test_summary,
+                summary=f"Partial fix: {passed}/{total} tests pass after {iteration} iterations.",
+                notes=f"Remaining failures:\n{test_output[:2000]}",
+                duration_seconds=duration,
+                iterations=iteration,
             )
 
     def _parse_pytest_summary(self, output: str) -> TestSummary:
         import re
+
         passed = failed = errors = skipped = 0
         for line in reversed(output.splitlines()):
             line = line.lower()
             if " passed" in line or " failed" in line or " error" in line:
-                p = re.search(r"(\d+) passed",  line)
-                f = re.search(r"(\d+) failed",  line)
-                e = re.search(r"(\d+) error",   line)
+                p = re.search(r"(\d+) passed", line)
+                f = re.search(r"(\d+) failed", line)
+                e = re.search(r"(\d+) error", line)
                 s = re.search(r"(\d+) skipped", line)
-                passed  = int(p.group(1)) if p else 0
-                failed  = int(f.group(1)) if f else 0
-                errors  = int(e.group(1)) if e else 0
+                passed = int(p.group(1)) if p else 0
+                failed = int(f.group(1)) if f else 0
+                errors = int(e.group(1)) if e else 0
                 skipped = int(s.group(1)) if s else 0
                 break
-        return TestSummary(passed=passed, failed=failed,
-                           errors=errors, skipped=skipped, output=output)
+        return TestSummary(
+            passed=passed, failed=failed, errors=errors, skipped=skipped, output=output
+        )

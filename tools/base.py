@@ -52,6 +52,7 @@ from typing import Any
 # Data containers
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ToolResult:
     """
@@ -92,9 +93,10 @@ class ToolResult:
         A flexible dict for any extra information a tool wants to attach.
         Currently unused by most tools, but available for future use.
     """
+
     success: bool
     tool_name: str
-    data: Any                        # The actual payload
+    data: Any  # The actual payload
     error: str | None = None
     duration_ms: float = 0.0
     metadata: dict = field(default_factory=dict)
@@ -154,15 +156,17 @@ class ToolSchema:
         A human-readable description of what the tool gives back.
         Example: "List of dicts: [{title, url, snippet}] sorted by relevance."
     """
+
     name: str
     description: str
-    parameters: dict        # JSON-Schema object describing the input
-    returns: str            # Human-readable description of the return value
+    parameters: dict  # JSON-Schema object describing the input
+    returns: str  # Human-readable description of the return value
 
 
 # ---------------------------------------------------------------------------
 # Abstract base
 # ---------------------------------------------------------------------------
+
 
 class BaseTool(ABC):
     """
@@ -277,7 +281,7 @@ class BaseTool(ABC):
                 data=data,
                 duration_ms=duration,
             )
-        except Exception as exc:          # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             # BLE001 is a linting rule that discourages bare "except Exception".
             # We silence it here because catching everything is intentional —
             # we want the registry to NEVER crash, no matter what a tool does.

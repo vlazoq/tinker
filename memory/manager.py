@@ -21,11 +21,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, Awaitable, Optional
 
-from .schemas import Artifact, ArtifactType, ResearchNote, Task, TaskStatus, MemoryConfig
+from .schemas import (
+    Artifact,
+    ArtifactType,
+    ResearchNote,
+    Task,
+    TaskStatus,
+    MemoryConfig,
+)
 from .storage import RedisAdapter, DuckDBAdapter, ChromaAdapter, SQLiteAdapter
 from .embeddings import EmbeddingPipeline
 from .compression import MemoryCompressor
@@ -67,12 +73,17 @@ class MemoryManager:
         summariser: Optional[Callable[[str], Awaitable[str]]] = None,
     ):
         self.config = config or MemoryConfig()
-        self.session_id = session_id or f"session-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
+        self.session_id = (
+            session_id
+            or f"session-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
+        )
 
         # Storage adapters
-        self._redis  = RedisAdapter(self.config.redis_url, self.config.redis_default_ttl)
+        self._redis = RedisAdapter(self.config.redis_url, self.config.redis_default_ttl)
         self._duckdb = DuckDBAdapter(self.config.duckdb_path)
-        self._chroma = ChromaAdapter(self.config.chroma_path, self.config.chroma_collection)
+        self._chroma = ChromaAdapter(
+            self.config.chroma_path, self.config.chroma_collection
+        )
         self._sqlite = SQLiteAdapter(self.config.sqlite_path)
 
         # Embedding pipeline
@@ -216,6 +227,7 @@ class MemoryManager:
         row["metadata"] = row.get("metadata") or {}
         if isinstance(row["metadata"], str):
             import json
+
             row["metadata"] = json.loads(row["metadata"])
         return Artifact.from_dict(row)
 
@@ -240,6 +252,7 @@ class MemoryManager:
         for row in rows:
             if isinstance(row.get("metadata"), str):
                 import json
+
                 row["metadata"] = json.loads(row["metadata"])
             result.append(Artifact.from_dict(row))
         return result
@@ -272,6 +285,7 @@ class MemoryManager:
         for row in rows:
             if isinstance(row.get("metadata"), str):
                 import json
+
                 row["metadata"] = json.loads(row["metadata"])
             result.append(row)
         return result
@@ -287,6 +301,7 @@ class MemoryManager:
         for row in rows:
             if isinstance(row.get("metadata"), str):
                 import json
+
                 row["metadata"] = json.loads(row["metadata"])
             result.append(Artifact.from_dict(row))
         return result
@@ -377,7 +392,9 @@ class MemoryManager:
         result = await self._chroma.get_by_id(note_id)
         if not result:
             return None
-        return ResearchNote.from_chroma(result["id"], result["document"], result["metadata"])
+        return ResearchNote.from_chroma(
+            result["id"], result["document"], result["metadata"]
+        )
 
     async def count_research_notes(self) -> int:
         return await self._chroma.count()
@@ -412,9 +429,7 @@ class MemoryManager:
         error: Optional[str] = None,
     ) -> None:
         """Update a task's status, result, and/or error in the Task Registry."""
-        await self._sqlite.update_task_status(
-            task_id, status.value, result, error
-        )
+        await self._sqlite.update_task_status(task_id, status.value, result, error)
 
     async def get_pending_tasks(self, limit: int = 50) -> list[Task]:
         rows = await self._sqlite.get_tasks_by_status("pending", limit)
@@ -457,18 +472,21 @@ class MemoryManager:
         for row in rows:
             if isinstance(row.get("metadata"), str):
                 import json
+
                 row["metadata"] = json.loads(row["metadata"])
             meta = row.get("metadata", {})
             if meta.get("subsystem", "") == subsystem or not subsystem:
-                result.append({
-                    "id": row["id"],
-                    "content": row["content"],
-                    "subsystem": meta.get("subsystem", subsystem),
-                    "artifact_type": row.get("artifact_type", "raw"),
-                    "task_id": row.get("task_id"),
-                    "created_at": row.get("created_at", ""),
-                    "metadata": meta,
-                })
+                result.append(
+                    {
+                        "id": row["id"],
+                        "content": row["content"],
+                        "subsystem": meta.get("subsystem", subsystem),
+                        "artifact_type": row.get("artifact_type", "raw"),
+                        "task_id": row.get("task_id"),
+                        "created_at": row.get("created_at", ""),
+                        "metadata": meta,
+                    }
+                )
             if len(result) >= limit:
                 break
         return result
@@ -479,7 +497,9 @@ class MemoryManager:
         Internally stored as a SUMMARY artifact with metadata.
         """
         content = document.get("synthesis") or document.get("content", str(document))
-        metadata = {k: v for k, v in document.items() if k not in ("synthesis", "content")}
+        metadata = {
+            k: v for k, v in document.items() if k not in ("synthesis", "content")
+        }
         artifact = await self.store_artifact(
             content=content,
             artifact_type=ArtifactType.SUMMARY,
@@ -504,15 +524,18 @@ class MemoryManager:
         for row in rows:
             if isinstance(row.get("metadata"), str):
                 import json
+
                 row["metadata"] = json.loads(row["metadata"])
-            result.append({
-                "id": row["id"],
-                "content": row["content"],
-                "artifact_type": row.get("artifact_type", "summary"),
-                "task_id": row.get("task_id"),
-                "created_at": row.get("created_at", ""),
-                "metadata": row.get("metadata", {}),
-            })
+            result.append(
+                {
+                    "id": row["id"],
+                    "content": row["content"],
+                    "artifact_type": row.get("artifact_type", "summary"),
+                    "task_id": row.get("task_id"),
+                    "created_at": row.get("created_at", ""),
+                    "metadata": row.get("metadata", {}),
+                }
+            )
         return result
 
     async def search(
@@ -525,7 +548,7 @@ class MemoryManager:
         Semantic search adapter for the MemoryQueryTool protocol.
         Delegates to search_research() and normalises results to plain dicts.
         """
-        filter_topic   = (filters or {}).get("artifact_type")
+        filter_topic = (filters or {}).get("artifact_type")
         filter_session = (filters or {}).get("session_id")
         notes = await self.search_research(
             query=query,
@@ -537,7 +560,7 @@ class MemoryManager:
             {
                 "id": n.id,
                 "memory_id": n.id,
-                "score": 1.0,          # ChromaDB distance not exposed here
+                "score": 1.0,  # ChromaDB distance not exposed here
                 "title": n.topic,
                 "artifact_type": "research_note",
                 "task_id": n.task_id or "",
@@ -587,7 +610,9 @@ class MemoryManager:
 
         duckdb_ok = False
         try:
-            count = await self._duckdb.count_session_artifacts(self.session_id, include_archived=True)
+            count = await self._duckdb.count_session_artifacts(
+                self.session_id, include_archived=True
+            )
             duckdb_ok = isinstance(count, int)
         except Exception:
             pass
@@ -617,9 +642,11 @@ class MemoryManager:
         """Return high-level memory stats for a session."""
         sid = session_id or self.session_id
         artifact_count = await self._duckdb.count_session_artifacts(sid)
-        archived_count = await self._duckdb.count_session_artifacts(sid, include_archived=True)
+        archived_count = await self._duckdb.count_session_artifacts(
+            sid, include_archived=True
+        )
         research_count = await self._chroma.count()
-        context_keys   = await self._redis.keys(sid)
+        context_keys = await self._redis.keys(sid)
 
         return {
             "session_id": sid,

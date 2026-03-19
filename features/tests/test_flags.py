@@ -5,10 +5,10 @@ Tests for features/flags.py
 Verifies flag defaults, env-var overrides, programmatic set/get,
 change callbacks, and file-based loading.
 """
+
 from __future__ import annotations
 
 import json
-import os
 import pytest
 
 from features.flags import FeatureFlags
@@ -17,7 +17,7 @@ from features.flags import FeatureFlags
 @pytest.fixture
 def flags():
     """A fresh FeatureFlags instance with no env overrides."""
-    return FeatureFlags(flags_file=None)
+    return FeatureFlags(config_file=None)
 
 
 class TestFeatureFlagDefaults:
@@ -53,12 +53,12 @@ class TestEnvVarOverride:
         # TINKER_FLAG_MESO_SYNTHESIS_ENABLED=false should disable the flag
         monkeypatch.setenv("TINKER_FLAG_MESO_SYNTHESIS_ENABLED", "false")
         # Create a new instance so it picks up the env var
-        fresh_flags = FeatureFlags(flags_file=None)
+        fresh_flags = FeatureFlags(config_file=None)
         assert fresh_flags.is_enabled("meso_synthesis_enabled") is False
 
     def test_env_var_true_enables_flag(self, monkeypatch):
         monkeypatch.setenv("TINKER_FLAG_SOME_CUSTOM_FLAG", "true")
-        fresh_flags = FeatureFlags(flags_file=None)
+        fresh_flags = FeatureFlags(config_file=None)
         assert fresh_flags.is_enabled("some_custom_flag") is True
 
 
@@ -83,11 +83,11 @@ class TestFileBasedFlags:
     def test_loads_from_json_file(self, tmp_path):
         flags_file = tmp_path / "flags.json"
         flags_file.write_text(json.dumps({"custom_flag": True, "another_flag": False}))
-        fresh_flags = FeatureFlags(flags_file=str(flags_file))
+        fresh_flags = FeatureFlags(config_file=str(flags_file))
         assert fresh_flags.is_enabled("custom_flag") is True
         assert fresh_flags.is_enabled("another_flag") is False
 
     def test_missing_file_uses_defaults(self):
-        fresh_flags = FeatureFlags(flags_file="/nonexistent/path/flags.json")
+        fresh_flags = FeatureFlags(config_file="/nonexistent/path/flags.json")
         # Should not crash; defaults should apply
         assert isinstance(fresh_flags.all(), dict)

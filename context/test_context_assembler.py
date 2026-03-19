@@ -17,13 +17,11 @@ import asyncio
 import textwrap
 import time
 import unittest
-from unittest.mock import AsyncMock, patch
 
 from .assembler import (
     AgentRole,
     AssembledContext,
     ContextAssembler,
-    MemoryItem,
     Task,
     TokenBudgetManager,
     SECTION_PRIORITY,
@@ -36,6 +34,7 @@ from exceptions import ConfigurationError
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_task(
     description: str = "Design the API Gateway component",
     goal: str = "Produce a resilient, observable API Gateway for the Tinker platform",
@@ -45,7 +44,8 @@ def make_task(
         id="task-001",
         description=description,
         goal=goal,
-        constraints=constraints or [
+        constraints=constraints
+        or [
             "Max p99 latency: 50 ms",
             "No single point of failure",
             "Must support gRPC + REST",
@@ -70,8 +70,8 @@ def build_assembler(
 # Tests
 # ---------------------------------------------------------------------------
 
-class TestTokenBudgetManager(unittest.TestCase):
 
+class TestTokenBudgetManager(unittest.TestCase):
     def setUp(self):
         self.bm = TokenBudgetManager(total_tokens=4096)
 
@@ -89,7 +89,7 @@ class TestTokenBudgetManager(unittest.TestCase):
         self.assertEqual(chars, expected)
 
     def test_estimate_tokens_round_trip(self):
-        text = "Hello world " * 100   # 1200 chars
+        text = "Hello world " * 100  # 1200 chars
         tokens = self.bm.estimate_tokens(text)
         self.assertGreater(tokens, 0)
         self.assertLess(tokens, 1200)  # must be less than chars
@@ -112,10 +112,12 @@ class TestTokenBudgetManager(unittest.TestCase):
         # ConfigurationError (from the central exceptions module) is raised
         # when section allocations sum to > 1.0.
         with self.assertRaises(ConfigurationError):
-            TokenBudgetManager(allocation_overrides={
-                "system_identity": 0.9,
-                "task": 0.9,  # sum > 1.0
-            })
+            TokenBudgetManager(
+                allocation_overrides={
+                    "system_identity": 0.9,
+                    "task": 0.9,  # sum > 1.0
+                }
+            )
 
     def test_remaining_tokens(self):
         self.assertEqual(self.bm.remaining_tokens(1000), 3096)
@@ -123,9 +125,8 @@ class TestTokenBudgetManager(unittest.TestCase):
 
 
 class TestContextAssembler(unittest.IsolatedAsyncioTestCase):
-
     async def asyncSetUp(self):
-        self.task      = make_task()
+        self.task = make_task()
         self.assembler = build_assembler()
 
     # ------------------------------------------------------------------
@@ -146,8 +147,14 @@ class TestContextAssembler(unittest.IsolatedAsyncioTestCase):
 
     async def test_all_core_sections_present(self):
         ctx = await self.assembler.assemble(self.task, AgentRole.ARCHITECT, 1)
-        for section in ("SYSTEM IDENTITY", "TASK", "ARCH STATE",
-                        "RECENT ARTIFACTS", "RESEARCH NOTES", "OUTPUT FORMAT"):
+        for section in (
+            "SYSTEM IDENTITY",
+            "TASK",
+            "ARCH STATE",
+            "RECENT ARTIFACTS",
+            "RESEARCH NOTES",
+            "OUTPUT FORMAT",
+        ):
             self.assertIn(section, ctx.prompt, msg=f"Missing section: {section}")
 
     async def test_tokens_within_budget(self):
@@ -248,6 +255,7 @@ class TestContextAssembler(unittest.IsolatedAsyncioTestCase):
 # ---------------------------------------------------------------------------
 # Integration demo  (not a unit test — prints a full assembled context)
 # ---------------------------------------------------------------------------
+
 
 async def _demo():
     print("\n" + "=" * 70)

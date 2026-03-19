@@ -4,9 +4,9 @@ Tests for resilience/rate_limiter.py
 
 Verifies token bucket refill, burst capacity, acquire blocking, and the registry.
 """
+
 from __future__ import annotations
 
-import asyncio
 import time
 import pytest
 
@@ -56,9 +56,9 @@ class TestTokenBucketRateLimiter:
         limiter = TokenBucketRateLimiter("my_agent", rate=2.0, burst=4)
         stats = limiter.stats()
         assert stats["name"] == "my_agent"
-        assert "tokens_available" in stats
-        assert "total_tokens_used" in stats
-        assert "rate" in stats
+        assert "current_tokens" in stats  # field was renamed from tokens_available
+        assert "total_llm_tokens" in stats  # field was renamed from total_tokens_used
+        assert "rate_per_second" in stats  # field was renamed from rate
 
 
 class TestRateLimiterRegistry:

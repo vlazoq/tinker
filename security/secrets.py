@@ -50,7 +50,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +132,9 @@ class SecretManager:
         self._vault_token = vault_token or os.getenv("VAULT_TOKEN")
         self._aws_region = aws_region or os.getenv("AWS_DEFAULT_REGION", "us-east-1")
         self._cache_ttl = cache_ttl
-        self._cache: dict[str, tuple[Optional[str], float]] = {}  # key → (value, expires_at)
+        self._cache: dict[
+            str, tuple[Optional[str], float]
+        ] = {}  # key → (value, expires_at)
 
     async def get(
         self,
@@ -186,7 +188,7 @@ class SecretManager:
     async def _fetch_from_backend(self, key: str) -> Optional[str]:
         """Delegate to the configured secret backend."""
         if self._backend == "env":
-            return None   # Only env vars, no additional backend
+            return None  # Only env vars, no additional backend
 
         elif self._backend == "vault":
             return await self._fetch_from_vault(key)
@@ -195,7 +197,9 @@ class SecretManager:
             return await self._fetch_from_aws(key)
 
         else:
-            logger.warning("Unknown secret backend '%s' — falling back to env", self._backend)
+            logger.warning(
+                "Unknown secret backend '%s' — falling back to env", self._backend
+            )
             return None
 
     async def _fetch_from_vault(self, key: str) -> Optional[str]:
@@ -231,11 +235,14 @@ class SecretManager:
             import boto3  # type: ignore
             import json as _json
         except ImportError:
-            logger.warning("boto3 not installed — AWS Secrets Manager backend unavailable")
+            logger.warning(
+                "boto3 not installed — AWS Secrets Manager backend unavailable"
+            )
             return None
 
         try:
             import asyncio
+
             loop = asyncio.get_running_loop()
             client = boto3.client("secretsmanager", region_name=self._aws_region)
 

@@ -50,12 +50,13 @@ CHARS_PER_TOKEN = 3.5
 # We keep 8% headroom below the stated context window.  Models often have
 # slightly imprecise stated limits, and rounding errors accumulate, so this
 # margin prevents us from accidentally going over by a few tokens.
-SAFETY_MARGIN   = 0.92       # keep 8 % headroom
+SAFETY_MARGIN = 0.92  # keep 8 % headroom
 
 
 # ---------------------------------------------------------------------------
 # Token counting
 # ---------------------------------------------------------------------------
+
 
 def _count_heuristic(text: str) -> int:
     """
@@ -85,6 +86,7 @@ def _count_heuristic(text: str) -> int:
 
 try:
     import tiktoken
+
     # cl100k_base is the encoding used by GPT-4 and similar models.
     # Ollama models follow the same tokenization conventions.
     _enc = tiktoken.get_encoding("cl100k_base")
@@ -101,7 +103,9 @@ except ImportError:
         """Estimate token count using the 3.5-chars-per-token heuristic."""
         return _count_heuristic(text)
 
-    logger.debug("tiktoken not installed — using character heuristic for token counting")
+    logger.debug(
+        "tiktoken not installed — using character heuristic for token counting"
+    )
 
 
 def count_messages_tokens(messages: Sequence[Message]) -> int:
@@ -123,14 +127,17 @@ def count_messages_tokens(messages: Sequence[Message]) -> int:
     total = 0
     for m in messages:
         total += count_tokens(m.content)
-        total += 4  # each message has overhead: role name + chat-template formatting tokens
-    total += 2      # the model always "primes" its own reply with 2 tokens
+        total += (
+            4  # each message has overhead: role name + chat-template formatting tokens
+        )
+    total += 2  # the model always "primes" its own reply with 2 tokens
     return total
 
 
 # ---------------------------------------------------------------------------
 # Truncation
 # ---------------------------------------------------------------------------
+
 
 def enforce_context_limit(
     messages: list[Message],
@@ -192,25 +199,28 @@ def enforce_context_limit(
     )
 
     # Separate the system message (must keep) from everything else
-    system_msgs  = [m for m in messages if m.role == "system"]
-    other_msgs   = [m for m in messages if m.role != "system"]
+    system_msgs = [m for m in messages if m.role == "system"]
+    other_msgs = [m for m in messages if m.role != "system"]
 
     # The very last message (e.g. the current user prompt) must always be kept.
-    protected_tail = other_msgs[-1:]   # list with just the last message
-    evictable      = other_msgs[:-1]   # all older non-system messages
+    protected_tail = other_msgs[-1:]  # list with just the last message
+    evictable = other_msgs[:-1]  # all older non-system messages
 
     # Drop the oldest evictable message on each iteration until we fit.
     # ``evictable.pop(0)`` removes the first (oldest) item each time.
     while evictable:
         candidate = system_msgs + evictable + protected_tail
         if count_messages_tokens(candidate) <= budget:
-            logger.debug("Dropped %d message(s) to fit context window.", len(other_msgs[:-1]) - len(evictable))
+            logger.debug(
+                "Dropped %d message(s) to fit context window.",
+                len(other_msgs[:-1]) - len(evictable),
+            )
             return candidate
         evictable.pop(0)  # drop the oldest remaining evictable message and try again
 
     # We've dropped everything evictable — only system + last message remain.
     result = system_msgs + protected_tail
-    total  = count_messages_tokens(result)
+    total = count_messages_tokens(result)
     if total > budget:
         # Even these two messages together are too long — truncate the last one.
         logger.warning("Single message exceeds budget; truncating content.")
@@ -219,6 +229,8 @@ def enforce_context_limit(
         # with an extra 10% trim (0.9 factor) to be safe against estimation error.
         max_chars = int(budget * CHARS_PER_TOKEN * 0.9)
         # Replace the last message with a truncated version
-        result[-1] = Message(role=last.role, content=last.content[:max_chars] + "\n[... truncated ...]")
+        result[-1] = Message(
+            role=last.role, content=last.content[:max_chars] + "\n[... truncated ...]"
+        )
 
     return result

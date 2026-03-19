@@ -21,20 +21,16 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 # ── Re-export all existing panels ─────────────────────────────────────────────
-from .active_task     import ActiveTaskPanel
-from .architect_critic import ArchitectPanel, CriticPanel
-from .health_arch     import ArchStatePanel, HealthPanel, MemoryPanel
-from .log_stream      import LogStreamPanel
-from .loop_status     import LoopStatusPanel
-from .task_queue      import TaskQueuePanel
 
 
 # ── Grub panel ────────────────────────────────────────────────────────────────
 
 _BASE = Path(os.getenv("TINKER_BASE_DIR", Path(__file__).parent.parent))
-_GRUB_QUEUE_DB     = Path(os.getenv("GRUB_QUEUE_DB",     _BASE / "grub_queue.sqlite"))
-_GRUB_ARTIFACTS    = Path(os.getenv("GRUB_ARTIFACTS_DIR", _BASE / "grub_artifacts"))
-_TINKER_TASKS_DB   = Path(os.getenv("TINKER_TASK_DB",     _BASE / "tinker_tasks_engine.sqlite"))
+_GRUB_QUEUE_DB = Path(os.getenv("GRUB_QUEUE_DB", _BASE / "grub_queue.sqlite"))
+_GRUB_ARTIFACTS = Path(os.getenv("GRUB_ARTIFACTS_DIR", _BASE / "grub_artifacts"))
+_TINKER_TASKS_DB = Path(
+    os.getenv("TINKER_TASK_DB", _BASE / "tinker_tasks_engine.sqlite")
+)
 
 
 def _query_db(db_path: Path, sql: str, params: tuple = ()) -> list[dict]:
@@ -63,7 +59,7 @@ def _score_style(score: float) -> str:
 
 def _score_bar(score: float, width: int = 12) -> str:
     filled = int(round(score * width))
-    empty  = width - filled
+    empty = width - filled
     return "█" * filled + "░" * empty
 
 
@@ -102,7 +98,7 @@ class GrubPanel(Widget):
     # ── Header ────────────────────────────────────────────────────────────────
 
     def _update_header(self) -> None:
-        queue_exists    = _GRUB_QUEUE_DB.exists()
+        queue_exists = _GRUB_QUEUE_DB.exists()
         artifact_exists = _GRUB_ARTIFACTS.exists()
         hdr = Text()
         hdr.append(" Grub Pipeline", style="bold")
@@ -129,21 +125,23 @@ class GrubPanel(Widget):
         tbl.add_row(Text("TINKER TASKS", style="bold dim"), Text(""), Text(""))
 
         if not rows:
-            tbl.add_row("", Text("no implementation tasks", style="dim italic"), Text(""))
+            tbl.add_row(
+                "", Text("no implementation tasks", style="dim italic"), Text("")
+            )
         else:
             counts: dict[str, dict[str, int]] = {}
             for r in rows:
                 counts.setdefault(r["type"], {})[r["status"]] = r["n"]
 
             type_styles = {
-                "implementation": ("bright_cyan",   "implement"),
-                "review":         ("bright_magenta","review"),
+                "implementation": ("bright_cyan", "implement"),
+                "review": ("bright_magenta", "review"),
             }
             status_styles = {
-                "pending":   "yellow",
-                "active":    "bright_green",
+                "pending": "yellow",
+                "active": "bright_green",
                 "completed": "dim green",
-                "failed":    "bright_red",
+                "failed": "bright_red",
             }
             for t, (ts, label) in type_styles.items():
                 for s, ss in status_styles.items():
@@ -173,17 +171,19 @@ class GrubPanel(Widget):
         tbl.add_row(Text("GRUB QUEUE", style="bold dim"), Text(""), Text(""))
 
         if not rows:
-            tbl.add_row("", Text("queue empty / not started", style="dim italic"), Text(""))
+            tbl.add_row(
+                "", Text("queue empty / not started", style="dim italic"), Text("")
+            )
         else:
             status_styles = {
-                "pending":   "yellow",
-                "claimed":   "bright_green",
-                "done":      "dim green",
-                "failed":    "bright_red",
+                "pending": "yellow",
+                "claimed": "bright_green",
+                "done": "dim green",
+                "failed": "bright_red",
             }
             for r in rows:
-                s  = r["status"]
-                n  = r["n"]
+                s = r["status"]
+                n = r["n"]
                 ss = status_styles.get(s, "white")
                 tbl.add_row(
                     Text(s, style=ss),
@@ -228,19 +228,20 @@ class GrubPanel(Widget):
                 for line in first_lines:
                     if "score" in line.lower() and any(c.isdigit() for c in line):
                         import re
+
                         m = re.search(r"(\d+\.\d+)", line)
                         if m:
                             score = float(m.group(1))
-                            if score > 1.0:          # e.g. 8.5 out of 10
+                            if score > 1.0:  # e.g. 8.5 out of 10
                                 score = score / 10.0
-                            score_str   = f"{score:.2f}"
+                            score_str = f"{score:.2f}"
                             score_style = _score_style(score)
                             break
             except Exception:
                 pass
 
             mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime("%H:%M")
-            name  = f.stem[:18]
+            name = f.stem[:18]
             tbl.add_row(
                 Text(mtime, style="dim"),
                 Text(name, style="bright_white"),

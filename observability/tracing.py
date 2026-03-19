@@ -62,9 +62,9 @@ import time
 import logging
 import threading
 from collections import deque
-from contextlib import contextmanager, asynccontextmanager
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Deque, Iterator, Optional
+from typing import Deque, Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,7 @@ class Span:
     attributes  : Arbitrary key-value metadata about this step.
     error       : Error message if this span failed, else None.
     """
+
     name: str
     started_at: float = field(default_factory=time.monotonic)
     ended_at: Optional[float] = None
@@ -107,7 +108,9 @@ class Span:
             "name": self.name,
             "started_at": round(self.started_at, 4),
             "ended_at": round(self.ended_at, 4) if self.ended_at else None,
-            "duration_ms": round(self.duration_ms, 2) if self.duration_ms is not None else None,
+            "duration_ms": round(self.duration_ms, 2)
+            if self.duration_ms is not None
+            else None,
             "attributes": self.attributes,
             "error": self.error,
         }
@@ -129,6 +132,7 @@ class Trace:
     ended_at   : When the trace finished, or None if still running.
     attributes : Trace-level metadata.
     """
+
     trace_id: str
     name: str
     started_at: float = field(default_factory=time.monotonic)
@@ -176,7 +180,9 @@ class Trace:
             "name": self.name,
             "started_at": round(self.started_at, 4),
             "ended_at": round(self.ended_at, 4) if self.ended_at else None,
-            "duration_ms": round(self.duration_ms, 2) if self.duration_ms is not None else None,
+            "duration_ms": round(self.duration_ms, 2)
+            if self.duration_ms is not None
+            else None,
             "attributes": self.attributes,
             "spans": [s.to_dict() for s in self.spans],
         }
@@ -194,12 +200,14 @@ class Trace:
             return
         slowest = self.slowest_span()
         slowest_info = (
-            f" (slowest: {slowest.name}={slowest.duration_ms:.0f}ms)"
-            if slowest else ""
+            f" (slowest: {slowest.name}={slowest.duration_ms:.0f}ms)" if slowest else ""
         )
         logger.debug(
             "Trace '%s' [%s] completed in %.0fms%s",
-            self.name, self.trace_id, self.duration_ms, slowest_info,
+            self.name,
+            self.trace_id,
+            self.duration_ms,
+            slowest_info,
         )
 
 
@@ -296,6 +304,7 @@ class Tracer:
         dict : Per-span-name statistics (avg, p50, p95, p99, max).
         """
         from collections import defaultdict
+
         span_durations: dict[str, list[float]] = defaultdict(list)
 
         with self._lock:
@@ -328,6 +337,7 @@ default_tracer = Tracer()
 # ---------------------------------------------------------------------------
 # TinkerError ↔ Span integration
 # ---------------------------------------------------------------------------
+
 
 def record_tinker_exception(exc: Exception, span: "Span") -> None:
     """
@@ -374,8 +384,9 @@ def record_tinker_exception(exc: Exception, span: "Span") -> None:
     # Enrich span attributes from TinkerError.context
     try:
         from exceptions import TinkerError  # local import to avoid circular dep
+
         if isinstance(exc, TinkerError):
-            span.attributes["exc.type"]      = type(exc).__name__
+            span.attributes["exc.type"] = type(exc).__name__
             span.attributes["exc.retryable"] = exc.retryable
             for key, value in exc.context.items():
                 # Prefix with "exc." to namespace exception attrs from normal attrs

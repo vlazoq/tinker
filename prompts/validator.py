@@ -19,8 +19,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 try:
-    import jsonschema
+    import jsonschema  # noqa: F401
     from jsonschema import validate as _jv_validate, ValidationError as _JVError
+
     _JSONSCHEMA_AVAILABLE = True
 except ImportError:
     _JSONSCHEMA_AVAILABLE = False
@@ -33,13 +34,14 @@ from .templates import Role, LoopLevel
 # Result dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ValidationResult:
     valid: bool
-    data:   dict[str, Any] | None          # parsed artifact, or None on failure
+    data: dict[str, Any] | None  # parsed artifact, or None on failure
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-    auto_repaired: bool = False             # True if heuristic repairs were applied
+    auto_repaired: bool = False  # True if heuristic repairs were applied
 
     def raise_if_invalid(self) -> None:
         if not self.valid:
@@ -50,6 +52,7 @@ class ValidationResult:
 # ---------------------------------------------------------------------------
 # Main validator
 # ---------------------------------------------------------------------------
+
 
 class OutputValidator:
     """
@@ -99,14 +102,20 @@ class OutputValidator:
 
         # Step 2: Auto-repair
         if auto_repair:
-            extracted, repair_warnings, repaired = self._auto_repair(extracted, role, loop_level)
+            extracted, repair_warnings, repaired = self._auto_repair(
+                extracted, role, loop_level
+            )
             warnings.extend(repair_warnings)
 
         # Step 3: Schema validation
         schema = SCHEMA_REGISTRY.get(key)
         if schema is None:
-            warnings.append(f"No schema registered for key '{key}' — skipping schema check.")
-            return ValidationResult(valid=True, data=extracted, warnings=warnings, auto_repaired=repaired)
+            warnings.append(
+                f"No schema registered for key '{key}' — skipping schema check."
+            )
+            return ValidationResult(
+                valid=True, data=extracted, warnings=warnings, auto_repaired=repaired
+            )
 
         schema_errors = self._schema_validate(extracted, schema)
         if schema_errors:
@@ -119,7 +128,9 @@ class OutputValidator:
             )
 
         # Step 4: Semantic checks (beyond JSON schema)
-        semantic_errors, semantic_warnings = self._semantic_checks(extracted, role, loop_level)
+        semantic_errors, semantic_warnings = self._semantic_checks(
+            extracted, role, loop_level
+        )
         warnings.extend(semantic_warnings)
         if semantic_errors:
             return ValidationResult(
@@ -187,7 +198,11 @@ class OutputValidator:
         repaired = False
 
         # Inject artifact_id if missing or placeholder
-        if not data.get("artifact_id") or data.get("artifact_id") in ("<uuid4>", "uuid4", ""):
+        if not data.get("artifact_id") or data.get("artifact_id") in (
+            "<uuid4>",
+            "uuid4",
+            "",
+        ):
             data["artifact_id"] = str(uuid.uuid4())
             warnings.append("Auto-injected missing artifact_id (UUID v4).")
             repaired = True
@@ -228,13 +243,15 @@ class OutputValidator:
         # Repair weakness IDs: ensure W1, W2, ...
         weaknesses = data.get("weaknesses", [])
         for i, w in enumerate(weaknesses):
-            expected_id = f"W{i+1}"
+            expected_id = f"W{i + 1}"
             if w.get("id") != expected_id:
                 w["id"] = expected_id
                 repaired = True
 
         # Ensure revision_required is boolean
-        if "revision_required" in data and not isinstance(data["revision_required"], bool):
+        if "revision_required" in data and not isinstance(
+            data["revision_required"], bool
+        ):
             data["revision_required"] = data["verdict"] in ("revise", "reject")
             warnings.append("revision_required was non-boolean; derived from verdict.")
             repaired = True
@@ -243,7 +260,9 @@ class OutputValidator:
         if loop_level == "macro" and "version" in data:
             v = data["version"]
             if not re.match(r"^\d+\.\d+\.\d+$", str(v)):
-                warnings.append(f"version '{v}' does not match MAJOR.MINOR.PATCH — not auto-repaired.")
+                warnings.append(
+                    f"version '{v}' does not match MAJOR.MINOR.PATCH — not auto-repaired."
+                )
 
         return data, warnings, repaired
 
@@ -259,7 +278,7 @@ class OutputValidator:
             except _JVError as e:
                 errors.append(f"Schema violation at '{e.json_path}': {e.message}")
                 # Also collect child errors
-                for sub in getattr(e, 'context', []):
+                for sub in getattr(e, "context", []):
                     errors.append(f"  → {sub.message}")
             return errors
         else:
@@ -308,8 +327,11 @@ class OutputValidator:
 
         # Check for generic/non-specific weakness statements
         generic_phrases = [
-            "could be improved", "might have issues", "may cause problems",
-            "could be better", "needs more thought"
+            "could be improved",
+            "might have issues",
+            "may cause problems",
+            "could be better",
+            "needs more thought",
         ]
         for w in weaknesses:
             stmt = w.get("statement", "").lower()
@@ -325,9 +347,7 @@ class OutputValidator:
         verdict = data.get("verdict")
         revision_required = data.get("revision_required")
         if verdict == "accept" and revision_required is True:
-            errors.append(
-                "Inconsistency: verdict='accept' but revision_required=True."
-            )
+            errors.append("Inconsistency: verdict='accept' but revision_required=True.")
         if verdict in ("revise", "reject") and revision_required is False:
             errors.append(
                 f"Inconsistency: verdict='{verdict}' but revision_required=False."
@@ -336,8 +356,7 @@ class OutputValidator:
         # confidence_score should not be too high given weaknesses
         confidence = data.get("confidence_score", 0.0)
         critical_or_high = [
-            w for w in weaknesses
-            if w.get("severity") in ("critical", "high")
+            w for w in weaknesses if w.get("severity") in ("critical", "high")
         ]
         if critical_or_high and confidence > 0.8:
             errors.append(
@@ -347,7 +366,9 @@ class OutputValidator:
 
         return errors
 
-    def _check_architect_semantics(self, data: dict, loop_level: LoopLevel) -> list[str]:
+    def _check_architect_semantics(
+        self, data: dict, loop_level: LoopLevel
+    ) -> list[str]:
         errors: list[str] = []
 
         # Reasoning chain minimum depth
@@ -383,7 +404,9 @@ class OutputValidator:
 
         return errors
 
-    def _check_synthesizer_semantics(self, data: dict, loop_level: LoopLevel) -> list[str]:
+    def _check_synthesizer_semantics(
+        self, data: dict, loop_level: LoopLevel
+    ) -> list[str]:
         warnings: list[str] = []
 
         # Warn if no contradictions were found (might mean synthesis was too shallow)
@@ -408,6 +431,7 @@ class OutputValidator:
 # ---------------------------------------------------------------------------
 # Convenience function
 # ---------------------------------------------------------------------------
+
 
 def validate_output(
     raw_output: str,

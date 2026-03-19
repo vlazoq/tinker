@@ -61,8 +61,9 @@ logger = logging.getLogger(__name__)
 
 class CircuitState(enum.Enum):
     """Possible states of a circuit breaker."""
-    CLOSED    = "closed"     # Normal operation — calls pass through
-    OPEN      = "open"       # Tripped — calls fail immediately
+
+    CLOSED = "closed"  # Normal operation — calls pass through
+    OPEN = "open"  # Tripped — calls fail immediately
     HALF_OPEN = "half_open"  # Probe state — one call allowed through
 
 
@@ -71,7 +72,7 @@ class CircuitState(enum.Enum):
 # hierarchy, retryable flag, and structured context) and re-exported here
 # so existing code that does ``from resilience.circuit_breaker import
 # CircuitBreakerOpenError`` continues to work without any changes.
-from exceptions import CircuitBreakerOpenError  # noqa: F401  (intentional re-export)
+from exceptions import CircuitBreakerOpenError  # noqa: E402, F401  (intentional re-export)
 
 
 class CircuitBreaker:
@@ -124,7 +125,7 @@ class CircuitBreaker:
         self._failure_count: int = 0
         self._success_count: int = 0
         self._last_failure_time: float = 0.0
-        self._open_at: float = 0.0       # monotonic time when breaker opened
+        self._open_at: float = 0.0  # monotonic time when breaker opened
         self._total_calls: int = 0
         self._total_failures: int = 0
         self._total_short_circuits: int = 0
@@ -165,7 +166,8 @@ class CircuitBreaker:
             "total_short_circuits": self._total_short_circuits,
             "last_failure_ago": (
                 time.monotonic() - self._last_failure_time
-                if self._last_failure_time else None
+                if self._last_failure_time
+                else None
             ),
         }
 
@@ -173,7 +175,9 @@ class CircuitBreaker:
     # Core call interface
     # ------------------------------------------------------------------
 
-    async def call(self, fn: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
+    async def call(
+        self, fn: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any
+    ) -> Any:
         """
         Execute ``fn(*args, **kwargs)`` through this circuit breaker.
 
@@ -207,8 +211,12 @@ class CircuitBreaker:
 
         if current == CircuitState.OPEN:
             self._total_short_circuits += 1
-            logger.debug("Circuit '%s' OPEN — short-circuiting call to %s", self.name, fn)
-            raise CircuitBreakerOpenError(self.name, self._open_at + self.recovery_timeout)
+            logger.debug(
+                "Circuit '%s' OPEN — short-circuiting call to %s", self.name, fn
+            )
+            raise CircuitBreakerOpenError(
+                self.name, self._open_at + self.recovery_timeout
+            )
 
         # Attempt the actual call
         self._total_calls += 1
@@ -220,7 +228,9 @@ class CircuitBreaker:
             await self._on_failure(exc)
             raise
 
-    def protect(self, fn: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+    def protect(
+        self, fn: Callable[..., Awaitable[Any]]
+    ) -> Callable[..., Awaitable[Any]]:
         """
         Decorator that wraps an async function with this circuit breaker.
 
@@ -230,9 +240,11 @@ class CircuitBreaker:
             async def fetch(key: str) -> str:
                 return await redis.get(key)
         """
+
         @functools.wraps(fn)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             return await self.call(fn, *args, **kwargs)
+
         return wrapper
 
     def on_state_change(self, callback: Callable) -> None:
@@ -261,7 +273,8 @@ class CircuitBreaker:
                 self._transition(CircuitState.HALF_OPEN)
                 logger.info(
                     "Circuit '%s' HALF_OPEN — probe call allowed after %.1fs",
-                    self.name, elapsed,
+                    self.name,
+                    elapsed,
                 )
 
     async def _on_success(self) -> None:
@@ -292,7 +305,9 @@ class CircuitBreaker:
                 self._open_at = time.monotonic()
                 logger.warning(
                     "Circuit '%s' OPEN (probe failed): %s — will retry in %.1fs",
-                    self.name, exc, self.recovery_timeout,
+                    self.name,
+                    exc,
+                    self.recovery_timeout,
                 )
 
             elif self._state == CircuitState.CLOSED:
@@ -302,12 +317,18 @@ class CircuitBreaker:
                     logger.warning(
                         "Circuit '%s' OPEN after %d consecutive failures. "
                         "Last error: %s — will retry in %.1fs",
-                        self.name, self._failure_count, exc, self.recovery_timeout,
+                        self.name,
+                        self._failure_count,
+                        exc,
+                        self.recovery_timeout,
                     )
                 else:
                     logger.debug(
                         "Circuit '%s' failure %d/%d: %s",
-                        self.name, self._failure_count, self.failure_threshold, exc,
+                        self.name,
+                        self._failure_count,
+                        self.failure_threshold,
+                        exc,
                     )
 
     def _transition(self, new_state: CircuitState) -> None:
@@ -372,7 +393,9 @@ class CircuitBreakerRegistry:
         self._breakers[name] = breaker
         logger.info(
             "Registered circuit breaker '%s' (threshold=%d, timeout=%.1fs)",
-            name, failure_threshold, recovery_timeout,
+            name,
+            failure_threshold,
+            recovery_timeout,
         )
         return breaker
 
@@ -383,7 +406,9 @@ class CircuitBreakerRegistry:
         Raises KeyError if the breaker hasn't been registered.
         """
         if name not in self._breakers:
-            raise KeyError(f"Circuit breaker '{name}' not found. Call register() first.")
+            raise KeyError(
+                f"Circuit breaker '{name}' not found. Call register() first."
+            )
         return self._breakers[name]
 
     def get_or_default(self, name: str) -> Optional[CircuitBreaker]:
@@ -399,7 +424,9 @@ class CircuitBreakerRegistry:
         return any(b.is_open for b in self._breakers.values())
 
 
-def build_default_registry(on_state_change: Optional[Callable] = None) -> CircuitBreakerRegistry:
+def build_default_registry(
+    on_state_change: Optional[Callable] = None,
+) -> CircuitBreakerRegistry:
     """
     Build the standard Tinker circuit breaker registry with sensible defaults.
 

@@ -9,6 +9,7 @@ These are NOT mocks.  Each stub:
 Use these to wire up a local Tinker instance quickly, or as the basis
 for integration tests.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,13 +21,20 @@ from typing import Any, Optional
 
 # ── Task Engine ───────────────────────────────────────────────────────────────
 
+
 class StubTaskEngine:
     """
     Simple FIFO queue.  Generates synthetic tasks and seeds the queue
     so the orchestrator always has work.
     """
 
-    SUBSYSTEMS = ["api_gateway", "data_pipeline", "auth_service", "cache_layer", "messaging"]
+    SUBSYSTEMS = [
+        "api_gateway",
+        "data_pipeline",
+        "auth_service",
+        "cache_layer",
+        "messaging",
+    ]
 
     def __init__(self, initial_tasks: int = 20):
         self._queue: list[dict] = []
@@ -71,17 +79,19 @@ class StubTaskEngine:
 
 # ── Context Assembler ─────────────────────────────────────────────────────────
 
+
 class StubContextAssembler:
     async def build(self, task: dict, max_artifacts: int = 10) -> dict:
         return {
             "task": task,
-            "prior_artifacts": [],   # real impl fetches from memory
+            "prior_artifacts": [],  # real impl fetches from memory
             "system_description": "Tinker architectural reasoning context",
             "max_artifacts_requested": max_artifacts,
         }
 
 
 # ── Architect Agent ───────────────────────────────────────────────────────────
+
 
 class StubArchitectAgent:
     """
@@ -111,6 +121,7 @@ class StubArchitectAgent:
 
 # ── Critic Agent ──────────────────────────────────────────────────────────────
 
+
 class StubCriticAgent:
     async def call(self, task: dict, architect_result: dict) -> dict:
         await asyncio.sleep(0.03)
@@ -129,6 +140,7 @@ class StubCriticAgent:
 
 
 # ── Synthesizer Agent ─────────────────────────────────────────────────────────
+
 
 class StubSynthesizerAgent:
     async def call(self, level: str, **kwargs) -> dict:
@@ -165,8 +177,10 @@ class StubSynthesizerAgent:
 
 # ── Memory Manager ────────────────────────────────────────────────────────────
 
+
 class StubArtifact:
     """Minimal Artifact-like object returned by StubMemoryManager.store_artifact."""
+
     def __init__(self, artifact_id: str) -> None:
         self.id = artifact_id
 
@@ -202,18 +216,24 @@ class StubMemoryManager:
             record.update(artifact)
         else:
             # New keyword-arg call: store_artifact(content=..., task_id=..., metadata=...)
-            record["content"]  = content or ""
-            record["task_id"]  = task_id
+            record["content"] = content or ""
+            record["task_id"] = task_id
             record["metadata"] = metadata or {}
             if artifact_type is not None:
-                record["artifact_type"] = getattr(artifact_type, "value", str(artifact_type))
+                record["artifact_type"] = getattr(
+                    artifact_type, "value", str(artifact_type)
+                )
+            # Hoist subsystem to the top level so get_artifacts() can filter on it.
+            # The real MemoryManager stores subsystem in metadata but exposes it
+            # as a top-level field when returning artifacts.
+            if metadata and "subsystem" in metadata:
+                record["subsystem"] = metadata["subsystem"]
         self._artifacts[artifact_id] = record
         return StubArtifact(artifact_id)
 
     async def get_artifacts(self, subsystem: str, limit: int = 10) -> list[dict]:
         matching = [
-            a for a in self._artifacts.values()
-            if a.get("subsystem") == subsystem
+            a for a in self._artifacts.values() if a.get("subsystem") == subsystem
         ]
         return sorted(matching, key=lambda a: a["stored_at"], reverse=True)[:limit]
 
@@ -236,6 +256,7 @@ class StubMemoryManager:
 
 # ── Tool Layer ────────────────────────────────────────────────────────────────
 
+
 class StubToolLayer:
     async def research(self, query: str) -> dict:
         await asyncio.sleep(0.04)
@@ -248,17 +269,20 @@ class StubToolLayer:
 
 # ── Architecture State Manager ────────────────────────────────────────────────
 
+
 class StubArchStateManager:
     def __init__(self):
         self._commits: list[dict] = []
 
     async def commit(self, payload: dict) -> str:
         commit_hash = uuid.uuid4().hex[:8]
-        self._commits.append({
-            **payload,
-            "hash": commit_hash,
-            "committed_at": time.time(),
-        })
+        self._commits.append(
+            {
+                **payload,
+                "hash": commit_hash,
+                "committed_at": time.time(),
+            }
+        )
         return commit_hash
 
     @property
@@ -267,6 +291,7 @@ class StubArchStateManager:
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
+
 
 def build_stub_components() -> dict[str, Any]:
     """Return a dict of all stub components ready to inject into Orchestrator."""

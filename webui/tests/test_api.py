@@ -45,8 +45,6 @@ Running
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -69,6 +67,7 @@ client = TestClient(app, raise_server_exceptions=True)
 # ===========================================================================
 # 1. Health / status endpoints
 # ===========================================================================
+
 
 class TestHealthEndpoints:
     """
@@ -107,7 +106,9 @@ class TestHealthEndpoints:
         assert r.status_code == 200
 
     def test_grub_status_returns_json(self):
-        assert "application/json" in client.get("/api/grub/status").headers["content-type"]
+        assert (
+            "application/json" in client.get("/api/grub/status").headers["content-type"]
+        )
 
     def test_health_does_not_raise_500(self):
         """Orchestrator down → graceful empty response, never 500."""
@@ -121,6 +122,7 @@ class TestHealthEndpoints:
 # ===========================================================================
 # 2. Config endpoints
 # ===========================================================================
+
 
 class TestConfigEndpoints:
     """
@@ -158,51 +160,69 @@ class TestConfigEndpoints:
 
     def test_post_config_below_minimum_returns_422(self):
         """meso_trigger_count has min=1; sending -5 must yield 422."""
-        r = client.post("/api/config", json={
-            "orchestrator": {"meso_trigger_count": -5},
-            "stagnation": {},
-        })
+        r = client.post(
+            "/api/config",
+            json={
+                "orchestrator": {"meso_trigger_count": -5},
+                "stagnation": {},
+            },
+        )
         assert r.status_code == 422
 
     def test_post_config_422_includes_errors_list(self):
-        r = client.post("/api/config", json={
-            "orchestrator": {"meso_trigger_count": -5},
-            "stagnation": {},
-        })
+        r = client.post(
+            "/api/config",
+            json={
+                "orchestrator": {"meso_trigger_count": -5},
+                "stagnation": {},
+            },
+        )
         body = r.json()
         assert body.get("ok") is False
         assert isinstance(body.get("errors"), list)
         assert len(body["errors"]) >= 1
 
     def test_post_config_422_error_message_is_string(self):
-        r = client.post("/api/config", json={
-            "orchestrator": {"meso_trigger_count": -5},
-            "stagnation": {},
-        })
+        r = client.post(
+            "/api/config",
+            json={
+                "orchestrator": {"meso_trigger_count": -5},
+                "stagnation": {},
+            },
+        )
         for err in r.json()["errors"]:
             assert isinstance(err, str), f"Error entry is not a string: {err!r}"
 
     def test_post_config_invalid_type_returns_422(self):
         """A string where an int is expected must yield 422."""
-        r = client.post("/api/config", json={
-            "orchestrator": {"meso_trigger_count": "not_a_number"},
-            "stagnation": {},
-        })
+        r = client.post(
+            "/api/config",
+            json={
+                "orchestrator": {"meso_trigger_count": "not_a_number"},
+                "stagnation": {},
+            },
+        )
         assert r.status_code == 422
         assert r.json().get("ok") is False
 
     def test_post_config_valid_payload_returns_ok_true(self, tmp_path):
         """A completely valid payload must return ok=True."""
         cfg_file = tmp_path / "config.json"
-        with patch("webui.core.CONFIG_FILE", cfg_file), \
-             patch("webui.app.load_config", lambda: {}), \
-             patch("webui.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))):
+        with (
+            patch("webui.core.CONFIG_FILE", cfg_file),
+            patch("webui.app.load_config", lambda: {}),
+            patch(
+                "webui.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))
+            ),
+        ):
             # Build a valid payload from the schema defaults
             orch: dict[str, Any] = {}
             for section in ORCH_CONFIG_SCHEMA.values():
                 for fname, meta in section["fields"].items():
                     orch[fname] = meta["default"]
-            r = client.post("/api/config", json={"orchestrator": orch, "stagnation": {}})
+            r = client.post(
+                "/api/config", json={"orchestrator": orch, "stagnation": {}}
+            )
         assert r.status_code == 200
         assert r.json().get("ok") is True
 
@@ -210,6 +230,7 @@ class TestConfigEndpoints:
 # ===========================================================================
 # 3. Feature flags endpoints
 # ===========================================================================
+
 
 class TestFeatureFlagEndpoints:
     """
@@ -265,15 +286,21 @@ class TestFeatureFlagEndpoints:
         assert len(r.json()["message"]) > 0
 
     def test_toggle_unknown_flag_returns_404(self):
-        r = client.post("/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True})
+        r = client.post(
+            "/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True}
+        )
         assert r.status_code == 404
 
     def test_toggle_unknown_flag_ok_false(self):
-        r = client.post("/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True})
+        r = client.post(
+            "/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True}
+        )
         assert r.json().get("ok") is False
 
     def test_toggle_unknown_flag_error_mentions_flag_name(self):
-        r = client.post("/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True})
+        r = client.post(
+            "/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True}
+        )
         assert "COMPLETELY_UNKNOWN_FLAG_XYZ" in r.json().get("error", "")
 
     def test_all_default_flags_are_toggleable(self):
@@ -289,6 +316,7 @@ class TestFeatureFlagEndpoints:
 # 4. Flag persistence (isolated with tmp_path)
 # ===========================================================================
 
+
 class TestFlagPersistence:
     """
     Toggle a flag via POST, then GET /api/flags and verify the change
@@ -301,8 +329,10 @@ class TestFlagPersistence:
         flags_file = tmp_path / "flags.json"
         flags_file.write_text(json.dumps(dict(FLAG_DEFAULTS)))
 
-        with patch("webui.core.FLAGS_FILE", flags_file), \
-             patch("webui.app.FLAGS_FILE", flags_file):
+        with (
+            patch("webui.core.FLAGS_FILE", flags_file),
+            patch("webui.app.FLAGS_FILE", flags_file),
+        ):
             yield TestClient(app, raise_server_exceptions=True)
 
     def test_toggle_persists_to_disk(self, isolated_client, tmp_path):
@@ -347,6 +377,7 @@ class TestFlagPersistence:
 # 5. Config persistence (isolated with tmp_path)
 # ===========================================================================
 
+
 class TestConfigPersistence:
     """
     Save a config value via POST /api/config, then GET /api/config and
@@ -356,11 +387,16 @@ class TestConfigPersistence:
     @pytest.fixture()
     def isolated_client(self, tmp_path):
         cfg_file = tmp_path / "config.json"
-        with patch("webui.core.CONFIG_FILE", cfg_file), \
-             patch("webui.app.load_config",
-                   lambda: json.loads(cfg_file.read_text()) if cfg_file.exists() else {}), \
-             patch("webui.app.save_config",
-                   lambda x: cfg_file.write_text(json.dumps(x))):
+        with (
+            patch("webui.core.CONFIG_FILE", cfg_file),
+            patch(
+                "webui.app.load_config",
+                lambda: json.loads(cfg_file.read_text()) if cfg_file.exists() else {},
+            ),
+            patch(
+                "webui.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))
+            ),
+        ):
             yield TestClient(app, raise_server_exceptions=True)
 
     def _valid_orch_payload(self, overrides: dict | None = None) -> dict:
@@ -408,6 +444,7 @@ class TestConfigPersistence:
 # 6. Tasks endpoints
 # ===========================================================================
 
+
 class TestTasksEndpoints:
     """
     GET  /api/tasks        — returns tasks list + status stats + metadata.
@@ -439,12 +476,15 @@ class TestTasksEndpoints:
         assert isinstance(client.get("/api/tasks").json()["subsystems"], list)
 
     def test_inject_task_returns_200(self):
-        r = client.post("/api/tasks/inject", json={
-            "title": "Test task",
-            "description": "Test description",
-            "type": "design",
-            "subsystem": "auth",
-        })
+        r = client.post(
+            "/api/tasks/inject",
+            json={
+                "title": "Test task",
+                "description": "Test description",
+                "type": "design",
+                "subsystem": "auth",
+            },
+        )
         assert r.status_code == 200
 
     def test_inject_task_returns_id(self):
@@ -475,6 +515,7 @@ class TestTasksEndpoints:
 # ===========================================================================
 # 7. Dead Letter Queue endpoints
 # ===========================================================================
+
 
 class TestDLQEndpoints:
     """
@@ -528,6 +569,7 @@ class TestDLQEndpoints:
 # 8. Backups endpoint
 # ===========================================================================
 
+
 class TestBackupsEndpoints:
     """
     GET  /api/backups         — lists backup files + backup directory path.
@@ -560,6 +602,7 @@ class TestBackupsEndpoints:
 # ===========================================================================
 # 9. Audit log endpoints
 # ===========================================================================
+
 
 class TestAuditEndpoints:
     """
@@ -630,6 +673,7 @@ class TestAuditEndpoints:
 # 10. SSE streaming endpoint
 # ===========================================================================
 
+
 class TestSSEStream:
     """
     GET /api/logs/stream — Server-Sent Events stream.
@@ -677,6 +721,7 @@ class TestSSEStream:
         """The route handler must accept a ``level`` query parameter."""
         import inspect
         from webui.app import api_logs_stream
+
         sig = inspect.signature(api_logs_stream)
         assert "level" in sig.parameters
 
@@ -692,10 +737,14 @@ class TestSSEStream:
         from webui.app import api_logs_stream
 
         mock_request = MagicMock()
-        mock_request.is_disconnected = AsyncMock(return_value=True)  # disconnect at once
+        mock_request.is_disconnected = AsyncMock(
+            return_value=True
+        )  # disconnect at once
 
-        with patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)), \
-             patch("webui.app.load_state", return_value={"totals": {}}):
+        with (
+            patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("webui.app.load_state", return_value={"totals": {}}),
+        ):
             response = await api_logs_stream(request=mock_request, level="INFO")
 
         assert isinstance(response, StreamingResponse)
@@ -704,19 +753,24 @@ class TestSSEStream:
     @pytest.mark.asyncio
     async def test_sse_cache_control_header_is_no_cache(self):
         from unittest.mock import AsyncMock, MagicMock, patch
-        from starlette.responses import StreamingResponse
         from webui.app import api_logs_stream
 
         mock_request = MagicMock()
         mock_request.is_disconnected = AsyncMock(return_value=True)
 
-        with patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)), \
-             patch("webui.app.load_state", return_value={"totals": {}}):
+        with (
+            patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("webui.app.load_state", return_value={"totals": {}}),
+        ):
             response = await api_logs_stream(request=mock_request)
 
         # headers is a MutableHeaders / list of (bytes, bytes)
-        raw = {k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v
-               for k, v in response.raw_headers}
+        raw = {
+            k.decode() if isinstance(k, bytes) else k: v.decode()
+            if isinstance(v, bytes)
+            else v
+            for k, v in response.raw_headers
+        }
         assert "no-cache" in raw.get("cache-control", "")
 
     @pytest.mark.asyncio
@@ -726,7 +780,6 @@ class TestSSEStream:
         must emit a chunk starting with ``data: ``.
         """
         from unittest.mock import AsyncMock, MagicMock, patch
-        from starlette.responses import StreamingResponse
         from webui.app import api_logs_stream
 
         call_count = 0
@@ -746,8 +799,10 @@ class TestSSEStream:
         state_iter = iter(states)
 
         chunks = []
-        with patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)), \
-             patch("webui.app.load_state", side_effect=state_iter):
+        with (
+            patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("webui.app.load_state", side_effect=state_iter),
+        ):
             response = await api_logs_stream(request=mock_request)
             async for chunk in response.body_iterator:
                 text = chunk.decode() if isinstance(chunk, bytes) else chunk
@@ -777,23 +832,32 @@ class TestSSEStream:
         states = [
             {"totals": {"micro": 0, "meso": 0, "macro": 0}, "micro_history": []},
             {
-                "totals": {"micro": 5, "meso": 1, "macro": 0, "consecutive_failures": 0},
+                "totals": {
+                    "micro": 5,
+                    "meso": 1,
+                    "macro": 0,
+                    "consecutive_failures": 0,
+                },
                 "micro_history": [{"critic_score": 0.82}],
                 "current_task_id": "t-001",
                 "current_level": "micro",
                 "current_subsystem": "auth",
             },
         ]
-        with patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)), \
-             patch("webui.app.load_state", side_effect=iter(states)):
+        with (
+            patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("webui.app.load_state", side_effect=iter(states)),
+        ):
             response = await api_logs_stream(request=mock_request)
             async for chunk in response.body_iterator:
                 text = chunk.decode() if isinstance(chunk, bytes) else chunk
                 if text.startswith("data: "):
-                    payload = text[len("data: "):].strip()
-                    parsed = json.loads(payload)   # raises on invalid JSON
+                    payload = text[len("data: ") :].strip()
+                    parsed = json.loads(payload)  # raises on invalid JSON
                     assert "time" in parsed, "SSE payload missing 'time' field"
-                    assert "micro_loops" in parsed, "SSE payload missing 'micro_loops' field"
+                    assert "micro_loops" in parsed, (
+                        "SSE payload missing 'micro_loops' field"
+                    )
                     assert isinstance(parsed["micro_loops"], int)
 
     @pytest.mark.asyncio
@@ -818,10 +882,15 @@ class TestSSEStream:
         mock_request.is_disconnected = is_disconnected
 
         # Same state on all 3 iterations; only the first should emit
-        constant_state = {"totals": {"micro": 0, "meso": 0, "macro": 0}, "micro_history": []}
+        constant_state = {
+            "totals": {"micro": 0, "meso": 0, "macro": 0},
+            "micro_history": [],
+        }
         chunks = []
-        with patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)), \
-             patch("webui.app.load_state", return_value=constant_state):
+        with (
+            patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("webui.app.load_state", return_value=constant_state),
+        ):
             response = await api_logs_stream(request=mock_request)
             async for chunk in response.body_iterator:
                 text = chunk.decode() if isinstance(chunk, bytes) else chunk
@@ -841,6 +910,7 @@ class TestSSEStream:
 # 11. Complete response schema verification
 # ===========================================================================
 
+
 class TestResponseSchemas:
     """
     Every endpoint must return ALL required top-level keys.
@@ -851,15 +921,15 @@ class TestResponseSchemas:
     """
 
     _REQUIRED_SCHEMAS: dict[str, list[str]] = {
-        "/api/health":      [],                              # dynamic, just check dict
-        "/api/state":       [],                              # dynamic, just check dict
-        "/api/grub/status": [],                              # dynamic, just check dict
-        "/api/config":      ["orchestrator", "stagnation", "_schema"],
-        "/api/flags":       ["flags", "groups", "descriptions", "flags_file"],
-        "/api/tasks":       ["tasks", "stats", "task_types", "subsystems"],
-        "/api/dlq":         ["items", "stats"],
-        "/api/backups":     ["backups", "backup_dir"],
-        "/api/audit":       ["items", "event_types", "page", "has_next"],
+        "/api/health": [],  # dynamic, just check dict
+        "/api/state": [],  # dynamic, just check dict
+        "/api/grub/status": [],  # dynamic, just check dict
+        "/api/config": ["orchestrator", "stagnation", "_schema"],
+        "/api/flags": ["flags", "groups", "descriptions", "flags_file"],
+        "/api/tasks": ["tasks", "stats", "task_types", "subsystems"],
+        "/api/dlq": ["items", "stats"],
+        "/api/backups": ["backups", "backup_dir"],
+        "/api/audit": ["items", "event_types", "page", "has_next"],
     }
 
     @pytest.mark.parametrize("endpoint,required_keys", _REQUIRED_SCHEMAS.items())
@@ -905,6 +975,7 @@ class TestResponseSchemas:
 # 12. HTTP semantics
 # ===========================================================================
 
+
 class TestHTTPSemantics:
     """
     Verify HTTP-level correctness: Content-Type headers, CORS, method
@@ -913,8 +984,14 @@ class TestHTTPSemantics:
 
     def test_all_json_routes_return_application_json(self):
         json_routes = [
-            "/api/health", "/api/state", "/api/config", "/api/flags",
-            "/api/tasks", "/api/dlq", "/api/backups", "/api/audit",
+            "/api/health",
+            "/api/state",
+            "/api/config",
+            "/api/flags",
+            "/api/tasks",
+            "/api/dlq",
+            "/api/backups",
+            "/api/audit",
             "/api/grub/status",
         ]
         for route in json_routes:
@@ -966,8 +1043,13 @@ class TestHTTPSemantics:
     def test_response_bodies_are_valid_json(self):
         """All JSON routes must return parseable JSON (not empty bodies)."""
         json_routes = [
-            "/api/health", "/api/config", "/api/flags",
-            "/api/tasks", "/api/dlq", "/api/backups", "/api/audit",
+            "/api/health",
+            "/api/config",
+            "/api/flags",
+            "/api/tasks",
+            "/api/dlq",
+            "/api/backups",
+            "/api/audit",
         ]
         for route in json_routes:
             r = client.get(route)
@@ -982,6 +1064,7 @@ class TestHTTPSemantics:
 # 13. Input boundary tests
 # ===========================================================================
 
+
 class TestInputBoundaries:
     """
     Verify that the API handles edge-case inputs gracefully:
@@ -995,10 +1078,13 @@ class TestInputBoundaries:
         assert r.status_code == 200
 
     def test_inject_task_extra_fields_are_ignored(self):
-        r = client.post("/api/tasks/inject", json={
-            "title": "T",
-            "unknown_future_field_abc": "ignored",
-        })
+        r = client.post(
+            "/api/tasks/inject",
+            json={
+                "title": "T",
+                "unknown_future_field_abc": "ignored",
+            },
+        )
         assert r.status_code == 200
 
     def test_audit_limit_param_accepted(self):
@@ -1037,6 +1123,7 @@ class TestInputBoundaries:
 # 14. Auth / AuthZ surface tests
 # ===========================================================================
 
+
 class TestAuthSurface:
     """
     Document and enforce the authentication/authorization surface of the API.
@@ -1067,13 +1154,13 @@ class TestAuthSurface:
     """
 
     _SENSITIVE_ENDPOINTS = [
-        ("GET",  "/api/config"),
+        ("GET", "/api/config"),
         ("POST", "/api/config"),
-        ("GET",  "/api/flags"),
-        ("GET",  "/api/tasks"),
+        ("GET", "/api/flags"),
+        ("GET", "/api/tasks"),
         ("POST", "/api/tasks/inject"),
-        ("GET",  "/api/dlq"),
-        ("GET",  "/api/audit"),
+        ("GET", "/api/dlq"),
+        ("GET", "/api/audit"),
     ]
 
     def test_all_api_routes_reachable_without_auth(self):
@@ -1117,7 +1204,10 @@ class TestAuthSurface:
         """
         r = client.options(
             "/api/health",
-            headers={"Origin": "http://evil.example.com", "Access-Control-Request-Method": "GET"},
+            headers={
+                "Origin": "http://evil.example.com",
+                "Access-Control-Request-Method": "GET",
+            },
         )
         # The wildcard CORS middleware returns 200 for any origin.
         # In production: origins should be an explicit allowlist.
@@ -1129,7 +1219,11 @@ class TestAuthSurface:
         file paths that could assist an attacker.
         """
         # Trigger an error by posting invalid JSON structure to a strict endpoint
-        r = client.post("/api/config", content=b"not-json", headers={"Content-Type": "application/json"})
+        r = client.post(
+            "/api/config",
+            content=b"not-json",
+            headers={"Content-Type": "application/json"},
+        )
         if r.status_code >= 500:
             body = r.text
             assert "Traceback" not in body, "Stack trace leaked in 500 response"
@@ -1140,6 +1234,7 @@ class TestAuthSurface:
 # ===========================================================================
 # 15. Adversarial input / injection tests  (D4)
 # ===========================================================================
+
 
 class TestAdversarialInputs:
     """
@@ -1206,10 +1301,13 @@ class TestAdversarialInputs:
     def test_path_traversal_in_task_description_is_safe(self):
         """Path traversal sequences in task fields must not cause file reads."""
         for payload in self._PATH_TRAVERSAL_PAYLOADS:
-            r = client.post("/api/tasks/inject", json={
-                "title": "test",
-                "description": payload,
-            })
+            r = client.post(
+                "/api/tasks/inject",
+                json={
+                    "title": "test",
+                    "description": payload,
+                },
+            )
             assert r.status_code != 500, (
                 f"Path traversal payload caused 500: {payload!r}"
             )
@@ -1258,17 +1356,21 @@ class TestAdversarialInputs:
 
     def test_config_post_with_injected_string_values(self):
         """String values containing SQL/XSS must not crash config save."""
-        r = client.post("/api/config", json={
-            "orchestrator": {
-                "problem_statement": "'; DROP TABLE config; --<script>alert(1)</script>",
-            }
-        })
+        r = client.post(
+            "/api/config",
+            json={
+                "orchestrator": {
+                    "problem_statement": "'; DROP TABLE config; --<script>alert(1)</script>",
+                }
+            },
+        )
         assert r.status_code != 500
 
 
 # ===========================================================================
 # 16. Rate limiting contract tests  (D3)
 # ===========================================================================
+
 
 class TestRateLimitingContract:
     """

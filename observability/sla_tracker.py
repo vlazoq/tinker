@@ -47,9 +47,8 @@ Usage
 from __future__ import annotations
 
 import logging
-import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Deque, Optional
 
 logger = logging.getLogger(__name__)
@@ -68,11 +67,12 @@ class SLADefinition:
     max_seconds  : Hard maximum (any call slower than this is a critical breach).
     window_size  : Rolling window of measurements to use for percentile calculation.
     """
+
     name: str
     p95_seconds: float = 60.0
     p99_seconds: float = 120.0
     max_seconds: Optional[float] = None
-    window_size: int = 200    # Keep last 200 measurements
+    window_size: int = 200  # Keep last 200 measurements
 
 
 @dataclass
@@ -96,6 +96,7 @@ class SLAReport:
     max_breach    : True if any measurement exceeded the hard max.
     breach_count  : Number of measurements that exceeded the p99 target.
     """
+
     name: str
     count: int = 0
     p50_s: float = 0.0
@@ -215,15 +216,16 @@ class SLATracker:
 
         # Check hard maximum breach
         max_breach = (
-            sla_def.max_seconds is not None
-            and duration_seconds > sla_def.max_seconds
+            sla_def.max_seconds is not None and duration_seconds > sla_def.max_seconds
         )
 
         if max_breach:
             self._breach_count[name] += 1
             logger.warning(
                 "SLA BREACH: %s duration=%.1fs exceeds max=%.1fs",
-                name, duration_seconds, sla_def.max_seconds,
+                name,
+                duration_seconds,
+                sla_def.max_seconds,
             )
 
         # Check p99 breach (only relevant once we have enough data)
@@ -260,7 +262,9 @@ class SLATracker:
         n = len(data)
 
         if n == 0:
-            return SLAReport(name=name, sla_p95=sla_def.p95_seconds, sla_p99=sla_def.p99_seconds)
+            return SLAReport(
+                name=name, sla_p95=sla_def.p95_seconds, sla_p99=sla_def.p99_seconds
+            )
 
         p50 = _percentile(data, 50)
         p95 = _percentile(data, 95)
@@ -304,13 +308,15 @@ def build_default_sla_tracker(alert_on_breach=None) -> SLATracker:
     tracker = SLATracker(alert_on_breach=alert_on_breach)
 
     # Micro loop: should be fast — each task → architect → critic → store
-    tracker.define("micro_loop",   p95_seconds=60.0,  p99_seconds=120.0, max_seconds=300.0)
+    tracker.define("micro_loop", p95_seconds=60.0, p99_seconds=120.0, max_seconds=300.0)
 
     # Meso loop: synthesises multiple artifacts — allowed to be slower
-    tracker.define("meso_loop",    p95_seconds=180.0, p99_seconds=300.0, max_seconds=600.0)
+    tracker.define("meso_loop", p95_seconds=180.0, p99_seconds=300.0, max_seconds=600.0)
 
     # Macro loop: reads all memory — can be very slow
-    tracker.define("macro_loop",   p95_seconds=300.0, p99_seconds=600.0, max_seconds=1800.0)
+    tracker.define(
+        "macro_loop", p95_seconds=300.0, p99_seconds=600.0, max_seconds=1800.0
+    )
 
     # Context assembly: memory retrieval — should be fast
     tracker.define("context_assembly", p95_seconds=15.0, p99_seconds=30.0)

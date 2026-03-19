@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-import time
 import logging
 import unittest
 
@@ -28,9 +28,7 @@ from tasks import (
     TaskRegistry,
     TaskGenerator,
     PriorityScorer,
-    ScorerWeights,
     DependencyResolver,
-    DependencyCycleError,
     TaskQueue,
 )
 
@@ -85,7 +83,7 @@ ARCHITECT_OUTPUT = {
         },
         {
             "title": "INVALID TYPE TASK",
-            "type": "does_not_exist",   # Should fallback to DESIGN
+            "type": "does_not_exist",  # Should fallback to DESIGN
             "subsystem": "memory_manager",
             "confidence_gap": "not-a-float",  # Should fallback to 0.5
         },
@@ -101,8 +99,8 @@ def make_registry() -> TaskRegistry:
 # 1 · Schema tests
 # ────────────────────────────────────────────────────────────────────────────
 
-class TestTaskSchema(unittest.TestCase):
 
+class TestTaskSchema(unittest.TestCase):
     def test_defaults(self):
         t = Task(title="Test", description="desc")
         self.assertEqual(t.status, TaskStatus.PENDING)
@@ -153,8 +151,8 @@ class TestTaskSchema(unittest.TestCase):
 # 2 · Registry tests
 # ────────────────────────────────────────────────────────────────────────────
 
-class TestTaskRegistry(unittest.TestCase):
 
+class TestTaskRegistry(unittest.TestCase):
     def setUp(self):
         self.reg = make_registry()
 
@@ -200,13 +198,15 @@ class TestTaskRegistry(unittest.TestCase):
 # 3 · TaskGenerator tests
 # ────────────────────────────────────────────────────────────────────────────
 
-class TestTaskGenerator(unittest.TestCase):
 
+class TestTaskGenerator(unittest.TestCase):
     def setUp(self):
         self.gen = TaskGenerator()
 
     def test_basic_generation(self):
-        tasks = self.gen.from_architect_output(ARCHITECT_OUTPUT, parent_task_id="parent-1")
+        tasks = self.gen.from_architect_output(
+            ARCHITECT_OUTPUT, parent_task_id="parent-1"
+        )
         self.assertEqual(len(tasks), 4)
         for t in tasks:
             self.assertIsInstance(t, Task)
@@ -244,8 +244,8 @@ class TestTaskGenerator(unittest.TestCase):
 # 4 · PriorityScorer tests
 # ────────────────────────────────────────────────────────────────────────────
 
-class TestPriorityScorer(unittest.TestCase):
 
+class TestPriorityScorer(unittest.TestCase):
     def setUp(self):
         self.scorer = PriorityScorer()
 
@@ -261,18 +261,18 @@ class TestPriorityScorer(unittest.TestCase):
         self.assertGreater(self.scorer.score(hi), self.scorer.score(lo))
 
     def test_stale_task_scores_higher(self):
-        fresh = Task(title="Fresh", staleness_hours=0.0,  confidence_gap=0.5)
+        fresh = Task(title="Fresh", staleness_hours=0.0, confidence_gap=0.5)
         stale = Task(title="Stale", staleness_hours=48.0, confidence_gap=0.5)
         self.assertGreater(self.scorer.score(stale), self.scorer.score(fresh))
 
     def test_exploration_bump(self):
         normal = Task(title="N", is_exploration=False, confidence_gap=0.5)
-        expl   = Task(title="E", is_exploration=True,  confidence_gap=0.5)
+        expl = Task(title="E", is_exploration=True, confidence_gap=0.5)
         self.assertGreater(self.scorer.score(expl), self.scorer.score(normal))
 
     def test_depth_penalty(self):
         shallow = Task(title="Sh", dependency_depth=0, confidence_gap=0.5)
-        deep    = Task(title="De", dependency_depth=5, confidence_gap=0.5)
+        deep = Task(title="De", dependency_depth=5, confidence_gap=0.5)
         self.assertGreater(self.scorer.score(shallow), self.scorer.score(deep))
 
     def test_score_all_sorted(self):
@@ -297,8 +297,8 @@ class TestPriorityScorer(unittest.TestCase):
 # 5 · DependencyResolver tests
 # ────────────────────────────────────────────────────────────────────────────
 
-class TestDependencyResolver(unittest.TestCase):
 
+class TestDependencyResolver(unittest.TestCase):
     def setUp(self):
         self.reg = make_registry()
         self.resolver = DependencyResolver()
@@ -353,9 +353,12 @@ class TestDependencyResolver(unittest.TestCase):
         self.assertEqual(len(unblocked), 1)
 
     def test_topological_order(self):
-        a = Task(title="A"); self.reg.save(a)
-        b = Task(title="B", dependencies=[a.id]); self.reg.save(b)
-        c = Task(title="C", dependencies=[b.id]); self.reg.save(c)
+        a = Task(title="A")
+        self.reg.save(a)
+        b = Task(title="B", dependencies=[a.id])
+        self.reg.save(b)
+        c = Task(title="C", dependencies=[b.id])
+        self.reg.save(c)
         order = self.resolver.topological_order(self.reg)
         self.assertLess(order.index(a.id), order.index(b.id))
         self.assertLess(order.index(b.id), order.index(c.id))
@@ -366,6 +369,7 @@ class TestDependencyResolver(unittest.TestCase):
 # 6 · TaskQueue end-to-end lifecycle test
 # ────────────────────────────────────────────────────────────────────────────
 
+
 class TestTaskQueueLifecycle(unittest.TestCase):
     """
     Full end-to-end lifecycle:
@@ -373,9 +377,9 @@ class TestTaskQueueLifecycle(unittest.TestCase):
     """
 
     def setUp(self):
-        self.reg   = make_registry()
+        self.reg = make_registry()
         self.queue = TaskQueue(self.reg, auto_unblock=True)
-        self.gen   = TaskGenerator()
+        self.gen = TaskGenerator()
 
     def test_full_lifecycle(self):
         log.info("=" * 60)
@@ -386,11 +390,13 @@ class TestTaskQueueLifecycle(unittest.TestCase):
         parent = Task(title="Seed task", status=TaskStatus.COMPLETE)
         self.reg.save(parent)
 
-        tasks = self.gen.from_architect_output(ARCHITECT_OUTPUT, parent_task_id=parent.id)
+        tasks = self.gen.from_architect_output(
+            ARCHITECT_OUTPUT, parent_task_id=parent.id
+        )
         log.info("Step 1: Generated %d tasks", len(tasks))
 
         # Inject a dependency between tasks to test blocking
-        dep_task   = tasks[0]  # research task
+        dep_task = tasks[0]  # research task
         child_task = tasks[1]  # design task — will depend on the research
         child_task.dependencies = [dep_task.id]
 
@@ -415,8 +421,8 @@ class TestTaskQueueLifecycle(unittest.TestCase):
 
         # ── Step 2: Score all pending tasks ──────────────────────────────
         pending = self.reg.by_status(TaskStatus.PENDING)
-        scorer  = PriorityScorer()
-        scored  = scorer.score_all(pending)
+        scorer = PriorityScorer()
+        scored = scorer.score_all(pending)
         log.info("Step 2: Scored %d pending tasks", len(scored))
         for t in scored:
             log.info("  score=%.4f  [%s] %s", t.priority_score, t.type.value, t.title)
@@ -476,7 +482,7 @@ class TestTaskQueueLifecycle(unittest.TestCase):
         regular = Task(
             title="Normal task",
             type=TaskType.SYNTHESIS,
-            confidence_gap=1.0,   # Would normally score very high
+            confidence_gap=1.0,  # Would normally score very high
         )
         self.reg.save(expl)
         self.reg.save(regular)
@@ -503,18 +509,19 @@ class TestTaskQueueLifecycle(unittest.TestCase):
 # 7 · Multi-task dependency chain test
 # ────────────────────────────────────────────────────────────────────────────
 
+
 class TestDependencyChain(unittest.TestCase):
     """A → B → C chain: only A can run first; completing A unblocks B; etc."""
 
     def setUp(self):
-        self.reg      = make_registry()
-        self.queue    = TaskQueue(self.reg)
+        self.reg = make_registry()
+        self.queue = TaskQueue(self.reg)
         self.resolver = DependencyResolver()
 
     def test_chain_ordering(self):
         a = Task(title="A – Design schema")
         b = Task(title="B – Implement schema", dependencies=[a.id])
-        c = Task(title="C – Validate schema",  dependencies=[b.id])
+        c = Task(title="C – Validate schema", dependencies=[b.id])
 
         for t in (a, b, c):
             self.reg.save(t)
@@ -551,7 +558,7 @@ class TestDependencyChain(unittest.TestCase):
 
 if __name__ == "__main__":
     loader = unittest.TestLoader()
-    suite  = unittest.TestSuite()
+    suite = unittest.TestSuite()
 
     for cls in [
         TestTaskSchema,

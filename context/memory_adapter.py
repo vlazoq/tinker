@@ -52,12 +52,12 @@ raising, so the orchestrator can continue with reduced context.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .assembler import MemoryItem, _MemoryManagerProtocol
 
 if TYPE_CHECKING:
-    from memory.manager import MemoryManager   # avoid circular import at module level
+    from memory.manager import MemoryManager  # avoid circular import at module level
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class MemoryAdaptor(_MemoryManagerProtocol):
         memory_manager: "MemoryManager",
         max_content_chars: int = 1_000,
     ) -> None:
-        self._mm    = memory_manager
+        self._mm = memory_manager
         self._limit = max_content_chars
 
     # ── Protocol implementation ───────────────────────────────────────────────
@@ -141,14 +141,16 @@ class MemoryAdaptor(_MemoryManagerProtocol):
 
             if task_id:
                 try:
-                    artifacts = await self._mm.get_artifacts_by_task(task_id, limit=top_k)
+                    artifacts = await self._mm.get_artifacts_by_task(
+                        task_id, limit=top_k
+                    )
                     if artifacts:
                         return [
                             MemoryItem(
-                                id      = a.id,
-                                content = a.content[: self._limit],
-                                score   = 1.0,   # exact task match
-                                source  = "session",
+                                id=a.id,
+                                content=a.content[: self._limit],
+                                score=1.0,  # exact task match
+                                source="session",
                             )
                             for a in artifacts[:top_k]
                         ]
@@ -159,10 +161,10 @@ class MemoryAdaptor(_MemoryManagerProtocol):
             artifacts = await self._mm.get_recent_artifacts(limit=top_k * 2)
             return [
                 MemoryItem(
-                    id      = a.id,
-                    content = a.content[: self._limit],
-                    score   = 0.8,   # approximate relevance (recency-based)
-                    source  = "session",
+                    id=a.id,
+                    content=a.content[: self._limit],
+                    score=0.8,  # approximate relevance (recency-based)
+                    source="session",
                 )
                 for a in artifacts[:top_k]
             ]
@@ -183,10 +185,10 @@ class MemoryAdaptor(_MemoryManagerProtocol):
             notes = await self._mm.search_research(query=query, n_results=top_k)
             return [
                 MemoryItem(
-                    id      = n.id,
-                    content = n.content[: self._limit],
-                    score   = 0.75,
-                    source  = "archive",
+                    id=n.id,
+                    content=n.content[: self._limit],
+                    score=0.75,
+                    source="archive",
                 )
                 for n in notes
             ]
@@ -205,10 +207,10 @@ class MemoryAdaptor(_MemoryManagerProtocol):
             artifacts = await self._mm.get_artifacts_by_task(task_id, limit=3)
             return [
                 MemoryItem(
-                    id      = a.id,
-                    content = a.content[: self._limit],
-                    score   = 1.0,
-                    source  = "critique",
+                    id=a.id,
+                    content=a.content[: self._limit],
+                    score=1.0,
+                    source="critique",
                 )
                 for a in artifacts
             ]

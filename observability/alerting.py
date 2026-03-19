@@ -68,44 +68,46 @@ logger = logging.getLogger(__name__)
 
 class AlertType(enum.Enum):
     """Type of alert being sent."""
-    STAGNATION          = "stagnation"
-    CIRCUIT_OPEN        = "circuit_open"
-    CIRCUIT_CLOSE       = "circuit_close"
+
+    STAGNATION = "stagnation"
+    CIRCUIT_OPEN = "circuit_open"
+    CIRCUIT_CLOSE = "circuit_close"
     CONSECUTIVE_FAILURES = "consecutive_failures"
-    DLQ_SPIKE           = "dlq_spike"
-    HEALTH_CHECK_FAIL   = "health_check_fail"
-    MACRO_FAILED        = "macro_failed"
-    SLA_BREACH          = "sla_breach"
-    BACKUP_FAILED       = "backup_failed"
-    CUSTOM              = "custom"
+    DLQ_SPIKE = "dlq_spike"
+    HEALTH_CHECK_FAIL = "health_check_fail"
+    MACRO_FAILED = "macro_failed"
+    SLA_BREACH = "sla_breach"
+    BACKUP_FAILED = "backup_failed"
+    CUSTOM = "custom"
 
 
 class AlertSeverity(enum.Enum):
     """Alert urgency level."""
-    INFO     = "info"      # FYI — no action needed
-    WARNING  = "warning"   # Investigate soon
-    ERROR    = "error"     # Action required
+
+    INFO = "info"  # FYI — no action needed
+    WARNING = "warning"  # Investigate soon
+    ERROR = "error"  # Action required
     CRITICAL = "critical"  # Immediate action required
 
 
 # Map severity to Slack message colours
 _SLACK_COLORS = {
-    AlertSeverity.INFO:     "#36a64f",   # green
-    AlertSeverity.WARNING:  "#e8a838",   # yellow
-    AlertSeverity.ERROR:    "#d73a49",   # red
-    AlertSeverity.CRITICAL: "#7d1f1f",   # dark red
+    AlertSeverity.INFO: "#36a64f",  # green
+    AlertSeverity.WARNING: "#e8a838",  # yellow
+    AlertSeverity.ERROR: "#d73a49",  # red
+    AlertSeverity.CRITICAL: "#7d1f1f",  # dark red
 }
 
 # Rate limiting: don't send the same alert type more than once per N seconds
 _DEFAULT_COOLDOWN_SECONDS: dict[AlertType, float] = {
-    AlertType.STAGNATION:           300,   # 5 minutes
-    AlertType.CIRCUIT_OPEN:          60,   # 1 minute
-    AlertType.CONSECUTIVE_FAILURES: 120,   # 2 minutes
-    AlertType.DLQ_SPIKE:            600,   # 10 minutes
-    AlertType.HEALTH_CHECK_FAIL:    300,   # 5 minutes
-    AlertType.SLA_BREACH:           120,   # 2 minutes
-    AlertType.BACKUP_FAILED:        600,   # 10 minutes
-    AlertType.CUSTOM:                 0,   # No cooldown
+    AlertType.STAGNATION: 300,  # 5 minutes
+    AlertType.CIRCUIT_OPEN: 60,  # 1 minute
+    AlertType.CONSECUTIVE_FAILURES: 120,  # 2 minutes
+    AlertType.DLQ_SPIKE: 600,  # 10 minutes
+    AlertType.HEALTH_CHECK_FAIL: 300,  # 5 minutes
+    AlertType.SLA_BREACH: 120,  # 2 minutes
+    AlertType.BACKUP_FAILED: 600,  # 10 minutes
+    AlertType.CUSTOM: 0,  # No cooldown
 }
 
 
@@ -176,7 +178,8 @@ class AlertManager:
             self._total_suppressed += 1
             logger.debug(
                 "Alert suppressed (cooldown): type=%s title='%s'",
-                alert_type.value, title,
+                alert_type.value,
+                title,
             )
             return False
 
@@ -195,9 +198,13 @@ class AlertManager:
         # Send to configured channels (fire and forget — don't crash on failure)
         tasks = []
         if self._slack_url:
-            tasks.append(self._send_slack(title, message, severity, context, alert_type))
+            tasks.append(
+                self._send_slack(title, message, severity, context, alert_type)
+            )
         if self._webhook_url:
-            tasks.append(self._send_webhook(title, message, severity, context, alert_type))
+            tasks.append(
+                self._send_webhook(title, message, severity, context, alert_type)
+            )
 
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -222,22 +229,24 @@ class AlertManager:
         """Send a formatted message to a Slack incoming webhook."""
         color = _SLACK_COLORS.get(severity, "#cccccc")
         fields = [
-            {"title": "Type",     "value": alert_type.value, "short": True},
-            {"title": "Severity", "value": severity.value,   "short": True},
+            {"title": "Type", "value": alert_type.value, "short": True},
+            {"title": "Severity", "value": severity.value, "short": True},
         ]
         if context:
-            for k, v in list(context.items())[:5]:   # Max 5 context fields
+            for k, v in list(context.items())[:5]:  # Max 5 context fields
                 fields.append({"title": str(k), "value": str(v), "short": True})
 
         payload = {
-            "attachments": [{
-                "color":   color,
-                "title":   f"Tinker: {title}",
-                "text":    message,
-                "fields":  fields,
-                "footer":  "Tinker Alerter",
-                "ts":      int(time.time()),
-            }]
+            "attachments": [
+                {
+                    "color": color,
+                    "title": f"Tinker: {title}",
+                    "text": message,
+                    "fields": fields,
+                    "footer": "Tinker Alerter",
+                    "ts": int(time.time()),
+                }
+            ]
         }
         await self._post_json(self._slack_url, payload)
 
@@ -251,13 +260,13 @@ class AlertManager:
     ) -> None:
         """Send a generic JSON alert to a webhook endpoint."""
         payload = {
-            "source":     "tinker",
+            "source": "tinker",
             "alert_type": alert_type.value,
-            "severity":   severity.value,
-            "title":      title,
-            "message":    message,
-            "context":    context or {},
-            "timestamp":  time.time(),
+            "severity": severity.value,
+            "title": title,
+            "message": message,
+            "context": context or {},
+            "timestamp": time.time(),
         }
         await self._post_json(self._webhook_url, payload)
 
@@ -265,6 +274,7 @@ class AlertManager:
         """POST a JSON payload to a URL."""
         try:
             import aiohttp
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     url,
@@ -283,7 +293,9 @@ class AlertManager:
     # Convenience callbacks for wiring to other components
     # ------------------------------------------------------------------
 
-    def on_circuit_state_change(self, breaker: Any, old_state: Any, new_state: Any) -> None:
+    def on_circuit_state_change(
+        self, breaker: Any, old_state: Any, new_state: Any
+    ) -> None:
         """
         Callback to wire to CircuitBreaker.on_state_change.
 
@@ -294,25 +306,30 @@ class AlertManager:
             breaker.on_state_change(alerter.on_circuit_state_change)
         """
         from resilience.circuit_breaker import CircuitState
+
         if new_state == CircuitState.OPEN:
-            asyncio.create_task(self.alert(
-                alert_type=AlertType.CIRCUIT_OPEN,
-                title=f"Circuit breaker OPEN: {breaker.name}",
-                message=(
-                    f"Service '{breaker.name}' is unavailable after "
-                    f"{breaker.failure_count} consecutive failures. "
-                    f"Tinker will retry in {breaker.recovery_timeout:.0f}s."
-                ),
-                severity=AlertSeverity.ERROR,
-                context=breaker.stats(),
-            ))
+            asyncio.create_task(
+                self.alert(
+                    alert_type=AlertType.CIRCUIT_OPEN,
+                    title=f"Circuit breaker OPEN: {breaker.name}",
+                    message=(
+                        f"Service '{breaker.name}' is unavailable after "
+                        f"{breaker.failure_count} consecutive failures. "
+                        f"Tinker will retry in {breaker.recovery_timeout:.0f}s."
+                    ),
+                    severity=AlertSeverity.ERROR,
+                    context=breaker.stats(),
+                )
+            )
         elif new_state == CircuitState.CLOSED and old_state != CircuitState.CLOSED:
-            asyncio.create_task(self.alert(
-                alert_type=AlertType.CIRCUIT_CLOSE,
-                title=f"Circuit breaker RECOVERED: {breaker.name}",
-                message=f"Service '{breaker.name}' has recovered and is now healthy.",
-                severity=AlertSeverity.INFO,
-            ))
+            asyncio.create_task(
+                self.alert(
+                    alert_type=AlertType.CIRCUIT_CLOSE,
+                    title=f"Circuit breaker RECOVERED: {breaker.name}",
+                    message=f"Service '{breaker.name}' has recovered and is now healthy.",
+                    severity=AlertSeverity.INFO,
+                )
+            )
 
     def on_stagnation(self, directive: Any) -> None:
         """
@@ -327,21 +344,23 @@ class AlertManager:
         stagnation_type = getattr(directive, "stagnation_type", None)
         intervention = getattr(directive, "intervention_type", None)
 
-        asyncio.create_task(self.alert(
-            alert_type=AlertType.STAGNATION,
-            title=f"Stagnation detected: {getattr(stagnation_type, 'value', 'unknown')}",
-            message=(
-                f"Stagnation type '{getattr(stagnation_type, 'value', 'unknown')}' "
-                f"detected with severity {severity_val:.2f}. "
-                f"Intervention: {getattr(intervention, 'value', 'none')}."
-            ),
-            severity=AlertSeverity.WARNING,
-            context={
-                "stagnation_type": getattr(stagnation_type, "value", "unknown"),
-                "intervention": getattr(intervention, "value", "none"),
-                "severity": severity_val,
-            },
-        ))
+        asyncio.create_task(
+            self.alert(
+                alert_type=AlertType.STAGNATION,
+                title=f"Stagnation detected: {getattr(stagnation_type, 'value', 'unknown')}",
+                message=(
+                    f"Stagnation type '{getattr(stagnation_type, 'value', 'unknown')}' "
+                    f"detected with severity {severity_val:.2f}. "
+                    f"Intervention: {getattr(intervention, 'value', 'none')}."
+                ),
+                severity=AlertSeverity.WARNING,
+                context={
+                    "stagnation_type": getattr(stagnation_type, "value", "unknown"),
+                    "intervention": getattr(intervention, "value", "none"),
+                    "severity": severity_val,
+                },
+            )
+        )
 
     def stats(self) -> dict:
         """Return alert statistics for monitoring."""
@@ -363,6 +382,7 @@ class NullAlertManager:
 
     All methods are no-ops that return immediately.
     """
+
     async def alert(self, *args, **kwargs) -> bool:
         return False
 

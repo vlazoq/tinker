@@ -43,13 +43,10 @@ import asyncio
 from datetime import datetime
 from typing import Optional
 
-from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
-from textual.reactive import reactive
-from textual.screen import Screen
-from textual.widgets import Footer, Header, Label, Static
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Footer, Static
 
 from .detail_view import (
     DetailScreen,
@@ -105,6 +102,7 @@ class HelpScreen(DetailScreen):
 # Status bar (header supplement)
 # ──────────────────────────────────────────
 
+
 class StatusBar(Static):
     DEFAULT_CSS = """
     StatusBar {
@@ -123,11 +121,11 @@ class StatusBar(Static):
         )
         level_styles = {
             LoopLevel.MICRO: "[bright_cyan]μ MICRO[/]",
-            LoopLevel.MESO:  "[bright_yellow]M MESO[/]",
+            LoopLevel.MESO: "[bright_yellow]M MESO[/]",
             LoopLevel.MACRO: "[bright_magenta]Σ MACRO[/]",
         }
         loop = level_styles.get(state.loop_level, str(state.loop_level))
-        ts   = datetime.utcnow().strftime("%H:%M:%S UTC")
+        ts = datetime.utcnow().strftime("%H:%M:%S UTC")
         return (
             f" TINKER  {conn}   {loop}  "
             f"μ:[bright_cyan]{state.micro_count:,}[/]  "
@@ -144,22 +142,23 @@ class StatusBar(Static):
 # Main app
 # ──────────────────────────────────────────
 
+
 class TinkerDashboard(App[None]):
     """Tinker Observability Dashboard."""
 
-    TITLE    = "Tinker Dashboard"
+    TITLE = "Tinker Dashboard"
     CSS_PATH = "css/dashboard.tcss"
 
     BINDINGS = [
-        Binding("q",      "quit",            "Quit",            priority=True),
-        Binding("d",      "detail_task",     "Detail: task"),
-        Binding("a",      "detail_architect","Detail: architect"),
-        Binding("c",      "detail_critic",   "Detail: critic"),
-        Binding("s",      "detail_arch",     "Detail: arch"),
-        Binding("l",      "cycle_log_level", "Log level"),
-        Binding("x",      "clear_log",       "Clear log"),
-        Binding("r",      "refresh_ui",      "Refresh"),
-        Binding("f1",     "help",            "Help"),
+        Binding("q", "quit", "Quit", priority=True),
+        Binding("d", "detail_task", "Detail: task"),
+        Binding("a", "detail_architect", "Detail: architect"),
+        Binding("c", "detail_critic", "Detail: critic"),
+        Binding("s", "detail_arch", "Detail: arch"),
+        Binding("l", "cycle_log_level", "Log level"),
+        Binding("x", "clear_log", "Clear log"),
+        Binding("r", "refresh_ui", "Refresh"),
+        Binding("f1", "help", "Help"),
     ]
 
     # ── init ────────────────────────────────
@@ -171,8 +170,9 @@ class TinkerDashboard(App[None]):
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
-        self._subscriber      = subscriber or QueueSubscriber(
-            on_update=self._on_state_update)
+        self._subscriber = subscriber or QueueSubscriber(
+            on_update=self._on_state_update
+        )
         self._refresh_interval = refresh_interval
         self._sub_task: Optional[asyncio.Task] = None
 
@@ -232,15 +232,15 @@ class TinkerDashboard(App[None]):
         self._refresh_all_panels(state)
 
     def _refresh_all_panels(self, state: TinkerState) -> None:
-        self.query_one("#status-bar",       StatusBar).update_state(state)
-        self.query_one("#panel-loop",       LoopStatusPanel).refresh_state(state)
-        self.query_one("#panel-queue",      TaskQueuePanel).refresh_state(state)
-        self.query_one("#panel-health",     HealthPanel).refresh_state(state)
-        self.query_one("#panel-active",     ActiveTaskPanel).refresh_state(state)
-        self.query_one("#panel-architect",  ArchitectPanel).refresh_state(state)
-        self.query_one("#panel-critic",     CriticPanel).refresh_state(state)
+        self.query_one("#status-bar", StatusBar).update_state(state)
+        self.query_one("#panel-loop", LoopStatusPanel).refresh_state(state)
+        self.query_one("#panel-queue", TaskQueuePanel).refresh_state(state)
+        self.query_one("#panel-health", HealthPanel).refresh_state(state)
+        self.query_one("#panel-active", ActiveTaskPanel).refresh_state(state)
+        self.query_one("#panel-architect", ArchitectPanel).refresh_state(state)
+        self.query_one("#panel-critic", CriticPanel).refresh_state(state)
         self.query_one("#panel-arch-state", ArchStatePanel).refresh_state(state)
-        self.query_one("#panel-memory",     MemoryPanel).refresh_state(state)
+        self.query_one("#panel-memory", MemoryPanel).refresh_state(state)
 
     # ── actions ─────────────────────────────
 

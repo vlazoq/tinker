@@ -32,20 +32,21 @@ from pathlib import Path
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-ROOT = Path(__file__).parent.parent.parent   # tinker/
-WEBUI_CORE    = ROOT / "webui"        / "core.py"
-WEBUI_APP     = ROOT / "webui"        / "app.py"
+ROOT = Path(__file__).parent.parent.parent  # tinker/
+WEBUI_CORE = ROOT / "webui" / "core.py"
+WEBUI_APP = ROOT / "webui" / "app.py"
 STREAMLIT_APP = ROOT / "streamlit_ui" / "app.py"
-GRADIO_APP    = ROOT / "gradio_ui"    / "app.py"
+GRADIO_APP = ROOT / "gradio_ui" / "app.py"
 
 _UI_FILES = {
-    "webui/app.py":         WEBUI_APP,
-    "streamlit_ui/app.py":  STREAMLIT_APP,
-    "gradio_ui/app.py":     GRADIO_APP,
+    "webui/app.py": WEBUI_APP,
+    "streamlit_ui/app.py": STREAMLIT_APP,
+    "gradio_ui/app.py": GRADIO_APP,
 }
 
 
 # ── AST helpers ───────────────────────────────────────────────────────────────
+
 
 def _src(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -83,8 +84,7 @@ def _dict_keys_from_assign(path: Path, var_name: str) -> set[str]:
     for node in _tree(path).body:
         value = None
         if isinstance(node, ast.Assign):
-            if any(isinstance(t, ast.Name) and t.id == var_name
-                   for t in node.targets):
+            if any(isinstance(t, ast.Name) and t.id == var_name for t in node.targets):
                 value = node.value
         elif isinstance(node, ast.AnnAssign):
             if isinstance(node.target, ast.Name) and node.target.id == var_name:
@@ -109,11 +109,12 @@ def _string_constants(path: Path) -> set[str]:
 
 # ── 1. Syntax ─────────────────────────────────────────────────────────────────
 
+
 class TestSyntax:
     """All UI source files must be syntactically valid Python."""
 
     def test_webui_core_parses(self):
-        _tree(WEBUI_CORE)   # raises SyntaxError on failure
+        _tree(WEBUI_CORE)  # raises SyntaxError on failure
 
     def test_webui_app_parses(self):
         _tree(WEBUI_APP)
@@ -127,18 +128,35 @@ class TestSyntax:
 
 # ── 2. Shared constants ───────────────────────────────────────────────────────
 
+
 class TestCoreConstants:
     """webui/core.py must export all required constants."""
 
     REQUIRED_NAMES = {
-        "FLAG_DEFAULTS", "FLAG_DESCRIPTIONS", "FLAG_GROUPS",
-        "ORCH_CONFIG_SCHEMA", "STAGNATION_CONFIG_SCHEMA",
-        "TASK_TYPES", "SUBSYSTEMS",
-        "TASKS_DB", "DLQ_DB", "AUDIT_DB", "BACKUP_DIR", "FLAGS_FILE",
-        "db_execute", "db_query",
-        "load_config", "save_config", "load_flags", "save_flags",
-        "load_state", "fetch_health", "fetch_grub_status", "list_backups",
-        "new_id", "now_iso",
+        "FLAG_DEFAULTS",
+        "FLAG_DESCRIPTIONS",
+        "FLAG_GROUPS",
+        "ORCH_CONFIG_SCHEMA",
+        "STAGNATION_CONFIG_SCHEMA",
+        "TASK_TYPES",
+        "SUBSYSTEMS",
+        "TASKS_DB",
+        "DLQ_DB",
+        "AUDIT_DB",
+        "BACKUP_DIR",
+        "FLAGS_FILE",
+        "db_execute",
+        "db_query",
+        "load_config",
+        "save_config",
+        "load_flags",
+        "save_flags",
+        "load_state",
+        "fetch_health",
+        "fetch_grub_status",
+        "list_backups",
+        "new_id",
+        "now_iso",
     }
 
     def test_all_required_names_defined(self):
@@ -146,14 +164,15 @@ class TestCoreConstants:
         src = _src(WEBUI_CORE)
         # Functions may appear as def, not assignments
         defined_fns = {
-            m.group(1) for m in re.finditer(r"^(?:async\s+)?def\s+(\w+)", src, re.MULTILINE)
+            m.group(1)
+            for m in re.finditer(r"^(?:async\s+)?def\s+(\w+)", src, re.MULTILINE)
         }
         defined_all = assigns | defined_fns
         missing = self.REQUIRED_NAMES - defined_all
         assert not missing, f"webui/core.py is missing: {sorted(missing)}"
 
     def test_flag_defaults_keys_all_have_descriptions(self):
-        defaults     = _dict_keys_from_assign(WEBUI_CORE, "FLAG_DEFAULTS")
+        defaults = _dict_keys_from_assign(WEBUI_CORE, "FLAG_DEFAULTS")
         descriptions = _dict_keys_from_assign(WEBUI_CORE, "FLAG_DESCRIPTIONS")
         assert defaults, "FLAG_DEFAULTS is empty or not a dict literal"
         missing = defaults - descriptions
@@ -162,7 +181,7 @@ class TestCoreConstants:
         )
 
     def test_flag_descriptions_keys_all_have_defaults(self):
-        defaults     = _dict_keys_from_assign(WEBUI_CORE, "FLAG_DEFAULTS")
+        defaults = _dict_keys_from_assign(WEBUI_CORE, "FLAG_DEFAULTS")
         descriptions = _dict_keys_from_assign(WEBUI_CORE, "FLAG_DESCRIPTIONS")
         extra = descriptions - defaults
         assert not extra, (
@@ -171,12 +190,11 @@ class TestCoreConstants:
 
     def test_all_flag_defaults_keys_covered_by_a_group(self):
         defaults = _dict_keys_from_assign(WEBUI_CORE, "FLAG_DEFAULTS")
-        src = _src(WEBUI_CORE)
         # Use regex to collect every quoted string inside FLAG_GROUPS value lists
         # We just check every default key appears as a string literal somewhere
         # in the FLAG_GROUPS assignment block.
         all_strings = _string_constants(WEBUI_CORE)
-        uncovered = defaults - all_strings   # every default key must appear somewhere
+        uncovered = defaults - all_strings  # every default key must appear somewhere
         assert not uncovered, (
             f"FLAG_DEFAULTS keys absent from FLAG_GROUPS: {sorted(uncovered)}"
         )
@@ -197,13 +215,17 @@ class TestCoreConstants:
 
 # ── 3. Single source of truth ─────────────────────────────────────────────────
 
+
 class TestSingleSourceOfTruth:
     """Every UI app must import its constants from webui.core, not re-define them."""
 
     # Names that must NOT be re-defined as module-level assignments in the UIs
     SHARED_NAMES = {
-        "FLAG_DEFAULTS", "FLAG_DESCRIPTIONS", "FLAG_GROUPS",
-        "ORCH_CONFIG_SCHEMA", "STAGNATION_CONFIG_SCHEMA",
+        "FLAG_DEFAULTS",
+        "FLAG_DESCRIPTIONS",
+        "FLAG_GROUPS",
+        "ORCH_CONFIG_SCHEMA",
+        "STAGNATION_CONFIG_SCHEMA",
     }
 
     def _check_no_redefinition(self, path: Path) -> None:
@@ -225,26 +247,29 @@ class TestSingleSourceOfTruth:
 
     def test_streamlit_app_imports_from_core(self):
         src = _src(STREAMLIT_APP)
-        assert "from webui.core import" in src or "from webui import" in src or \
-               "webui.core" in src, (
-            "streamlit_ui/app.py must import shared constants from webui.core"
-        )
+        assert (
+            "from webui.core import" in src
+            or "from webui import" in src
+            or "webui.core" in src
+        ), "streamlit_ui/app.py must import shared constants from webui.core"
 
     def test_streamlit_app_does_not_redefine_shared_names(self):
         self._check_no_redefinition(STREAMLIT_APP)
 
     def test_gradio_app_imports_from_core(self):
         src = _src(GRADIO_APP)
-        assert "from webui.core import" in src or "from webui import" in src or \
-               "webui.core" in src, (
-            "gradio_ui/app.py must import shared constants from webui.core"
-        )
+        assert (
+            "from webui.core import" in src
+            or "from webui import" in src
+            or "webui.core" in src
+        ), "gradio_ui/app.py must import shared constants from webui.core"
 
     def test_gradio_app_does_not_redefine_shared_names(self):
         self._check_no_redefinition(GRADIO_APP)
 
 
 # ── 4. Feature parity ─────────────────────────────────────────────────────────
+
 
 class TestFeatureParity:
     """
@@ -258,26 +283,24 @@ class TestFeatureParity:
 
     # (feature name, keywords that must appear in source)
     FEATURES: list[tuple[str, list[str]]] = [
-        ("Dashboard / Health",  ["health",   "state"]),
-        ("Config",              ["config",   "ORCH_CONFIG_SCHEMA"]),
-        ("Feature Flags",       ["flags",    "FLAG_DEFAULTS"]),
-        ("Task Queue",          ["tasks",    "priority_score"]),
-        ("Dead Letter Queue",   ["dlq",      "dlq_items"]),
-        ("Backups",             ["backup",   "list_backups"]),
-        ("Grub Integration",    ["grub",     "fetch_grub_status"]),
-        ("Audit Log",           ["audit",    "audit_events"]),
+        ("Dashboard / Health", ["health", "state"]),
+        ("Config", ["config", "ORCH_CONFIG_SCHEMA"]),
+        ("Feature Flags", ["flags", "FLAG_DEFAULTS"]),
+        ("Task Queue", ["tasks", "priority_score"]),
+        ("Dead Letter Queue", ["dlq", "dlq_items"]),
+        ("Backups", ["backup", "list_backups"]),
+        ("Grub Integration", ["grub", "fetch_grub_status"]),
+        ("Audit Log", ["audit", "audit_events"]),
     ]
 
     def _check_app(self, label: str, path: Path) -> None:
-        src = _src(path).lower()   # case-insensitive keyword match
+        src = _src(path).lower()  # case-insensitive keyword match
         missing: list[str] = []
         for feature_name, keywords in self.FEATURES:
             # At least one keyword from the list must be present
             if not any(kw.lower() in src for kw in keywords):
                 missing.append(feature_name)
-        assert not missing, (
-            f"{label} is missing coverage for: {missing}"
-        )
+        assert not missing, f"{label} is missing coverage for: {missing}"
 
     def test_webui_app_covers_all_features(self):
         self._check_app("webui/app.py", WEBUI_APP)
@@ -307,6 +330,7 @@ class TestFeatureParity:
 
 # ── 5. FastAPI route coverage ─────────────────────────────────────────────────
 
+
 class TestFastAPIRoutes:
     """
     webui/app.py must register API routes for all 8 feature areas.
@@ -316,14 +340,14 @@ class TestFastAPIRoutes:
     """
 
     EXPECTED_PREFIXES = [
-        "/api/health",          # Dashboard
-        "/api/config",          # Config
-        "/api/flags",           # Feature Flags
-        "/api/tasks",           # Task Queue
-        "/api/dlq",             # Dead Letter Queue
-        "/api/backups",         # Backups
-        "/api/grub",            # Grub
-        "/api/audit",           # Audit Log
+        "/api/health",  # Dashboard
+        "/api/config",  # Config
+        "/api/flags",  # Feature Flags
+        "/api/tasks",  # Task Queue
+        "/api/dlq",  # Dead Letter Queue
+        "/api/backups",  # Backups
+        "/api/grub",  # Grub
+        "/api/audit",  # Audit Log
     ]
 
     def test_all_api_routes_registered(self):

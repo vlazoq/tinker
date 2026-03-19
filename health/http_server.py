@@ -55,7 +55,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +134,7 @@ class HealthServer:
                 await self._send_response(writer, 400, {"error": "bad request"})
                 return
 
-            method, path = parts[0], parts[1].split("?")[0]   # strip query string
+            _, path = parts[0], parts[1].split("?")[0]  # strip query string
 
             # Consume headers (required to drain the socket properly)
             while True:
@@ -172,10 +172,14 @@ class HealthServer:
         If this endpoint doesn't respond, the process is likely deadlocked
         or out of memory.  Kubernetes should restart the pod.
         """
-        await self._send_response(writer, 200, {
-            "status": "alive",
-            "uptime_seconds": round(time.monotonic() - self._start_time, 1),
-        })
+        await self._send_response(
+            writer,
+            200,
+            {
+                "status": "alive",
+                "uptime_seconds": round(time.monotonic() - self._start_time, 1),
+            },
+        )
 
     async def _handle_ready(self, writer) -> None:
         """
@@ -206,10 +210,14 @@ class HealthServer:
                 issues.append(f"memory health check failed: {exc}")
 
         if issues:
-            await self._send_response(writer, 503, {
-                "status": "not_ready",
-                "issues": issues,
-            })
+            await self._send_response(
+                writer,
+                503,
+                {
+                    "status": "not_ready",
+                    "issues": issues,
+                },
+            )
         else:
             await self._send_response(writer, 200, {"status": "ready"})
 
@@ -231,9 +239,11 @@ class HealthServer:
             state = self._orchestrator.state
             report["loops"] = {
                 "micro": getattr(state, "total_micro_loops", 0),
-                "meso":  getattr(state, "total_meso_loops", 0),
+                "meso": getattr(state, "total_meso_loops", 0),
                 "macro": getattr(state, "total_macro_loops", 0),
-                "current_level": getattr(getattr(state, "current_level", None), "value", ""),
+                "current_level": getattr(
+                    getattr(state, "current_level", None), "value", ""
+                ),
                 "consecutive_failures": getattr(state, "consecutive_failures", 0),
                 "stagnation_events": getattr(state, "stagnation_events_total", 0),
             }
@@ -269,8 +279,7 @@ class HealthServer:
 
         # Determine overall status
         has_open_circuits = (
-            self._circuit_registry is not None
-            and self._circuit_registry.any_open()
+            self._circuit_registry is not None and self._circuit_registry.any_open()
         )
         if has_open_circuits:
             report["status"] = "degraded"
@@ -280,9 +289,13 @@ class HealthServer:
     async def _handle_status(self, writer) -> None:
         """Return the live orchestrator state dict."""
         if self._orchestrator and hasattr(self._orchestrator, "get_state_snapshot"):
-            await self._send_response(writer, 200, self._orchestrator.get_state_snapshot())
+            await self._send_response(
+                writer, 200, self._orchestrator.get_state_snapshot()
+            )
         else:
-            await self._send_response(writer, 503, {"error": "orchestrator not available"})
+            await self._send_response(
+                writer, 503, {"error": "orchestrator not available"}
+            )
 
     # ------------------------------------------------------------------
     # Low-level HTTP response writer
@@ -293,8 +306,13 @@ class HealthServer:
     ) -> None:
         """Write a minimal HTTP response with a JSON body."""
         body_bytes = json.dumps(body, default=str).encode("utf-8")
-        status_text = {200: "OK", 400: "Bad Request", 404: "Not Found",
-                       500: "Internal Server Error", 503: "Service Unavailable"}.get(status, "")
+        status_text = {
+            200: "OK",
+            400: "Bad Request",
+            404: "Not Found",
+            500: "Internal Server Error",
+            503: "Service Unavailable",
+        }.get(status, "")
         response = (
             f"HTTP/1.1 {status} {status_text}\r\n"
             f"Content-Type: application/json\r\n"

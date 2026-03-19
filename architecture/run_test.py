@@ -77,9 +77,24 @@ LOOP_1_UPDATE = {
         },
     ],
     "subsystems": [
-        {"name": "control",   "purpose": "Top-level orchestration and loop management.", "components": ["Orchestrator"],                  "confidence_value": 0.40},
-        {"name": "inference", "purpose": "LLM inference via Ollama.",                    "components": ["Model Client"],                  "confidence_value": 0.65},
-        {"name": "state",     "purpose": "Persistent, versioned architecture state.",    "components": ["Architecture State Manager"],    "confidence_value": 0.55},
+        {
+            "name": "control",
+            "purpose": "Top-level orchestration and loop management.",
+            "components": ["Orchestrator"],
+            "confidence_value": 0.40,
+        },
+        {
+            "name": "inference",
+            "purpose": "LLM inference via Ollama.",
+            "components": ["Model Client"],
+            "confidence_value": 0.65,
+        },
+        {
+            "name": "state",
+            "purpose": "Persistent, versioned architecture state.",
+            "components": ["Architecture State Manager"],
+            "confidence_value": 0.55,
+        },
     ],
 }
 
@@ -115,7 +130,9 @@ LOOP_2_UPDATE = {
         {
             "name": "Orchestrator",
             "description": "Drives the macro reasoning loop; coordinates all subsystems.",
-            "responsibilities": ["Evaluate termination signal from Anti-Stagnation System"],
+            "responsibilities": [
+                "Evaluate termination signal from Anti-Stagnation System"
+            ],
             "subsystem": "control",
             "confidence_value": 0.60,
             "confidence_note": "Termination logic clarified",
@@ -160,7 +177,10 @@ LOOP_2_UPDATE = {
             "status": "proposed",
             "subsystem": "state",
             "confidence_value": 0.78,
-            "alternatives_considered": ["SQLite with row versioning", "S3-style object store"],
+            "alternatives_considered": [
+                "SQLite with row versioning",
+                "S3-style object store",
+            ],
         },
         {
             "title": "Additive-only state merges",
@@ -186,8 +206,12 @@ LOOP_2_UPDATE = {
         },
     ],
     "subsystems": [
-        {"name": "control", "components": ["Context Assembler"], "confidence_value": 0.52},
-        {"name": "state",   "components": ["Memory Manager"],    "confidence_value": 0.48},
+        {
+            "name": "control",
+            "components": ["Context Assembler"],
+            "confidence_value": 0.52,
+        },
+        {"name": "state", "components": ["Memory Manager"], "confidence_value": 0.48},
     ],
 }
 
@@ -196,15 +220,45 @@ LOOP_3_UPDATE = {
     "overall_confidence": 0.68,
     "loop_note": "Consolidation. All proposed decisions accepted. Memory Manager backend resolved. Confidence rising.",
     "components": [
-        {"name": "Orchestrator",               "confidence_value": 0.78, "confidence_note": "Fully specified"},
-        {"name": "Model Client",               "confidence_value": 0.88, "confidence_note": "Straightforward implementation"},
-        {"name": "Architecture State Manager", "confidence_value": 0.85, "confidence_note": "Schema, merge, Git all defined"},
-        {"name": "Context Assembler",          "confidence_value": 0.70, "confidence_note": "Token-budget sketched"},
-        {"name": "Memory Manager",             "confidence_value": 0.58, "confidence_note": "Backend selected (ChromaDB); embedding TBD"},
+        {
+            "name": "Orchestrator",
+            "confidence_value": 0.78,
+            "confidence_note": "Fully specified",
+        },
+        {
+            "name": "Model Client",
+            "confidence_value": 0.88,
+            "confidence_note": "Straightforward implementation",
+        },
+        {
+            "name": "Architecture State Manager",
+            "confidence_value": 0.85,
+            "confidence_note": "Schema, merge, Git all defined",
+        },
+        {
+            "name": "Context Assembler",
+            "confidence_value": 0.70,
+            "confidence_note": "Token-budget sketched",
+        },
+        {
+            "name": "Memory Manager",
+            "confidence_value": 0.58,
+            "confidence_note": "Backend selected (ChromaDB); embedding TBD",
+        },
     ],
     "decisions": [
-        {"title": "Use Git for state versioning", "status": "accepted", "confidence_value": 0.90, "confidence_note": "No objections"},
-        {"title": "Additive-only state merges",   "status": "accepted", "confidence_value": 0.82, "confidence_note": "Confirmed after tests"},
+        {
+            "title": "Use Git for state versioning",
+            "status": "accepted",
+            "confidence_value": 0.90,
+            "confidence_note": "No objections",
+        },
+        {
+            "title": "Additive-only state merges",
+            "status": "accepted",
+            "confidence_value": 0.82,
+            "confidence_note": "Confirmed after tests",
+        },
         {
             "title": "Use ChromaDB for Memory Manager",
             "description": "Memory Manager will use ChromaDB as its vector store backend.",
@@ -212,7 +266,11 @@ LOOP_3_UPDATE = {
             "status": "accepted",
             "subsystem": "state",
             "confidence_value": 0.64,
-            "alternatives_considered": ["Plain JSON with cosine similarity", "Qdrant", "Weaviate"],
+            "alternatives_considered": [
+                "Plain JSON with cosine similarity",
+                "Qdrant",
+                "Weaviate",
+            ],
         },
     ],
     "rejected_alternatives": [
@@ -242,9 +300,9 @@ LOOP_3_UPDATE = {
         },
     ],
     "subsystems": [
-        {"name": "control",   "confidence_value": 0.70},
+        {"name": "control", "confidence_value": 0.70},
         {"name": "inference", "confidence_value": 0.82},
-        {"name": "state",     "confidence_value": 0.68},
+        {"name": "state", "confidence_value": 0.68},
     ],
 }
 
@@ -255,6 +313,7 @@ LOOP_3_UPDATE = {
 _passed = 0
 _failed = 0
 
+
 def assert_eq(label, got, expected):
     global _passed, _failed
     if got == expected:
@@ -264,6 +323,7 @@ def assert_eq(label, got, expected):
         print(f"  ✗  {label}: expected {expected!r}, got {got!r}")
         _failed += 1
 
+
 def assert_true(label, condition):
     global _passed, _failed
     if condition:
@@ -272,6 +332,7 @@ def assert_true(label, condition):
     else:
         print(f"  ✗  {label}: condition was False")
         _failed += 1
+
 
 def hr(title=""):
     print("\n" + "═" * 70)
@@ -285,6 +346,7 @@ def hr(title=""):
 # Main test
 # ──────────────────────────────────────────────
 
+
 def run():
     with tempfile.TemporaryDirectory() as tmp:
         mgr = ArchitectureStateManager(
@@ -297,9 +359,9 @@ def run():
         hr("LOOP 1 — Initial Discovery")
         s1 = mgr.apply_update(LOOP_1_UPDATE)
 
-        assert_eq("loop number",      s1.macro_loop,            1)
-        assert_eq("component count",  len(s1.components),       3)
-        assert_eq("question count",   len(s1.open_questions),   2)
+        assert_eq("loop number", s1.macro_loop, 1)
+        assert_eq("component count", len(s1.components), 3)
+        assert_eq("question count", len(s1.open_questions), 2)
 
         hr("Loop 1 Summary")
         print(mgr.summarise(budget_tokens=600))
@@ -308,12 +370,14 @@ def run():
         hr("LOOP 2 — Deeper Analysis")
         s2 = mgr.apply_update(LOOP_2_UPDATE)
 
-        assert_eq("loop number",           s2.macro_loop,             2)
-        assert_eq("component count",       len(s2.components),        5)
-        assert_eq("decision count",        len(s2.decisions),         2)
-        assert_eq("relationship count",    len(s2.relationships),     3)
+        assert_eq("loop number", s2.macro_loop, 2)
+        assert_eq("component count", len(s2.components), 5)
+        assert_eq("decision count", len(s2.decisions), 2)
+        assert_eq("relationship count", len(s2.relationships), 3)
 
-        model_q = s2.question_by_text("Which Ollama model should be used as the default Architect?")
+        model_q = s2.question_by_text(
+            "Which Ollama model should be used as the default Architect?"
+        )
         assert_true("model question resolved", model_q is not None and model_q.resolved)
 
         hr("Loop 2 Summary")
@@ -326,17 +390,22 @@ def run():
         hr("LOOP 3 — Consolidation")
         s3 = mgr.apply_update(LOOP_3_UPDATE)
 
-        assert_eq("loop number",                s3.macro_loop,              3)
-        assert_eq("decision count",             len(s3.decisions),          3)
-        assert_eq("rejected alt count",         len(s3.rejected_alternatives), 2)
+        assert_eq("loop number", s3.macro_loop, 3)
+        assert_eq("decision count", len(s3.decisions), 3)
+        assert_eq("rejected alt count", len(s3.rejected_alternatives), 2)
 
         asm = s3.component_by_name("Architecture State Manager")
-        assert_true("ASM confidence > 0.70", asm is not None and asm.confidence.value > 0.70)
+        assert_true(
+            "ASM confidence > 0.70", asm is not None and asm.confidence.value > 0.70
+        )
         assert_true("ASM evidence_count > 1", asm.confidence.evidence_count > 1)
 
         # All accepted decisions
         for d in s3.decisions.values():
-            if d.title in ("Use Git for state versioning", "Additive-only state merges"):
+            if d.title in (
+                "Use Git for state versioning",
+                "Additive-only state merges",
+            ):
                 assert_true(f"decision '{d.title}' accepted", d.status == "accepted")
 
         hr("Loop 3 Summary")
@@ -349,10 +418,13 @@ def run():
         hr("Queries")
 
         low = mgr.low_confidence_components(threshold=0.65)
-        print(f"\nLow-confidence components (<0.65):")
+        print("\nLow-confidence components (<0.65):")
         for c in low:
             print(f"  [{c.confidence.value:.3f}] {c.name}")
-        assert_true("Memory Manager is low-confidence", any(c.name == "Memory Manager" for c in low))
+        assert_true(
+            "Memory Manager is low-confidence",
+            any(c.name == "Memory Manager" for c in low),
+        )
 
         unresolved = mgr.unresolved_questions()
         print(f"\nUnresolved questions ({len(unresolved)}):")
@@ -376,15 +448,19 @@ def run():
         hr("Snapshot History")
         snaps = mgr.list_snapshots()
         for s in snaps:
-            print(f"  loop={s['loop']:>2}  components={s['components']}  "
-                  f"decisions={s['decisions']}  confidence={s['confidence']:.3f}")
+            print(
+                f"  loop={s['loop']:>2}  components={s['components']}  "
+                f"decisions={s['decisions']}  confidence={s['confidence']:.3f}"
+            )
         assert_eq("snapshot count", len(snaps), 3)
 
         # ─────────────── Git log ──────────────────────────────────────
         hr("Git Log")
         log = subprocess.run(
             ["git", "log", "--oneline"],
-            cwd=tmp, capture_output=True, text=True,
+            cwd=tmp,
+            capture_output=True,
+            text=True,
         )
         print(log.stdout)
         assert_true("git log has commits", "loop" in log.stdout)

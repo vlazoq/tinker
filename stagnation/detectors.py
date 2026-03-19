@@ -34,16 +34,18 @@ from .models import MicroLoopContext, StagnationType
 # Shared result type
 # ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class DetectionResult:
     stagnation_type: StagnationType
-    severity: float                      # 0.0 – 1.0
+    severity: float  # 0.0 – 1.0
     evidence: Dict[str, Any] = field(default_factory=dict)
 
 
 # ─────────────────────────────────────────────────────────────
 # 1. Semantic Loop Detector
 # ─────────────────────────────────────────────────────────────
+
 
 class SemanticLoopDetector:
     """
@@ -93,7 +95,7 @@ class SemanticLoopDetector:
                 "breach_count": len(breaches),
                 "total_pairs": len(pairs),
                 "threshold": self.cfg.similarity_threshold,
-                "breaching_pairs": breaches[: 5],  # cap for log size
+                "breaching_pairs": breaches[:5],  # cap for log size
                 "window_loop_indices": [i for i, _ in self._window],
             },
         )
@@ -105,6 +107,7 @@ class SemanticLoopDetector:
 # ─────────────────────────────────────────────────────────────
 # 2. Subsystem Fixation Detector
 # ─────────────────────────────────────────────────────────────
+
 
 class SubsystemFixationDetector:
     """
@@ -160,6 +163,7 @@ class SubsystemFixationDetector:
 # ─────────────────────────────────────────────────────────────
 # 3. Critique Collapse Detector
 # ─────────────────────────────────────────────────────────────
+
 
 class CritiqueCollapseDetector:
     """
@@ -222,6 +226,7 @@ class CritiqueCollapseDetector:
 # 4. Research Saturation Detector
 # ─────────────────────────────────────────────────────────────
 
+
 class ResearchSaturationDetector:
     """
     Maintains a sliding window of URL sets from recent Researcher outputs.
@@ -263,9 +268,7 @@ class ResearchSaturationDetector:
 
         # Consecutive-pair Jaccard scores
         pairs = list(zip(self._window, list(self._window)[1:]))
-        jaccard_scores = [
-            self._jaccard(a, b) for (_, a), (_, b) in pairs
-        ]
+        jaccard_scores = [self._jaccard(a, b) for (_, a), (_, b) in pairs]
         avg_jaccard = sum(jaccard_scores) / len(jaccard_scores)
 
         if avg_jaccard < self.cfg.overlap_threshold:
@@ -302,6 +305,7 @@ class ResearchSaturationDetector:
 # 5. Task Starvation Detector
 # ─────────────────────────────────────────────────────────────
 
+
 class TaskStarvationDetector:
     """
     Tracks the task queue depth and net generation rate over a sliding window.
@@ -336,8 +340,7 @@ class TaskStarvationDetector:
 
         depth_critical = queue_depth <= self.cfg.low_depth_threshold
         rate_critical = (
-            self._consecutive_negative
-            >= self.cfg.consecutive_negative_threshold
+            self._consecutive_negative >= self.cfg.consecutive_negative_threshold
         )
 
         if not (depth_critical and rate_critical):

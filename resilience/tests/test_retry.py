@@ -33,19 +33,23 @@ retry_async / with_retry
 
 from __future__ import annotations
 
-import asyncio
-import functools
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from exceptions import (
-    TinkerError, ModelConnectionError, ResponseParseError,
-    ConfigurationError, ValidationError,
+    ModelConnectionError,
+    ResponseParseError,
+    ConfigurationError,
 )
 from resilience.retry import (
-    RetryConfig, AGGRESSIVE, CONSERVATIVE, ONCE,
-    _compute_delay, retry_async, with_retry,
+    RetryConfig,
+    AGGRESSIVE,
+    CONSERVATIVE,
+    ONCE,
+    _compute_delay,
+    retry_async,
+    with_retry,
 )
 
 
@@ -53,17 +57,22 @@ from resilience.retry import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _retryable_error():
     return ModelConnectionError("connection refused", context={"url": "http://x"})
+
 
 def _non_retryable_error():
     return ResponseParseError("bad json")
 
+
 async def _always_fail_retryable():
     raise _retryable_error()
 
+
 async def _always_fail_non_retryable():
     raise _non_retryable_error()
+
 
 async def _succeed():
     return "ok"
@@ -73,8 +82,8 @@ async def _succeed():
 # RetryConfig
 # ---------------------------------------------------------------------------
 
-class TestRetryConfig:
 
+class TestRetryConfig:
     def test_defaults(self):
         cfg = RetryConfig()
         assert cfg.max_attempts == 3
@@ -114,8 +123,8 @@ class TestRetryConfig:
 # Pre-built configs
 # ---------------------------------------------------------------------------
 
-class TestPrebuiltConfigs:
 
+class TestPrebuiltConfigs:
     def test_aggressive_exists_and_valid(self):
         assert isinstance(AGGRESSIVE, RetryConfig)
         assert AGGRESSIVE.max_attempts == 5
@@ -134,13 +143,13 @@ class TestPrebuiltConfigs:
 # _compute_delay
 # ---------------------------------------------------------------------------
 
-class TestComputeDelay:
 
+class TestComputeDelay:
     def test_grows_exponentially_without_jitter(self):
         cfg = RetryConfig(base_delay=1.0, max_delay=1000.0, jitter=False)
-        d1 = _compute_delay(1, cfg)   # 1 * 2^0 = 1
-        d2 = _compute_delay(2, cfg)   # 1 * 2^1 = 2
-        d3 = _compute_delay(3, cfg)   # 1 * 2^2 = 4
+        d1 = _compute_delay(1, cfg)  # 1 * 2^0 = 1
+        d2 = _compute_delay(2, cfg)  # 1 * 2^1 = 2
+        d3 = _compute_delay(3, cfg)  # 1 * 2^2 = 4
         assert d1 == pytest.approx(1.0)
         assert d2 == pytest.approx(2.0)
         assert d3 == pytest.approx(4.0)
@@ -153,13 +162,13 @@ class TestComputeDelay:
     def test_jitter_within_bounds(self):
         cfg = RetryConfig(base_delay=1.0, max_delay=100.0, jitter=True)
         for _ in range(100):
-            d = _compute_delay(3, cfg)   # raw = 4.0
+            d = _compute_delay(3, cfg)  # raw = 4.0
             assert 0.0 <= d <= 4.0, f"jitter out of range: {d}"
 
     def test_no_jitter_deterministic(self):
         cfg = RetryConfig(base_delay=2.0, max_delay=100.0, jitter=False)
         results = [_compute_delay(2, cfg) for _ in range(10)]
-        assert len(set(results)) == 1   # all identical
+        assert len(set(results)) == 1  # all identical
 
     def test_base_delay_zero_gives_zero(self):
         cfg = RetryConfig(base_delay=0.0, max_delay=0.0, jitter=False)
@@ -170,8 +179,8 @@ class TestComputeDelay:
 # retry_async — success path
 # ---------------------------------------------------------------------------
 
-class TestRetryAsyncSuccess:
 
+class TestRetryAsyncSuccess:
     @pytest.mark.asyncio
     async def test_returns_value_on_first_attempt(self):
         result = await retry_async(lambda: _succeed(), RetryConfig())
@@ -180,16 +189,19 @@ class TestRetryAsyncSuccess:
     @pytest.mark.asyncio
     async def test_call_count_is_one_on_success(self):
         calls = 0
+
         async def fn():
             nonlocal calls
             calls += 1
             return "ok"
+
         await retry_async(fn, RetryConfig())
         assert calls == 1
 
     @pytest.mark.asyncio
     async def test_succeeds_on_second_attempt(self):
         calls = 0
+
         async def fn():
             nonlocal calls
             calls += 1
@@ -205,6 +217,7 @@ class TestRetryAsyncSuccess:
     @pytest.mark.asyncio
     async def test_succeeds_on_last_attempt(self):
         calls = 0
+
         async def fn():
             nonlocal calls
             calls += 1
@@ -222,11 +235,12 @@ class TestRetryAsyncSuccess:
 # retry_async — failure path
 # ---------------------------------------------------------------------------
 
-class TestRetryAsyncFailure:
 
+class TestRetryAsyncFailure:
     @pytest.mark.asyncio
     async def test_retries_max_attempts_times(self):
         calls = 0
+
         async def fn():
             nonlocal calls
             calls += 1
@@ -249,6 +263,7 @@ class TestRetryAsyncFailure:
     @pytest.mark.asyncio
     async def test_non_retryable_propagates_immediately(self):
         calls = 0
+
         async def fn():
             nonlocal calls
             calls += 1
@@ -263,6 +278,7 @@ class TestRetryAsyncFailure:
     async def test_non_tinker_exception_propagates_immediately(self):
         """Plain Python exceptions (not TinkerError) are never retried."""
         calls = 0
+
         async def fn():
             nonlocal calls
             calls += 1
@@ -277,13 +293,16 @@ class TestRetryAsyncFailure:
     async def test_only_if_retryable_false_retries_all_tinker_errors(self):
         """When only_if_retryable=False, even ConfigurationError is retried."""
         calls = 0
+
         async def fn():
             nonlocal calls
             calls += 1
             raise ConfigurationError("bad value")
 
         cfg = RetryConfig(
-            max_attempts=3, base_delay=0.0, jitter=False,
+            max_attempts=3,
+            base_delay=0.0,
+            jitter=False,
             only_if_retryable=False,
         )
         with pytest.raises(ConfigurationError):
@@ -293,6 +312,7 @@ class TestRetryAsyncFailure:
     @pytest.mark.asyncio
     async def test_max_attempts_one_no_retry(self):
         calls = 0
+
         async def fn():
             nonlocal calls
             calls += 1
@@ -308,11 +328,12 @@ class TestRetryAsyncFailure:
 # retry_async — sleep timing (mocked)
 # ---------------------------------------------------------------------------
 
-class TestRetryAsyncSleep:
 
+class TestRetryAsyncSleep:
     @pytest.mark.asyncio
     async def test_sleep_called_between_attempts(self):
         calls = 0
+
         async def fn():
             nonlocal calls
             calls += 1
@@ -331,6 +352,7 @@ class TestRetryAsyncSleep:
     async def test_sleep_durations_are_non_negative(self):
         """Sleep duration must never be negative (even with jitter)."""
         calls = 0
+
         async def fn():
             nonlocal calls
             calls += 1
@@ -339,6 +361,7 @@ class TestRetryAsyncSleep:
             return "ok"
 
         sleep_durations = []
+
         async def record_sleep(d):
             sleep_durations.append(d)
 
@@ -368,13 +391,14 @@ class TestRetryAsyncSleep:
 # with_retry decorator
 # ---------------------------------------------------------------------------
 
-class TestWithRetryDecorator:
 
+class TestWithRetryDecorator:
     @pytest.mark.asyncio
     async def test_preserves_return_value(self):
         @with_retry()
         async def fn():
             return 42
+
         assert await fn() == 42
 
     @pytest.mark.asyncio
@@ -382,6 +406,7 @@ class TestWithRetryDecorator:
         @with_retry()
         async def my_function():
             pass
+
         assert my_function.__name__ == "my_function"
 
     @pytest.mark.asyncio
@@ -389,14 +414,17 @@ class TestWithRetryDecorator:
         @with_retry()
         async def my_function():
             """My docstring."""
+
         assert my_function.__doc__ == "My docstring."
 
     @pytest.mark.asyncio
     async def test_exposes_retry_config(self):
         cfg = RetryConfig(max_attempts=7)
+
         @with_retry(cfg)
         async def fn():
             pass
+
         assert fn._retry_config is cfg
 
     @pytest.mark.asyncio
@@ -404,6 +432,7 @@ class TestWithRetryDecorator:
         @with_retry()
         async def fn(a, b, *, c=0):
             return a + b + c
+
         assert await fn(1, 2, c=3) == 6
 
     @pytest.mark.asyncio
@@ -436,4 +465,4 @@ class TestWithRetryDecorator:
 
         with pytest.raises(ModelConnectionError):
             await fn()
-        assert calls == 2   # exactly 2, not 3 (the default)
+        assert calls == 2  # exactly 2, not 3 (the default)

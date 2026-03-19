@@ -79,9 +79,7 @@ class StagnationMonitorConfig:
     research_saturation: ResearchSaturationConfig = field(
         default_factory=ResearchSaturationConfig
     )
-    task_starvation: TaskStarvationConfig = field(
-        default_factory=TaskStarvationConfig
-    )
+    task_starvation: TaskStarvationConfig = field(default_factory=TaskStarvationConfig)
 
     # Maximum stagnation events to keep in the in-memory log
     event_log_max_size: int = 500

@@ -28,10 +28,10 @@ import time
 from pathlib import Path
 
 from .base import BaseMinion
-from ..contracts.task   import GrubTask
+from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus, TestSummary
-from ..tools.file_ops   import read_file, write_file, ensure_dir
-from ..tools.shell      import run_tests
+from ..tools.file_ops import read_file, write_file, ensure_dir
+from ..tools.shell import run_tests
 
 
 class TesterMinion(BaseMinion):
@@ -94,13 +94,16 @@ Bad test names:
                 code_sections.append(f"### {fpath}\n```python\n{content}\n```")
 
         if not code_sections:
-            return self._make_failed_result(task, "Could not read any implementation files")
+            return self._make_failed_result(
+                task, "Could not read any implementation files"
+            )
 
         # ── Ask LLM to write tests ────────────────────────────────────────────
         prompt = (
             f"## Task\n{task.title}\n\n"
-            f"## Implementation Code\n" + "\n\n".join(code_sections) +
-            "\n\n## Instructions\n"
+            f"## Implementation Code\n"
+            + "\n\n".join(code_sections)
+            + "\n\n## Instructions\n"
             "Write comprehensive pytest tests for the above code. "
             "Cover happy paths, edge cases, and error handling. "
             "Use mocking for any external dependencies. "
@@ -117,22 +120,24 @@ Bad test names:
             code_blocks = self._extract_code_blocks(response)
         if not code_blocks:
             return MinionResult(
-                task_id     = task.id,
-                minion_name = self.name,
-                status      = ResultStatus.NEEDS_RETRY,
-                score       = 0.1,
-                notes       = "LLM produced no code blocks for tests.",
-                raw_llm_output = response,
+                task_id=task.id,
+                minion_name=self.name,
+                status=ResultStatus.NEEDS_RETRY,
+                score=0.1,
+                notes="LLM produced no code blocks for tests.",
+                raw_llm_output=response,
             )
 
-        test_code  = code_blocks[0]
+        test_code = code_blocks[0]
         test_lines = test_code.split("\n")
 
         # Extract filepath from first line comment
         test_filepath = None
         if test_lines and "filepath:" in test_lines[0].lower():
-            test_filepath = test_lines[0].split("filepath:")[-1].strip().lstrip("#").strip()
-            test_code     = "\n".join(test_lines[1:]).strip()
+            test_filepath = (
+                test_lines[0].split("filepath:")[-1].strip().lstrip("#").strip()
+            )
+            test_code = "\n".join(test_lines[1:]).strip()
 
         if not test_filepath:
             # Default test file path
@@ -144,24 +149,29 @@ Bad test names:
         ensure_dir(str(Path(test_filepath).parent))
         ok, written_path = write_file(test_filepath, test_code)
         if not ok:
-            return self._make_failed_result(task, f"Could not write test file: {written_path}")
+            return self._make_failed_result(
+                task, f"Could not write test file: {written_path}"
+            )
 
         self.logger.info("TesterMinion: wrote test file %s", written_path)
 
         # ── Run the tests ─────────────────────────────────────────────────────
         max_fix_iterations = min(self.config.max_iterations, 3)
-        test_summary       = None
+        test_summary = None
 
         for iteration in range(1, max_fix_iterations + 1):
             result = run_tests(
                 test_filepath,
-                cwd     = self.config.output_dir or ".",
-                timeout = 60.0,
+                cwd=self.config.output_dir or ".",
+                timeout=60.0,
             )
             test_summary = self._parse_pytest_output(result.output)
             self.logger.info(
                 "TesterMinion iter %d: passed=%d failed=%d errors=%d",
-                iteration, test_summary.passed, test_summary.failed, test_summary.errors
+                iteration,
+                test_summary.passed,
+                test_summary.failed,
+                test_summary.errors,
             )
 
             if test_summary.all_passed:
@@ -188,35 +198,34 @@ Bad test names:
         duration = time.monotonic() - t0
 
         if test_summary and test_summary.all_passed:
-            score  = 0.9
+            score = 0.9
             status = ResultStatus.SUCCESS
             summary = (
-                f"All {test_summary.passed} tests passed "
-                f"in {iteration} iteration(s)."
+                f"All {test_summary.passed} tests passed in {iteration} iteration(s)."
             )
         elif test_summary:
-            score  = test_summary.passed / max(test_summary.total, 1)
+            score = test_summary.passed / max(test_summary.total, 1)
             status = ResultStatus.PARTIAL
             summary = (
                 f"{test_summary.passed}/{test_summary.total} tests passed. "
                 f"{test_summary.failed} failed, {test_summary.errors} errors."
             )
         else:
-            score  = 0.0
+            score = 0.0
             status = ResultStatus.FAILED
             summary = "Could not run tests."
 
         return MinionResult(
-            task_id          = task.id,
-            minion_name      = self.name,
-            status           = status,
-            score            = score,
-            files_written    = [written_path],
-            test_results     = test_summary,
-            summary          = summary,
-            duration_seconds = duration,
-            iterations       = iteration,
-            raw_llm_output   = response,
+            task_id=task.id,
+            minion_name=self.name,
+            status=status,
+            score=score,
+            files_written=[written_path],
+            test_results=test_summary,
+            summary=summary,
+            duration_seconds=duration,
+            iterations=iteration,
+            raw_llm_output=response,
         )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -235,20 +244,20 @@ Bad test names:
         for line in reversed(output.splitlines()):
             line = line.lower()
             if " passed" in line or " failed" in line or " error" in line:
-                p = re.search(r"(\d+) passed",  line)
-                f = re.search(r"(\d+) failed",  line)
-                e = re.search(r"(\d+) error",   line)
+                p = re.search(r"(\d+) passed", line)
+                f = re.search(r"(\d+) failed", line)
+                e = re.search(r"(\d+) error", line)
                 s = re.search(r"(\d+) skipped", line)
-                passed  = int(p.group(1)) if p else 0
-                failed  = int(f.group(1)) if f else 0
-                errors  = int(e.group(1)) if e else 0
+                passed = int(p.group(1)) if p else 0
+                failed = int(f.group(1)) if f else 0
+                errors = int(e.group(1)) if e else 0
                 skipped = int(s.group(1)) if s else 0
                 break
 
         return TestSummary(
-            passed  = passed,
-            failed  = failed,
-            errors  = errors,
-            skipped = skipped,
-            output  = output,
+            passed=passed,
+            failed=failed,
+            errors=errors,
+            skipped=skipped,
+            output=output,
         )

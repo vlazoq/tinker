@@ -34,16 +34,14 @@ STATUS: FULLY IMPLEMENTED
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 import httpx
 
-from ..contracts.task   import GrubTask
+from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus
 
 if TYPE_CHECKING:
@@ -67,14 +65,14 @@ class BaseMinion(ABC):
     """
 
     # Override these in every subclass
-    MINION_NAME:        str = "base"
+    MINION_NAME: str = "base"
     BASE_SYSTEM_PROMPT: str = "You are a helpful AI assistant."
 
     def __init__(
         self,
-        name:    str,
-        config:  "GrubConfig",
-        skills:  list[str] | None = None,
+        name: str,
+        config: "GrubConfig",
+        skills: list[str] | None = None,
     ) -> None:
         """
         Parameters
@@ -84,7 +82,7 @@ class BaseMinion(ABC):
         skills : List of pre-loaded skill texts (already read from disk).
                  The registry handles loading them — you don't need to do this.
         """
-        self.name   = name
+        self.name = name
         self.config = config
         self.skills = skills or []
         self.logger = logging.getLogger(f"grub.minion.{name}")
@@ -139,10 +137,10 @@ class BaseMinion(ABC):
 
     async def _llm(
         self,
-        prompt:         str,
-        system_prompt:  Optional[str] = None,
-        temperature:    float         = 0.3,
-        max_tokens:     int           = 4096,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
     ) -> str:
         """
         Send a prompt to the Ollama model assigned to this Minion.
@@ -167,17 +165,17 @@ class BaseMinion(ABC):
         if system_prompt is None:
             system_prompt = self._build_system_prompt()
 
-        model      = self.config.models.get(self.name, "qwen3:7b")
+        model = self.config.models.get(self.name, "qwen3:7b")
         ollama_url = self.config.ollama_urls.get(self.name, "http://localhost:11434")
-        timeout    = self.config.request_timeout
+        timeout = self.config.request_timeout
 
         payload = {
-            "model":  model,
+            "model": model,
             "stream": False,
             "options": {"temperature": temperature, "num_predict": max_tokens},
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": prompt},
+                {"role": "user", "content": prompt},
             ],
         }
 
@@ -191,7 +189,7 @@ class BaseMinion(ABC):
                     json=payload,
                 )
                 r.raise_for_status()
-                data    = r.json()
+                data = r.json()
                 content = data.get("message", {}).get("content", "")
                 elapsed = time.monotonic() - t0
                 self.logger.debug(
@@ -232,6 +230,7 @@ class BaseMinion(ABC):
         List of code strings (one per code block found).
         """
         import re
+
         # Match ```language\n...\n``` or just ```\n...\n```
         if language:
             pattern = rf"```{re.escape(language)}\n(.*?)```"
@@ -259,11 +258,12 @@ class BaseMinion(ABC):
         float between 0.0 and 1.0
         """
         import re
+
         # Pattern: "score: 0.82" or "Score: 0.82"
         m = re.search(r"score[:\s]+([0-9]+\.?[0-9]*)\s*(/\s*10)?", text, re.IGNORECASE)
         if m:
             val = float(m.group(1))
-            if m.group(2):           # "8/10" format
+            if m.group(2):  # "8/10" format
                 val = val / 10.0
             return max(0.0, min(1.0, val))
 
@@ -286,10 +286,10 @@ class BaseMinion(ABC):
         reason : Human-readable explanation of why it failed.
         """
         return MinionResult(
-            task_id     = task.id,
-            minion_name = self.name,
-            status      = ResultStatus.FAILED,
-            score       = 0.0,
-            notes       = reason,
-            summary     = f"Failed: {reason[:100]}",
+            task_id=task.id,
+            minion_name=self.name,
+            status=ResultStatus.FAILED,
+            score=0.0,
+            notes=reason,
+            summary=f"Failed: {reason[:100]}",
         )

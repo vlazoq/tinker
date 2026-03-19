@@ -25,9 +25,9 @@ from __future__ import annotations
 import time
 
 from .base import BaseMinion
-from ..contracts.task   import GrubTask
+from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus
-from ..tools.file_ops   import read_file
+from ..tools.file_ops import read_file
 from ..tools.code_analysis import summarise_file
 
 
@@ -165,10 +165,10 @@ Below 5 means it needs to be rewritten.
         # ── 7. Determine status ───────────────────────────────────────────────
         threshold = self.config.quality_threshold
         if score >= threshold:
-            status  = ResultStatus.SUCCESS
+            status = ResultStatus.SUCCESS
             summary = f"Review passed (score={score:.2f} >= threshold={threshold:.2f})"
         else:
-            status  = ResultStatus.NEEDS_RETRY
+            status = ResultStatus.NEEDS_RETRY
             summary = (
                 f"Review failed (score={score:.2f} < threshold={threshold:.2f}). "
                 "Code needs improvement before acceptance."
@@ -177,13 +177,13 @@ Below 5 means it needs to be rewritten.
         duration = time.monotonic() - t0
 
         return MinionResult(
-            task_id          = task.id,
-            minion_name      = self.name,
-            status           = status,
-            score            = score,
-            files_written    = [],   # reviewer doesn't write files
-            summary          = summary,
-            notes            = response,
-            duration_seconds = duration,
-            raw_llm_output   = response,
+            task_id=task.id,
+            minion_name=self.name,
+            status=status,
+            score=score,
+            files_written=[],  # reviewer doesn't write files
+            summary=summary,
+            notes=response,
+            duration_seconds=duration,
+            raw_llm_output=response,
         )

@@ -8,11 +8,11 @@ Usage:
     python -m backup --list
     python -m backup --prune
 """
+
 from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os
 import sys
 from pathlib import Path
@@ -28,27 +28,36 @@ async def _main() -> None:
     if env_file.exists():
         try:
             from dotenv import load_dotenv
+
             load_dotenv(env_file)
         except ImportError:
             pass
 
     parser = argparse.ArgumentParser(description="Tinker backup manager")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--backup",  action="store_true", help="Create a new backup")
-    group.add_argument("--restore", action="store_true", help="Restore from backup (latest or --backup-id)")
-    group.add_argument("--list",    action="store_true", help="List all available backups")
-    group.add_argument("--prune",   action="store_true", help="Prune backups older than retention_days")
-    parser.add_argument("--backup-id", default=None, help="Specific backup ID to restore")
+    group.add_argument("--backup", action="store_true", help="Create a new backup")
+    group.add_argument(
+        "--restore",
+        action="store_true",
+        help="Restore from backup (latest or --backup-id)",
+    )
+    group.add_argument("--list", action="store_true", help="List all available backups")
+    group.add_argument(
+        "--prune", action="store_true", help="Prune backups older than retention_days"
+    )
+    parser.add_argument(
+        "--backup-id", default=None, help="Specific backup ID to restore"
+    )
     args = parser.parse_args()
 
     from backup.backup_manager import BackupManager
 
     bm = BackupManager(
-        backup_dir     = os.getenv("TINKER_BACKUP_DIR", "./tinker_backups"),
-        duckdb_path    = os.getenv("TINKER_DUCKDB_PATH", "./tinker_session.duckdb"),
-        sqlite_path    = os.getenv("TINKER_SQLITE_PATH", "./tinker_tasks.sqlite"),
-        chroma_path    = os.getenv("TINKER_CHROMA_PATH", "./chroma_db"),
-        retention_days = int(os.getenv("TINKER_BACKUP_RETENTION_DAYS", "7")),
+        backup_dir=os.getenv("TINKER_BACKUP_DIR", "./tinker_backups"),
+        duckdb_path=os.getenv("TINKER_DUCKDB_PATH", "./tinker_session.duckdb"),
+        sqlite_path=os.getenv("TINKER_SQLITE_PATH", "./tinker_tasks.sqlite"),
+        chroma_path=os.getenv("TINKER_CHROMA_PATH", "./chroma_db"),
+        retention_days=int(os.getenv("TINKER_BACKUP_RETENTION_DAYS", "7")),
     )
 
     if args.backup:
@@ -75,7 +84,9 @@ async def _main() -> None:
             print("-" * 65)
             for b in backups:
                 err = len(b["errors"])
-                print(f"{b['id']:<20} {b['created_at'][:19]:<25} {b['total_size_mb']:>8.2f} {err:>7}")
+                print(
+                    f"{b['id']:<20} {b['created_at'][:19]:<25} {b['total_size_mb']:>8.2f} {err:>7}"
+                )
 
     elif args.prune:
         n = await bm.prune_old_backups()

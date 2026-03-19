@@ -67,17 +67,14 @@ CLI
 from __future__ import annotations
 
 import asyncio
-import gzip
 import hashlib
 import json
 import logging
-import os
 import shutil
 import tarfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -194,12 +191,16 @@ class BackupManager:
         if manifest["errors"]:
             logger.warning(
                 "Backup '%s' completed with %d errors in %.2fs",
-                backup_id, len(manifest["errors"]), elapsed,
+                backup_id,
+                len(manifest["errors"]),
+                elapsed,
             )
         else:
             logger.info(
                 "Backup '%s' completed successfully in %.2fs (%d bytes)",
-                backup_id, elapsed, manifest["total_size_bytes"],
+                backup_id,
+                elapsed,
+                manifest["total_size_bytes"],
             )
 
         return backup_id
@@ -238,7 +239,10 @@ class BackupManager:
         """Archive a directory into a tar.gz and place in backup directory."""
         if not src.exists():
             logger.debug("Backup: %s directory not found at %s — skipping", label, src)
-            manifest["files"][label] = {"status": "skipped", "reason": "directory not found"}
+            manifest["files"][label] = {
+                "status": "skipped",
+                "reason": "directory not found",
+            }
             return
 
         archive_name = f"{label}.tar.gz" if self._compress else f"{label}.tar"
@@ -246,9 +250,7 @@ class BackupManager:
         try:
             # Run in executor to avoid blocking the event loop on large directories
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(
-                None, self._create_archive, src, dest
-            )
+            await loop.run_in_executor(None, self._create_archive, src, dest)
             size = dest.stat().st_size
             manifest["files"][label] = {
                 "status": "ok",
@@ -257,7 +259,9 @@ class BackupManager:
                 "size_bytes": size,
                 "compressed": self._compress,
             }
-            logger.debug("Backed up directory %s → %s (%d bytes)", label, archive_name, size)
+            logger.debug(
+                "Backed up directory %s → %s (%d bytes)", label, archive_name, size
+            )
         except Exception as exc:
             msg = f"Failed to archive {label}: {exc}"
             logger.warning(msg)
@@ -301,7 +305,11 @@ class BackupManager:
             return False
 
         manifest = json.loads(manifest_path.read_text())
-        logger.info("Restoring from backup '%s' (created: %s)", backup_id, manifest.get("created_at"))
+        logger.info(
+            "Restoring from backup '%s' (created: %s)",
+            backup_id,
+            manifest.get("created_at"),
+        )
 
         errors = []
 
@@ -387,15 +395,19 @@ class BackupManager:
                 continue
             try:
                 manifest = json.loads(manifest_path.read_text())
-                backups.append({
-                    "id": manifest.get("id", item.name),
-                    "created_at": manifest.get("created_at", ""),
-                    "total_size_bytes": manifest.get("total_size_bytes", 0),
-                    "total_size_mb": round(manifest.get("total_size_bytes", 0) / (1024 * 1024), 2),
-                    "duration_seconds": manifest.get("duration_seconds", 0),
-                    "errors": manifest.get("errors", []),
-                    "files": list(manifest.get("files", {}).keys()),
-                })
+                backups.append(
+                    {
+                        "id": manifest.get("id", item.name),
+                        "created_at": manifest.get("created_at", ""),
+                        "total_size_bytes": manifest.get("total_size_bytes", 0),
+                        "total_size_mb": round(
+                            manifest.get("total_size_bytes", 0) / (1024 * 1024), 2
+                        ),
+                        "duration_seconds": manifest.get("duration_seconds", 0),
+                        "errors": manifest.get("errors", []),
+                        "files": list(manifest.get("files", {}).keys()),
+                    }
+                )
             except Exception:
                 continue
         return backups
@@ -407,6 +419,7 @@ class BackupManager:
         Returns the number of backups deleted.
         """
         import datetime as dt
+
         cutoff = datetime.now(timezone.utc) - dt.timedelta(days=self._retention_days)
         deleted = 0
 
@@ -428,5 +441,7 @@ class BackupManager:
                 logger.debug("Could not prune %s: %s", item.name, exc)
 
         if deleted:
-            logger.info("Pruned %d backups older than %d days", deleted, self._retention_days)
+            logger.info(
+                "Pruned %d backups older than %d days", deleted, self._retention_days
+            )
         return deleted

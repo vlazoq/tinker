@@ -55,6 +55,7 @@ meso synthesis is unfortunate but should not crash the whole system.  The
 orchestrator will continue running micro loops and try again when the subsystem
 next hits the trigger count.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -76,7 +77,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger("tinker.orchestrator.meso")
 
 
-async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration: int) -> MesoLoopRecord:
+async def run_meso_loop(
+    orch: "Orchestrator", subsystem: str, trigger_iteration: int
+) -> MesoLoopRecord:
     """
     Execute a meso-level synthesis for ``subsystem``.
 
@@ -154,11 +157,13 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
                     and r.task_id is not None
                 )
             ]
-            if recent_task_ids and hasattr(orch.memory_manager, "get_artifacts_by_task_ids"):
+            if recent_task_ids and hasattr(
+                orch.memory_manager, "get_artifacts_by_task_ids"
+            ):
                 extra_rows = await asyncio.wait_for(
-                    coroutine_if_needed(
-                        orch.memory_manager.get_artifacts_by_task_ids
-                    )(task_ids=recent_task_ids, limit_each=2),
+                    coroutine_if_needed(orch.memory_manager.get_artifacts_by_task_ids)(
+                        task_ids=recent_task_ids, limit_each=2
+                    ),
                     timeout=10.0,
                 )
                 # Merge: skip any row whose artifact id is already in the
@@ -187,7 +192,9 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
         if len(artifacts) < cfg.meso_min_artifacts:
             logger.info(
                 "meso SKIP subsystem=%s — only %d artifact(s), need %d",
-                subsystem, len(artifacts), cfg.meso_min_artifacts,
+                subsystem,
+                len(artifacts),
+                cfg.meso_min_artifacts,
             )
             # Mark SUCCESS (not FAILED) because skipping is intentional.
             # A FAILED status would trigger the orchestrator's failure-counting
@@ -221,8 +228,8 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
         # The macro loop will later collect ALL such documents to build the
         # full architectural snapshot.
         document = {
-            "type": "subsystem_design",       # tells the memory manager what kind of document this is
-            "subsystem": subsystem,            # so the macro loop can organise by subsystem
+            "type": "subsystem_design",  # tells the memory manager what kind of document this is
+            "subsystem": subsystem,  # so the macro loop can organise by subsystem
             "synthesis": synthesis.get("content", ""),  # the AI-generated text
             "artifact_count": len(artifacts),  # how many artifacts were synthesised
             "trigger_iteration": trigger_iteration,  # which micro loop triggered this
@@ -241,25 +248,26 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
         # This is safe to skip if the task engine or generator are not wired in.
         try:
             task_engine = getattr(orch, "task_engine", None)
-            task_gen    = getattr(orch, "task_generator", None)
+            task_gen = getattr(orch, "task_generator", None)
             if task_engine is not None and task_gen is not None:
                 # Build a path hint — Grub will look for the actual .md file
                 # in tinker_artifacts/ matching this subsystem name.
                 artifact_hint = f"tinker_artifacts/{subsystem}_design.md"
                 impl_task = task_gen.make_implementation_task(
-                    title       = f"Implement {subsystem} from meso synthesis",
-                    description = (
+                    title=f"Implement {subsystem} from meso synthesis",
+                    description=(
                         f"Grub: implement the {subsystem} subsystem based on the "
                         f"meso synthesis document. Design artifact: {artifact_hint}. "
                         f"Synthesis summary: {synthesis.get('content', '')[:300]}"
                     ),
-                    subsystem     = subsystem,
-                    artifact_path = artifact_hint,
+                    subsystem=subsystem,
+                    artifact_path=artifact_hint,
                 )
                 await task_engine.add_task(impl_task)
                 logger.info(
                     "meso: emitted implementation task for Grub (subsystem=%s, task=%s)",
-                    subsystem, impl_task.id[:8],
+                    subsystem,
+                    impl_task.id[:8],
                 )
         except Exception as exc:
             # Never let Grub integration errors crash the meso loop
@@ -272,7 +280,9 @@ async def run_meso_loop(orch: "Orchestrator", subsystem: str, trigger_iteration:
         orch.state.reset_subsystem_count(subsystem)
         logger.info(
             "meso END subsystem=%s doc_id=%s artifacts=%d",
-            subsystem, doc_id, len(artifacts),
+            subsystem,
+            doc_id,
+            len(artifacts),
         )
 
     except asyncio.TimeoutError as exc:

@@ -54,9 +54,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import secrets
-import time
 from contextvars import ContextVar
 from typing import Any, Optional
 
@@ -142,6 +140,7 @@ def get_trace_context() -> dict:
 # JSON log formatter
 # ---------------------------------------------------------------------------
 
+
 class JsonFormatter(logging.Formatter):
     """
     Log formatter that outputs one JSON object per line.
@@ -171,10 +170,10 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         # Build the base log object
         obj: dict[str, Any] = {
-            "time":  self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "time": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
             "level": record.levelname,
-            "name":  record.name,
-            "msg":   record.getMessage(),
+            "name": record.name,
+            "msg": record.getMessage(),
         }
 
         # Add trace context from ContextVars
@@ -188,14 +187,31 @@ class JsonFormatter(logging.Formatter):
         # Add any extra fields the caller passed via the 'extra' parameter
         for key, val in record.__dict__.items():
             if key not in (
-                "name", "msg", "args", "levelname", "levelno", "pathname",
-                "filename", "module", "exc_info", "exc_text", "stack_info",
-                "lineno", "funcName", "created", "msecs", "relativeCreated",
-                "thread", "threadName", "processName", "process", "message",
+                "name",
+                "msg",
+                "args",
+                "levelname",
+                "levelno",
+                "pathname",
+                "filename",
+                "module",
+                "exc_info",
+                "exc_text",
+                "stack_info",
+                "lineno",
+                "funcName",
+                "created",
+                "msecs",
+                "relativeCreated",
+                "thread",
+                "threadName",
+                "processName",
+                "process",
+                "message",
                 "taskName",
             ) and not key.startswith("_"):
                 try:
-                    json.dumps(val)   # Only include JSON-serialisable values
+                    json.dumps(val)  # Only include JSON-serialisable values
                     obj[key] = val
                 except (TypeError, ValueError):
                     obj[key] = str(val)
@@ -231,6 +247,7 @@ class HumanReadableFormatter(logging.Formatter):
 # ---------------------------------------------------------------------------
 # Setup helper
 # ---------------------------------------------------------------------------
+
 
 def setup_structured_logging(
     level: int = logging.INFO,
@@ -285,5 +302,7 @@ def setup_structured_logging(
 
     logging.getLogger("tinker").info(
         "Logging configured (level=%s, json=%s, file=%s)",
-        logging.getLevelName(level), json_output, log_file,
+        logging.getLevelName(level),
+        json_output,
+        log_file,
     )

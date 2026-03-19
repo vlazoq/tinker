@@ -9,8 +9,6 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -233,7 +231,7 @@ class DiagramGeneratorTool(BaseTool):
     # Implementation
     # ------------------------------------------------------------------
 
-    async def _execute(           # type: ignore[override]
+    async def _execute(  # type: ignore[override]
         self,
         diagram_name: str,
         components: list[dict],

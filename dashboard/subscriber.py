@@ -37,7 +37,6 @@ from .state import (
     TaskInfo,
     TaskStatus,
     TaskType,
-    TinkerState,
     get_store,
 )
 
@@ -46,6 +45,7 @@ log = logging.getLogger("tinker.dashboard.subscriber")
 # ──────────────────────────────────────────
 # Patch deserialisation helpers
 # ──────────────────────────────────────────
+
 
 def _dt(s: Optional[str]) -> Optional[datetime]:
     if not s:
@@ -130,18 +130,20 @@ def _deserialise_patch(raw: Dict[str, Any]) -> Dict[str, Any]:
     if "recent_tasks" in raw:
         tasks = []
         for t in raw["recent_tasks"]:
-            tasks.append(TaskInfo(
-                id=t.get("id", ""),
-                type=TaskType(t.get("type", "design")),
-                subsystem=t.get("subsystem", ""),
-                description=t.get("description", ""),
-                status=TaskStatus(t.get("status", "pending")),
-                created_at=_dt(t.get("created_at")) or datetime.utcnow(),
-                started_at=_dt(t.get("started_at")),
-                completed_at=_dt(t.get("completed_at")),
-                result_summary=t.get("result_summary"),
-                full_content=t.get("full_content"),
-            ))
+            tasks.append(
+                TaskInfo(
+                    id=t.get("id", ""),
+                    type=TaskType(t.get("type", "design")),
+                    subsystem=t.get("subsystem", ""),
+                    description=t.get("description", ""),
+                    status=TaskStatus(t.get("status", "pending")),
+                    created_at=_dt(t.get("created_at")) or datetime.utcnow(),
+                    started_at=_dt(t.get("started_at")),
+                    completed_at=_dt(t.get("completed_at")),
+                    result_summary=t.get("result_summary"),
+                    full_content=t.get("full_content"),
+                )
+            )
         patch["recent_tasks"] = tasks
 
     if "arch_state" in raw:
@@ -160,11 +162,13 @@ def _deserialise_patch(raw: Dict[str, Any]) -> Dict[str, Any]:
         s = raw["stagnation"]
         events = []
         for e in s.get("recent_events", []):
-            events.append(StagnationEvent(
-                timestamp=_dt(e.get("timestamp")) or datetime.utcnow(),
-                description=e.get("description", ""),
-                action_taken=e.get("action_taken", ""),
-            ))
+            events.append(
+                StagnationEvent(
+                    timestamp=_dt(e.get("timestamp")) or datetime.utcnow(),
+                    description=e.get("description", ""),
+                    action_taken=e.get("action_taken", ""),
+                )
+            )
         patch["stagnation"] = StagnationStatus(
             is_stagnant=bool(s.get("is_stagnant", False)),
             stagnation_score=float(s.get("stagnation_score", 0.0)),
@@ -197,13 +201,14 @@ def _deserialise_patch(raw: Dict[str, Any]) -> Dict[str, Any]:
 # Abstract base
 # ──────────────────────────────────────────
 
+
 class BaseSubscriber(ABC):
     """Subscribes to Orchestrator events and feeds StateStore."""
 
     def __init__(self, on_update: Optional[Callable] = None) -> None:
         self._store = get_store()
         self._running = False
-        self._on_update = on_update   # optional callback after each patch
+        self._on_update = on_update  # optional callback after each patch
 
     @abstractmethod
     async def run(self) -> None:
@@ -251,8 +256,9 @@ class QueueSubscriber(BaseSubscriber):
     runtime.
     """
 
-    def __init__(self, on_update: Optional[Callable] = None,
-                 timeout: float = 5.0) -> None:
+    def __init__(
+        self, on_update: Optional[Callable] = None, timeout: float = 5.0
+    ) -> None:
         super().__init__(on_update)
         self._timeout = timeout
 
@@ -263,9 +269,7 @@ class QueueSubscriber(BaseSubscriber):
 
         while self._running:
             try:
-                raw = await asyncio.wait_for(
-                    _shared_queue.get(), timeout=self._timeout
-                )
+                raw = await asyncio.wait_for(_shared_queue.get(), timeout=self._timeout)
                 self._apply(raw)
                 self._store.mark_connected()
             except asyncio.TimeoutError:
@@ -288,7 +292,7 @@ class QueueSubscriber(BaseSubscriber):
 # ──────────────────────────────────────────
 
 REDIS_CHANNEL = "tinker:state"
-REDIS_RECONNECT_DELAY = 3.0   # seconds
+REDIS_RECONNECT_DELAY = 3.0  # seconds
 
 
 class RedisSubscriber(BaseSubscriber):
@@ -307,7 +311,7 @@ class RedisSubscriber(BaseSubscriber):
     ) -> None:
         super().__init__(on_update)
         self._redis_url = redis_url
-        self._channel   = channel
+        self._channel = channel
 
     async def run(self) -> None:
         self._running = True
@@ -341,8 +345,11 @@ class RedisSubscriber(BaseSubscriber):
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                log.error("RedisSubscriber error: %s – reconnecting in %.1fs",
-                          exc, REDIS_RECONNECT_DELAY)
+                log.error(
+                    "RedisSubscriber error: %s – reconnecting in %.1fs",
+                    exc,
+                    REDIS_RECONNECT_DELAY,
+                )
                 self._store.mark_disconnected()
                 await asyncio.sleep(REDIS_RECONNECT_DELAY)
 

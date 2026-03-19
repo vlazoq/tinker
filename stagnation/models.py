@@ -11,41 +11,43 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 
 # ─────────────────────────────────────────────────────────────
 # Stagnation failure modes
 # ─────────────────────────────────────────────────────────────
 
+
 class StagnationType(str, Enum):
-    SEMANTIC_LOOP         = "semantic_loop"
-    SUBSYSTEM_FIXATION    = "subsystem_fixation"
-    CRITIQUE_COLLAPSE     = "critique_collapse"
-    RESEARCH_SATURATION   = "research_saturation"
-    TASK_STARVATION       = "task_starvation"
+    SEMANTIC_LOOP = "semantic_loop"
+    SUBSYSTEM_FIXATION = "subsystem_fixation"
+    CRITIQUE_COLLAPSE = "critique_collapse"
+    RESEARCH_SATURATION = "research_saturation"
+    TASK_STARVATION = "task_starvation"
 
 
 # ─────────────────────────────────────────────────────────────
 # Intervention directives
 # ─────────────────────────────────────────────────────────────
 
+
 class InterventionType(str, Enum):
-    FORCE_BRANCH          = "force_branch"
-    INJECT_CONTRADICTION  = "inject_contradiction"
-    ALTERNATIVE_FORCING   = "alternative_forcing"
-    SPAWN_EXPLORATION     = "spawn_exploration_task"
-    ESCALATE_LOOP         = "escalate_loop"
-    NO_ACTION             = "no_action"
+    FORCE_BRANCH = "force_branch"
+    INJECT_CONTRADICTION = "inject_contradiction"
+    ALTERNATIVE_FORCING = "alternative_forcing"
+    SPAWN_EXPLORATION = "spawn_exploration_task"
+    ESCALATE_LOOP = "escalate_loop"
+    NO_ACTION = "no_action"
 
 
 # Canonical mapping: each failure mode → its primary intervention
 INTERVENTION_MAP: Dict[StagnationType, InterventionType] = {
-    StagnationType.SEMANTIC_LOOP:       InterventionType.ALTERNATIVE_FORCING,
-    StagnationType.SUBSYSTEM_FIXATION:  InterventionType.FORCE_BRANCH,
-    StagnationType.CRITIQUE_COLLAPSE:   InterventionType.INJECT_CONTRADICTION,
+    StagnationType.SEMANTIC_LOOP: InterventionType.ALTERNATIVE_FORCING,
+    StagnationType.SUBSYSTEM_FIXATION: InterventionType.FORCE_BRANCH,
+    StagnationType.CRITIQUE_COLLAPSE: InterventionType.INJECT_CONTRADICTION,
     StagnationType.RESEARCH_SATURATION: InterventionType.SPAWN_EXPLORATION,
-    StagnationType.TASK_STARVATION:     InterventionType.ESCALATE_LOOP,
+    StagnationType.TASK_STARVATION: InterventionType.ESCALATE_LOOP,
 }
 
 
@@ -56,9 +58,10 @@ class InterventionDirective:
     The Orchestrator reads `intervention_type` and acts accordingly.
     `metadata` carries detector-specific hints (e.g. which subsystem to avoid).
     """
+
     intervention_type: InterventionType
     stagnation_type: StagnationType
-    severity: float                          # 0.0 – 1.0 normalised score
+    severity: float  # 0.0 – 1.0 normalised score
     metadata: Dict[str, Any] = field(default_factory=dict)
     directive_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -80,6 +83,7 @@ class InterventionDirective:
 # ─────────────────────────────────────────────────────────────
 # Stagnation event (written to the event log)
 # ─────────────────────────────────────────────────────────────
+
 
 @dataclass
 class StagnationEvent:
@@ -106,6 +110,7 @@ class StagnationEvent:
 # ─────────────────────────────────────────────────────────────
 # Payload the Orchestrator passes on each micro-loop tick
 # ─────────────────────────────────────────────────────────────
+
 
 @dataclass
 class MicroLoopContext:

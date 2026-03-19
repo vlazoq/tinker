@@ -81,7 +81,8 @@ class MemoryCompressor:
         if not aged_out and excess <= 0:
             logger.debug(
                 "[compression] session %s: %d artifacts, no compression needed.",
-                session_id, count,
+                session_id,
+                count,
             )
             return 0
 
@@ -91,9 +92,12 @@ class MemoryCompressor:
         if aged_out:
             logger.info(
                 "[compression] Archiving %d aged-out artifacts for session %s",
-                len(aged_out), session_id,
+                len(aged_out),
+                session_id,
             )
-            total_archived += await self._compress_chunk(session_id, aged_out, "age-based")
+            total_archived += await self._compress_chunk(
+                session_id, aged_out, "age-based"
+            )
 
         # Archive excess artifacts (oldest first)
         if excess > 0:
@@ -107,7 +111,8 @@ class MemoryCompressor:
             if excess_artifacts:
                 logger.info(
                     "[compression] Archiving %d excess artifacts for session %s",
-                    len(excess_artifacts), session_id,
+                    len(excess_artifacts),
+                    session_id,
                 )
                 total_archived += await self._compress_chunk(
                     session_id, excess_artifacts, "threshold-based"
@@ -115,7 +120,8 @@ class MemoryCompressor:
 
         logger.info(
             "[compression] Session %s: archived %d artifacts total.",
-            session_id, total_archived,
+            session_id,
+            total_archived,
         )
         return total_archived
 
@@ -194,7 +200,8 @@ class MemoryCompressor:
             total_archived += len(chunk)
             logger.debug(
                 "[compression] Summarised %d artifacts → summary %s",
-                len(chunk), summary_artifact.id,
+                len(chunk),
+                summary_artifact.id,
             )
 
         return total_archived

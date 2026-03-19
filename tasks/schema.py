@@ -47,6 +47,7 @@ from typing import Any
 # Using ``str, Enum`` as base classes means the enum value IS a string, which
 # makes JSON serialisation trivial — no extra conversion needed.
 
+
 class TaskType(str, Enum):
     """
     The *nature* of the work a task represents.
@@ -70,15 +71,16 @@ class TaskType(str, Enum):
     VALIDATION  : Verify a claim or assumption with evidence.
                   Example: "Confirm that Kafka supports exactly-once delivery."
     """
-    DESIGN          = "design"
-    RESEARCH        = "research"
-    CRITIQUE        = "critique"
-    SYNTHESIS       = "synthesis"
-    EXPLORATION     = "exploration"
-    VALIDATION      = "validation"
+
+    DESIGN = "design"
+    RESEARCH = "research"
+    CRITIQUE = "critique"
+    SYNTHESIS = "synthesis"
+    EXPLORATION = "exploration"
+    VALIDATION = "validation"
     # ── Grub integration task types ───────────────────────────────────────────
-    IMPLEMENTATION  = "implementation"   # Grub: implement this design artifact
-    REVIEW          = "review"           # Grub: review what was implemented
+    IMPLEMENTATION = "implementation"  # Grub: implement this design artifact
+    REVIEW = "review"  # Grub: review what was implemented
 
 
 class TaskStatus(str, Enum):
@@ -109,14 +111,15 @@ class TaskStatus(str, Enum):
     SKIPPED  : Deliberately bypassed — for example, because it became stale
                or the underlying question was resolved another way.
     """
-    PENDING   = "pending"
-    ACTIVE    = "active"
-    CRITIQUE  = "critique"
-    COMPLETE  = "complete"
-    ARCHIVED  = "archived"
-    BLOCKED   = "blocked"
-    FAILED    = "failed"
-    SKIPPED   = "skipped"
+
+    PENDING = "pending"
+    ACTIVE = "active"
+    CRITIQUE = "critique"
+    COMPLETE = "complete"
+    ARCHIVED = "archived"
+    BLOCKED = "blocked"
+    FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 class Subsystem(str, Enum):
@@ -145,22 +148,24 @@ class Subsystem(str, Enum):
     CROSS_CUTTING        : Tasks that span multiple subsystems and don't fit
                            neatly into any one category.
     """
-    MODEL_CLIENT         = "model_client"
-    MEMORY_MANAGER       = "memory_manager"
-    TOOL_LAYER           = "tool_layer"
-    AGENT_PROMPTS        = "agent_prompts"
-    TASK_ENGINE          = "task_engine"
-    CONTEXT_ASSEMBLER    = "context_assembler"
-    ORCHESTRATOR         = "orchestrator"
-    ARCH_STATE_MANAGER   = "arch_state_manager"
-    ANTI_STAGNATION      = "anti_stagnation"
-    OBSERVABILITY        = "observability"
-    CROSS_CUTTING        = "cross_cutting"   # Spans multiple subsystems
+
+    MODEL_CLIENT = "model_client"
+    MEMORY_MANAGER = "memory_manager"
+    TOOL_LAYER = "tool_layer"
+    AGENT_PROMPTS = "agent_prompts"
+    TASK_ENGINE = "task_engine"
+    CONTEXT_ASSEMBLER = "context_assembler"
+    ORCHESTRATOR = "orchestrator"
+    ARCH_STATE_MANAGER = "arch_state_manager"
+    ANTI_STAGNATION = "anti_stagnation"
+    OBSERVABILITY = "observability"
+    CROSS_CUTTING = "cross_cutting"  # Spans multiple subsystems
 
 
 # =============================================================================
 # Utility functions
 # =============================================================================
+
 
 def _now() -> str:
     """Return the current UTC time as an ISO-8601 string.
@@ -171,6 +176,7 @@ def _now() -> str:
     ORDER BY on timestamp columns works correctly without parsing.
     """
     return datetime.now(timezone.utc).isoformat()
+
 
 def _new_id() -> str:
     """Generate a random UUID string to use as a task's unique identifier.
@@ -186,6 +192,7 @@ def _new_id() -> str:
 # =============================================================================
 # Task dataclass
 # =============================================================================
+
 
 @dataclass
 class Task:
@@ -219,37 +226,37 @@ class Task:
 
     # ── Identity ──────────────────────────────────────────────────────────────
     # Every task gets a unique random ID at creation time.
-    id:            str       = field(default_factory=_new_id)
+    id: str = field(default_factory=_new_id)
 
     # If this task was created by the generator after an Architect finished
     # a parent task, parent_id links back to that parent.  Root tasks have
     # parent_id = None.
-    parent_id:     str | None = None
+    parent_id: str | None = None
 
-    title:         str       = ""   # Short human-readable label
-    description:   str       = ""  # Full description of what needs to be done
+    title: str = ""  # Short human-readable label
+    description: str = ""  # Full description of what needs to be done
 
     # ── Classification ────────────────────────────────────────────────────────
     # What kind of work is it, and which part of Tinker does it concern?
-    type:          TaskType   = TaskType.DESIGN
-    subsystem:     Subsystem  = Subsystem.CROSS_CUTTING
+    type: TaskType = TaskType.DESIGN
+    subsystem: Subsystem = Subsystem.CROSS_CUTTING
 
     # ── Status ────────────────────────────────────────────────────────────────
-    status:        TaskStatus = TaskStatus.PENDING
+    status: TaskStatus = TaskStatus.PENDING
 
     # ── Dependencies ──────────────────────────────────────────────────────────
     # A list of other task IDs that must reach COMPLETE before this task can
     # be scheduled.  An empty list means "no prerequisites; schedule freely."
     # The DependencyResolver watches this list and flips the task from
     # BLOCKED → PENDING once all listed tasks are done.
-    dependencies:  list[str]  = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
 
     # ── Outputs ───────────────────────────────────────────────────────────────
     # When an Architect completes this task, it may produce "artefacts" —
     # design documents, research summaries, etc.  Those are stored in the
     # Memory Manager / Architecture State, and their keys are listed here so
     # downstream tasks know where to find them.
-    outputs:       list[str]  = field(default_factory=list)
+    outputs: list[str] = field(default_factory=list)
 
     # ── Scoring inputs (raw signals, each normalised to [0, 1]) ───────────────
     # These fields feed into PriorityScorer.score().  They are stored on the
@@ -258,17 +265,17 @@ class Task:
     # How uncertain is the current understanding of this topic?
     # 0.0 = very confident, 1.0 = totally unknown.
     # Higher gap → higher priority (we should explore uncertain areas).
-    confidence_gap:   float = 0.5
+    confidence_gap: float = 0.5
 
     # How many hours has this task been sitting in PENDING without being picked?
     # Grows over time; used to prevent tasks from being starved indefinitely.
-    staleness_hours:  float = 0.0
+    staleness_hours: float = 0.0
 
     # How deep in the dependency chain is this task?
     # depth 0 = no dependencies, depth 3 = depends on something that depends
     # on something that depends on something.
     # Shallower tasks tend to be worked first (fewer ancestors = more ready).
-    dependency_depth: int   = 0
+    dependency_depth: int = 0
 
     # How recently (in hours) did we do any work on this task's subsystem?
     # 0.0 = just now, large number = not worked on in a long time.
@@ -279,28 +286,28 @@ class Task:
     # priority_score is calculated by PriorityScorer and written back here.
     # It is a float in [0, 1]; higher = pick sooner.
     # We store it in the DB so the queue can use a fast ORDER BY on it.
-    priority_score:  float = 0.0
+    priority_score: float = 0.0
 
     # ── Metadata ──────────────────────────────────────────────────────────────
     # Free-form labels (e.g. ["memory", "performance"]) for filtering/display.
-    tags:          list[str]       = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
     # Arbitrary key-value pairs for extension without schema changes.
     # The resolver also uses this dict to record which deps are currently
     # blocking the task (key "blocking_deps").
-    metadata:      dict[str, Any]  = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # True for tasks generated by the anti-stagnation / exploration logic.
     # The queue reserves a small random slot specifically for these tasks
     # so they aren't crowded out by higher-scoring regular tasks.
-    is_exploration: bool           = False
+    is_exploration: bool = False
 
     # ── Timestamps ────────────────────────────────────────────────────────────
     # All stored as ISO-8601 strings (see _now() above).
-    created_at:    str = field(default_factory=_now)   # When task was created
-    updated_at:    str = field(default_factory=_now)   # Last modification time
-    started_at:    str | None = None                   # Set when ACTIVE begins
-    completed_at:  str | None = None                   # Set when COMPLETE
+    created_at: str = field(default_factory=_now)  # When task was created
+    updated_at: str = field(default_factory=_now)  # Last modification time
+    started_at: str | None = None  # Set when ACTIVE begins
+    completed_at: str | None = None  # Set when COMPLETE
 
     # ── Critique ──────────────────────────────────────────────────────────────
     # Notes added by a reviewer when a task is in the CRITIQUE state.
@@ -309,7 +316,7 @@ class Task:
     # How many times has an agent tried to work on this task?
     # Incremented each time mark_started() is called.  If it keeps failing,
     # external logic can use this to give up after N attempts.
-    attempt_count:  int = 0
+    attempt_count: int = 0
 
     # =========================================================================
     # State-transition helpers
@@ -379,10 +386,11 @@ class Task:
         values (because JSON/SQLite don't know what an Enum is).
         """
         import dataclasses
+
         d = dataclasses.asdict(self)
         # Enums → their .value string (e.g. TaskType.DESIGN → "design")
-        d["type"]      = self.type.value
-        d["status"]    = self.status.value
+        d["type"] = self.type.value
+        d["status"] = self.status.value
         d["subsystem"] = self.subsystem.value
         return d
 
@@ -403,13 +411,14 @@ class Task:
         d = dict(d)  # Make a copy so we don't mutate the caller's dict
 
         # Convert string values back to their Enum types
-        d["type"]      = TaskType(d["type"])
-        d["status"]    = TaskStatus(d["status"])
+        d["type"] = TaskType(d["type"])
+        d["status"] = TaskStatus(d["status"])
         d["subsystem"] = Subsystem(d["subsystem"])
 
         # SQLite stores list/dict fields as JSON strings.
         # If a field is a string here, parse it back to a Python object.
         import json
+
         for list_field in ("dependencies", "outputs", "tags"):
             if isinstance(d.get(list_field), str):
                 d[list_field] = json.loads(d[list_field])

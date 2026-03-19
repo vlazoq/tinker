@@ -87,10 +87,10 @@ class TokenBucketRateLimiter:
         cost: float = 1.0,
     ) -> None:
         self.name = name
-        self._rate = rate     # tokens per second
-        self._burst = burst   # max bucket size
-        self._cost = cost     # default cost per call
-        self._tokens: float = burst   # start full
+        self._rate = rate  # tokens per second
+        self._burst = burst  # max bucket size
+        self._cost = cost  # default cost per call
+        self._tokens: float = burst  # start full
         self._last_refill: float = time.monotonic()
         self._lock = asyncio.Lock()
 
@@ -144,7 +144,10 @@ class TokenBucketRateLimiter:
                 self._calls_throttled += 1
                 logger.debug(
                     "RateLimiter '%s': throttling %.2fs (tokens=%.2f, need=%.2f)",
-                    self.name, wait_time, self._tokens, effective_cost,
+                    self.name,
+                    wait_time,
+                    self._tokens,
+                    effective_cost,
                 )
 
         if wait_time > 0:
@@ -240,7 +243,9 @@ class RateLimiterRegistry:
         self._limiters[name] = limiter
         logger.info(
             "Registered rate limiter '%s' (rate=%.2f/s, burst=%.0f)",
-            name, rate, burst,
+            name,
+            rate,
+            burst,
         )
         return limiter
 
@@ -278,15 +283,15 @@ def build_default_rate_limiters() -> RateLimiterRegistry:
     registry = RateLimiterRegistry()
 
     # Architect: slowest, most expensive — limit to 1 call every 3 seconds
-    registry.register("architect",   rate=0.33, burst=3)
+    registry.register("architect", rate=0.33, burst=3)
 
     # Critic: lighter than architect, higher throughput
-    registry.register("critic",      rate=0.5,  burst=5)
+    registry.register("critic", rate=0.5, burst=5)
 
     # Synthesizer: called rarely (meso/macro), but expensive
-    registry.register("synthesizer", rate=0.2,  burst=2)
+    registry.register("synthesizer", rate=0.2, burst=2)
 
     # Researcher (web search): limit to avoid hammering SearXNG
-    registry.register("researcher",  rate=0.5,  burst=3)
+    registry.register("researcher", rate=0.5, burst=3)
 
     return registry

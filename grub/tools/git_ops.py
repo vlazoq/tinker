@@ -40,7 +40,7 @@ def git_status(cwd: Optional[Union[str, Path]] = None) -> CommandResult:
 
 
 def git_diff(
-    cwd:   Optional[Union[str, Path]] = None,
+    cwd: Optional[Union[str, Path]] = None,
     files: Optional[list[str]] = None,
 ) -> CommandResult:
     """
@@ -59,7 +59,7 @@ def git_diff(
 
 def git_add(
     files: list[str],
-    cwd:   Optional[Union[str, Path]] = None,
+    cwd: Optional[Union[str, Path]] = None,
 ) -> CommandResult:
     """
     Stage files for commit ('git add <files>').
@@ -76,7 +76,7 @@ def git_add(
 
 def git_commit(
     message: str,
-    cwd:     Optional[Union[str, Path]] = None,
+    cwd: Optional[Union[str, Path]] = None,
 ) -> CommandResult:
     """
     Commit staged files with a message.
@@ -88,7 +88,8 @@ def git_commit(
     """
     return run_command(
         ["git", "commit", "-m", message],
-        cwd=cwd, timeout=15.0,
+        cwd=cwd,
+        timeout=15.0,
     )
 
 
@@ -100,14 +101,15 @@ def git_current_branch(cwd: Optional[Union[str, Path]] = None) -> str:
     """
     result = run_command(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-        cwd=cwd, timeout=5.0,
+        cwd=cwd,
+        timeout=5.0,
     )
     return result.stdout.strip() if result.succeeded else ""
 
 
 def git_create_branch(
     branch: str,
-    cwd:    Optional[Union[str, Path]] = None,
+    cwd: Optional[Union[str, Path]] = None,
 ) -> CommandResult:
     """
     Create and switch to a new branch ('git checkout -b <branch>').
@@ -117,5 +119,6 @@ def git_create_branch(
     """
     return run_command(
         ["git", "checkout", "-b", branch],
-        cwd=cwd, timeout=10.0,
+        cwd=cwd,
+        timeout=10.0,
     )

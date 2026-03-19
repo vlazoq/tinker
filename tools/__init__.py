@@ -57,9 +57,9 @@ from .base import BaseTool, ToolResult, ToolSchema
 # Listing things here is also useful documentation: it says "these are the
 # public names you're meant to use; everything else is an internal detail."
 __all__ = [
-    "ToolRegistry",          # The central registry and dispatcher
-    "build_default_registry",# Factory that creates a ready-to-use registry
-    "BaseTool",              # Base class for every tool
-    "ToolResult",            # Standardised return envelope for tool calls
-    "ToolSchema",            # Metadata descriptor for a tool
+    "ToolRegistry",  # The central registry and dispatcher
+    "build_default_registry",  # Factory that creates a ready-to-use registry
+    "BaseTool",  # Base class for every tool
+    "ToolResult",  # Standardised return envelope for tool calls
+    "ToolSchema",  # Metadata descriptor for a tool
 ]

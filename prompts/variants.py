@@ -35,9 +35,9 @@ class PromptVariant:
     key: VariantKey
     name: str
     description: str
-    applicable_roles: list[str]           # which roles this applies to
-    system_injection: str                  # appended to system prompt
-    user_injection: str = ""               # optionally prepended to user prompt
+    applicable_roles: list[str]  # which roles this applies to
+    system_injection: str  # appended to system prompt
+    user_injection: str = ""  # optionally prepended to user prompt
     incompatible_with: list[str] = field(default_factory=list)
 
 
@@ -60,7 +60,7 @@ You are in harder critic mode. The following rules OVERRIDE your base rules:
 - At least 2 weaknesses must be "critical" or "high" severity.
 - Objections must be written as if presenting in a hostile architecture review board.
 - Each weakness statement must name at least one specific component, interface, or decision by name.""",
-    incompatible_with=["devil_advocate_critic"]
+    incompatible_with=["devil_advocate_critic"],
 )
 
 ALTERNATIVE_FORCING = PromptVariant(
@@ -79,7 +79,7 @@ You are in alternative forcing mode. The following rules OVERRIDE your base rule
 - Your candidate_next_tasks must include at least one task that revisits a rejected alternative.
 - If you cannot name two rejected alternatives for a decision, that decision has not been thought through — rethink it.
 - Trade-offs must reference specific alternatives, not generic concerns.""",
-    incompatible_with=["minimum_viable_design"]
+    incompatible_with=["minimum_viable_design"],
 )
 
 CONTRADICTION_INJECTION = PromptVariant(
@@ -96,7 +96,7 @@ The context you are receiving contains DELIBERATE CONTRADICTIONS injected by the
 - If you are the Architect: prefer the more conservative interpretation when resolving contradictions.
 - If you are the Critic: treat unresolved contradictions in the design as a HIGH severity weakness.
 - If you are the Synthesizer: every contradiction MUST appear in contradictions_resolved or outstanding_tensions.""",
-    user_injection="NOTE: This context contains injected contradictions. Detect and address them explicitly.\n\n"
+    user_injection="NOTE: This context contains injected contradictions. Detect and address them explicitly.\n\n",
 )
 
 DEVIL_ADVOCATE_CRITIC = PromptVariant(
@@ -118,7 +118,7 @@ Trivial weaknesses are not acceptable in this mode — every weakness must be no
 - Minimum 4 weaknesses, each targeting a strength of the design.
 - confidence_score: treat your score as reflecting "would a skeptical senior architect approve this?"
 - Your objections must counter arguments that a defender WOULD make.""",
-    incompatible_with=["harder_critic"]
+    incompatible_with=["harder_critic"],
 )
 
 SOCRATIC_ARCHITECT = PromptVariant(
@@ -135,7 +135,7 @@ You are in Socratic mode. For EACH component and interface in your design:
 
 Include these challenges in your reasoning_chain. At least 4 reasoning steps must contain a self-challenge question.
 Your open_questions must reflect genuine uncertainty — do not list trivial questions.
-Your confidence score must be lower than you would otherwise assign by at least 0.1 to reflect discovered uncertainty."""
+Your confidence score must be lower than you would otherwise assign by at least 0.1 to reflect discovered uncertainty.""",
 )
 
 PARANOID_SECURITY = PromptVariant(
@@ -161,7 +161,7 @@ FOR ARCHITECTS:
 FOR CRITICS:
 - At least 2 weaknesses must be category: "security".
 - If no threat model is present in the artifact, add a CRITICAL weakness for its absence.
-- Evaluate every component interface for unauthorized access vulnerabilities."""
+- Evaluate every component interface for unauthorized access vulnerabilities.""",
 )
 
 MINIMUM_VIABLE_DESIGN = PromptVariant(
@@ -180,7 +180,7 @@ Rules:
 - Your trade_offs.costs must include the complexity cost of every component.
 - candidate_next_tasks must include a task: "Evaluate whether [component] can be eliminated".
 - confidence score should reflect: "if this could be simpler, it's not as good a design".""",
-    incompatible_with=["alternative_forcing"]
+    incompatible_with=["alternative_forcing"],
 )
 
 SCALABILITY_STRESS = PromptVariant(
@@ -204,7 +204,7 @@ FOR ARCHITECTS:
 FOR CRITICS:
 - At least 2 weaknesses must be category: "scalability".
 - For every stateful component: flag its state management as a potential weakness.
-- Evaluate the architecture's behavior at: 1x, 10x, 100x, 1000x load. Note where it breaks."""
+- Evaluate the architecture's behavior at: 1x, 10x, 100x, 1000x load. Note where it breaks.""",
 )
 
 
@@ -213,20 +213,22 @@ FOR CRITICS:
 # ---------------------------------------------------------------------------
 
 VARIANT_REGISTRY: dict[VariantKey, PromptVariant] = {
-    "harder_critic":           HARDER_CRITIC,
-    "alternative_forcing":     ALTERNATIVE_FORCING,
+    "harder_critic": HARDER_CRITIC,
+    "alternative_forcing": ALTERNATIVE_FORCING,
     "contradiction_injection": CONTRADICTION_INJECTION,
-    "devil_advocate_critic":   DEVIL_ADVOCATE_CRITIC,
-    "socratic_architect":      SOCRATIC_ARCHITECT,
-    "paranoid_security":       PARANOID_SECURITY,
-    "minimum_viable_design":   MINIMUM_VIABLE_DESIGN,
-    "scalability_stress":      SCALABILITY_STRESS,
+    "devil_advocate_critic": DEVIL_ADVOCATE_CRITIC,
+    "socratic_architect": SOCRATIC_ARCHITECT,
+    "paranoid_security": PARANOID_SECURITY,
+    "minimum_viable_design": MINIMUM_VIABLE_DESIGN,
+    "scalability_stress": SCALABILITY_STRESS,
 }
 
 
 def get_variant(key: VariantKey) -> PromptVariant:
     if key not in VARIANT_REGISTRY:
-        raise KeyError(f"Unknown variant key: '{key}'. Available: {list(VARIANT_REGISTRY.keys())}")
+        raise KeyError(
+            f"Unknown variant key: '{key}'. Available: {list(VARIANT_REGISTRY.keys())}"
+        )
     return VARIANT_REGISTRY[key]
 
 
@@ -237,7 +239,5 @@ def validate_variant_combination(variants: list[VariantKey]) -> list[str]:
         variant = VARIANT_REGISTRY[vk]
         for incompatible in variant.incompatible_with:
             if incompatible in variants:
-                errors.append(
-                    f"Variant '{vk}' is incompatible with '{incompatible}'."
-                )
+                errors.append(f"Variant '{vk}' is incompatible with '{incompatible}'.")
     return errors

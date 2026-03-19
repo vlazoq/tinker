@@ -55,24 +55,24 @@ Sub-modules in this package
 # ---------------------------------------------------------------------------
 
 # The HTTP client and the errors it can raise
-from .client  import OllamaClient, ModelClientError, ConnectionError, TimeoutError
+from .client import OllamaClient, ModelClientError, ConnectionError, TimeoutError
 
 # JSON extraction helpers (used by router, but useful to callers too)
 from .parsing import extract_json, build_json_instruction
 
 # The main entry-point most callers will use
-from .router  import ModelRouter
+from .router import ModelRouter
 
 # All data-types that callers need when building requests or reading responses
-from .types   import (
-    AgentRole,       # which AI agent is asking (ARCHITECT, CRITIC, …)
-    Machine,         # which physical server to send the request to
-    MachineConfig,   # connection settings for one server
-    Message,         # a single chat message (role + content)
-    ModelRequest,    # a fully-described request to the model
-    ModelResponse,   # everything that came back from the model
-    RetryConfig,     # settings for how to retry failed requests
-    ROLE_MACHINE_MAP,# lookup table: agent role → server machine
+from .types import (
+    AgentRole,  # which AI agent is asking (ARCHITECT, CRITIC, …)
+    Machine,  # which physical server to send the request to
+    MachineConfig,  # connection settings for one server
+    Message,  # a single chat message (role + content)
+    ModelRequest,  # a fully-described request to the model
+    ModelResponse,  # everything that came back from the model
+    RetryConfig,  # settings for how to retry failed requests
+    ROLE_MACHINE_MAP,  # lookup table: agent role → server machine
 )
 
 # ---------------------------------------------------------------------------
@@ -82,19 +82,19 @@ from .types   import (
 # and also tells linters / IDEs that these names are intentionally exported.
 
 __all__ = [
-    "ModelRouter",        # the main class callers use
-    "OllamaClient",       # the low-level HTTP client (advanced use)
-    "AgentRole",          # enum: ARCHITECT | RESEARCHER | SYNTHESIZER | CRITIC
-    "Machine",            # enum: SERVER | SECONDARY
-    "MachineConfig",      # dataclass: URL, model name, timeouts, …
-    "Message",            # dataclass: role + content text
-    "ModelRequest",       # dataclass: everything needed to make a request
-    "ModelResponse",      # dataclass: everything that came back
-    "RetryConfig",        # dataclass: retry/backoff settings
-    "ROLE_MACHINE_MAP",   # dict mapping each AgentRole to its Machine
-    "ModelClientError",   # base exception class
-    "ConnectionError",    # raised when Ollama is unreachable
-    "TimeoutError",       # raised when a request takes too long
-    "extract_json",       # standalone helper to pull JSON out of raw text
+    "ModelRouter",  # the main class callers use
+    "OllamaClient",  # the low-level HTTP client (advanced use)
+    "AgentRole",  # enum: ARCHITECT | RESEARCHER | SYNTHESIZER | CRITIC
+    "Machine",  # enum: SERVER | SECONDARY
+    "MachineConfig",  # dataclass: URL, model name, timeouts, …
+    "Message",  # dataclass: role + content text
+    "ModelRequest",  # dataclass: everything needed to make a request
+    "ModelResponse",  # dataclass: everything that came back
+    "RetryConfig",  # dataclass: retry/backoff settings
+    "ROLE_MACHINE_MAP",  # dict mapping each AgentRole to its Machine
+    "ModelClientError",  # base exception class
+    "ConnectionError",  # raised when Ollama is unreachable
+    "TimeoutError",  # raised when a request takes too long
+    "extract_json",  # standalone helper to pull JSON out of raw text
     "build_json_instruction",  # helper to add "respond in JSON" to a prompt
 ]

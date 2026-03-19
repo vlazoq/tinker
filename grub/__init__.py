@@ -21,8 +21,8 @@ Quick start
 See docs/tutorial/15-grub-overview.md for the full tutorial.
 """
 
-from .agent   import GrubAgent
-from .config  import GrubConfig
+from .agent import GrubAgent
+from .config import GrubConfig
 from .registry import MinionRegistry
 
 __version__ = "0.1.0"

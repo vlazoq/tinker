@@ -57,33 +57,33 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class AuditEventType(Enum):
     """Types of auditable events in Tinker."""
-    TASK_SELECTED      = "task_selected"
-    TASK_COMPLETED     = "task_completed"
-    TASK_FAILED        = "task_failed"
-    ARTIFACT_STORED    = "artifact_stored"
-    MESO_SYNTHESIS     = "meso_synthesis"
-    MACRO_SYNTHESIS    = "macro_synthesis"
+
+    TASK_SELECTED = "task_selected"
+    TASK_COMPLETED = "task_completed"
+    TASK_FAILED = "task_failed"
+    ARTIFACT_STORED = "artifact_stored"
+    MESO_SYNTHESIS = "meso_synthesis"
+    MACRO_SYNTHESIS = "macro_synthesis"
     STAGNATION_DETECTED = "stagnation_detected"
-    CIRCUIT_OPEN       = "circuit_open"
-    CIRCUIT_CLOSE      = "circuit_close"
-    CONFIG_CHANGED     = "config_changed"
-    BACKUP_CREATED     = "backup_created"
-    SYSTEM_START       = "system_start"
-    SYSTEM_STOP        = "system_stop"
-    SLA_BREACH         = "sla_breach"
-    DLQ_ENQUEUED       = "dlq_enqueued"
-    CUSTOM             = "custom"
+    CIRCUIT_OPEN = "circuit_open"
+    CIRCUIT_CLOSE = "circuit_close"
+    CONFIG_CHANGED = "config_changed"
+    BACKUP_CREATED = "backup_created"
+    SYSTEM_START = "system_start"
+    SYSTEM_STOP = "system_stop"
+    SLA_BREACH = "sla_breach"
+    DLQ_ENQUEUED = "dlq_enqueued"
+    CUSTOM = "custom"
 
 
 class AuditLog:
@@ -105,13 +105,14 @@ class AuditLog:
         self._conn = None
         self._lock = asyncio.Lock()
         self._buffer: list[dict] = []
-        self._flush_interval = 5.0   # Flush buffer every 5 seconds
+        self._flush_interval = 5.0  # Flush buffer every 5 seconds
         self._flush_task: Optional[asyncio.Task] = None
 
     async def connect(self) -> None:
         """Open the SQLite connection and create the audit table."""
         try:
             import aiosqlite
+
             self._conn = await aiosqlite.connect(self._db_path)
             self._conn.row_factory = aiosqlite.Row
             await self._conn.execute("PRAGMA journal_mode=WAL")
@@ -190,13 +191,13 @@ class AuditLog:
         now = datetime.now(timezone.utc).isoformat()
 
         event = {
-            "id":         event_id,
+            "id": event_id,
             "event_type": event_type.value,
-            "actor":      actor,
-            "resource":   resource,
-            "outcome":    outcome,
-            "details":    json.dumps(details) if details else None,
-            "trace_id":   trace_id,
+            "actor": actor,
+            "resource": resource,
+            "outcome": outcome,
+            "details": json.dumps(details) if details else None,
+            "trace_id": trace_id,
             "session_id": session_id,
             "created_at": now,
         }
@@ -301,12 +302,15 @@ class AuditLog:
             self._buffer.clear()
 
         try:
-            await self._conn.executemany("""
+            await self._conn.executemany(
+                """
                 INSERT OR IGNORE INTO audit_events
                     (id, event_type, actor, resource, outcome, details, trace_id, session_id, created_at)
                 VALUES
                     (:id, :event_type, :actor, :resource, :outcome, :details, :trace_id, :session_id, :created_at)
-            """, events)
+            """,
+                events,
+            )
             await self._conn.commit()
         except Exception as exc:
             logger.error("AuditLog flush failed: %s", exc)

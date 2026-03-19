@@ -76,7 +76,7 @@ import asyncio
 import functools
 import logging
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Coroutine, TypeVar
 
 from exceptions import TinkerError
@@ -89,6 +89,7 @@ T = TypeVar("T")
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class RetryConfig:
@@ -133,13 +134,14 @@ class RetryConfig:
           * Anything that sends an external side-effect (email, webhook)
                                                 → idempotent=False
     """
-    max_attempts:            int   = 3
-    base_delay:              float = 1.0
-    max_delay:               float = 60.0
-    jitter:                  bool  = True
-    only_if_retryable:       bool  = True
+
+    max_attempts: int = 3
+    base_delay: float = 1.0
+    max_delay: float = 60.0
+    jitter: bool = True
+    only_if_retryable: bool = True
     reraise_after_exhaustion: bool = True
-    idempotent:              bool  = True
+    idempotent: bool = True
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1:
@@ -169,6 +171,7 @@ ONCE = RetryConfig(max_attempts=1)
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
+
 
 def _compute_delay(attempt: int, config: RetryConfig) -> float:
     """
@@ -240,7 +243,8 @@ async def retry_async(
                 log.warning(
                     "retry: aborting further retries for non-idempotent operation "
                     "after attempt %d — partial side effects may exist: %s",
-                    attempt, type(exc).__name__,
+                    attempt,
+                    type(exc).__name__,
                 )
                 break
 
@@ -248,15 +252,19 @@ async def retry_async(
                 # All attempts exhausted
                 log.warning(
                     "retry: all %d attempts exhausted for %s: %s",
-                    config.max_attempts, type(exc).__name__, exc,
+                    config.max_attempts,
+                    type(exc).__name__,
+                    exc,
                 )
                 break
 
             delay = _compute_delay(attempt, config)
             log.warning(
                 "retry: attempt %d/%d failed (%s: %s) — sleeping %.2fs before retry",
-                attempt, config.max_attempts,
-                type(exc).__name__, exc,
+                attempt,
+                config.max_attempts,
+                type(exc).__name__,
+                exc,
                 delay,
             )
             await asyncio.sleep(delay)
@@ -269,6 +277,7 @@ async def retry_async(
 # ---------------------------------------------------------------------------
 # Decorator
 # ---------------------------------------------------------------------------
+
 
 def with_retry(config: RetryConfig = RetryConfig()):
     """
@@ -293,11 +302,16 @@ def with_retry(config: RetryConfig = RetryConfig()):
         Retry policy.  Defaults to ``RetryConfig()`` (3 attempts, 1 s base,
         60 s max, with jitter, only retrying retryable errors).
     """
-    def decorator(fn: Callable[..., Coroutine[Any, Any, T]]) -> Callable[..., Coroutine[Any, Any, T]]:
+
+    def decorator(
+        fn: Callable[..., Coroutine[Any, Any, T]],
+    ) -> Callable[..., Coroutine[Any, Any, T]]:
         @functools.wraps(fn)
         async def wrapper(*args: Any, **kwargs: Any) -> T:
             return await retry_async(lambda: fn(*args, **kwargs), config)
+
         # Attach config to the wrapper so callers can inspect it in tests
         wrapper._retry_config = config  # type: ignore[attr-defined]
         return wrapper
+
     return decorator

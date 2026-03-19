@@ -66,9 +66,9 @@ class MinionRegistry:
     """
 
     def __init__(self, config: "GrubConfig") -> None:
-        self._config  = config
+        self._config = config
         self._minions: dict[str, Type["BaseMinion"]] = {}
-        self._skills:  dict[str, str]                = {}
+        self._skills: dict[str, str] = {}
         self._skills_dir = Path(__file__).parent / "skills"
 
     # ── Minion management ─────────────────────────────────────────────────────
@@ -102,17 +102,15 @@ class MinionRegistry:
         """
         if name not in self._minions:
             available = ", ".join(sorted(self._minions.keys()))
-            raise KeyError(
-                f"Minion '{name}' not registered. Available: {available}"
-            )
+            raise KeyError(f"Minion '{name}' not registered. Available: {available}")
         cls = self._minions[name]
         # Load skills for this minion from config
         skill_names = self._config.minion_skills.get(name, [])
         skills = [self.get_skill(s) for s in skill_names]
         return cls(
-            name       = name,
-            config     = self._config,
-            skills     = skills,
+            name=name,
+            config=self._config,
+            skills=skills,
         )
 
     def list_minions(self) -> list[str]:
@@ -163,7 +161,7 @@ class MinionRegistry:
         for path in candidates:
             if path.exists():
                 text = path.read_text(encoding="utf-8")
-                self._skills[name] = text   # cache
+                self._skills[name] = text  # cache
                 logger.debug("Loaded skill from file: %s", path)
                 return text
 
@@ -183,7 +181,7 @@ class MinionRegistry:
 
         for path in self._skills_dir.iterdir():
             if path.suffix in (".md", ".txt") and path.is_file():
-                name = path.stem   # filename without extension
+                name = path.stem  # filename without extension
                 if name not in self._skills:
                     try:
                         self._skills[name] = path.read_text(encoding="utf-8")
@@ -212,20 +210,23 @@ class MinionRegistry:
         """
         # ── Import and register all built-in Minions ──────────────────────────
         try:
-            from .minions.coder      import CoderMinion
-            from .minions.reviewer   import ReviewerMinion
-            from .minions.tester     import TesterMinion
-            from .minions.debugger   import DebuggerMinion
+            from .minions.coder import CoderMinion
+            from .minions.reviewer import ReviewerMinion
+            from .minions.tester import TesterMinion
+            from .minions.debugger import DebuggerMinion
             from .minions.refactorer import RefactorerMinion
 
-            self.register_minion("coder",      CoderMinion)
-            self.register_minion("reviewer",   ReviewerMinion)
-            self.register_minion("tester",     TesterMinion)
-            self.register_minion("debugger",   DebuggerMinion)
+            self.register_minion("coder", CoderMinion)
+            self.register_minion("reviewer", ReviewerMinion)
+            self.register_minion("tester", TesterMinion)
+            self.register_minion("debugger", DebuggerMinion)
             self.register_minion("refactorer", RefactorerMinion)
 
-            logger.info("Registered %d built-in minions: %s",
-                        len(self._minions), ", ".join(self.list_minions()))
+            logger.info(
+                "Registered %d built-in minions: %s",
+                len(self._minions),
+                ", ".join(self.list_minions()),
+            )
         except ImportError as exc:
             logger.error("Failed to import a built-in Minion: %s", exc)
 
@@ -236,5 +237,5 @@ class MinionRegistry:
         """Return a summary dict for logging/diagnostics."""
         return {
             "minions": self.list_minions(),
-            "skills":  self.list_skills(),
+            "skills": self.list_skills(),
         }

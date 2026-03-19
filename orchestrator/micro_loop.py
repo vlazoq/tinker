@@ -50,6 +50,7 @@ This avoids a circular import (orchestrator.py imports micro_loop.py, so
 micro_loop.py cannot import orchestrator.py at runtime).  The import is there
 only to help type checkers and IDEs understand what ``orch`` is.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -72,25 +73,29 @@ if TYPE_CHECKING:
 # deployments where the resilience/observability packages aren't installed.
 
 try:
-    from resilience.idempotency import IdempotencyCache, idempotency_key
+    from resilience.idempotency import IdempotencyCache, idempotency_key  # noqa: F401
+
     _IDEMPOTENCY_AVAILABLE = True
 except ImportError:
     _IDEMPOTENCY_AVAILABLE = False
 
 try:
-    from resilience.rate_limiter import RateLimiterRegistry
+    from resilience.rate_limiter import RateLimiterRegistry  # noqa: F401
+
     _RATE_LIMITER_AVAILABLE = True
 except ImportError:
     _RATE_LIMITER_AVAILABLE = False
 
 try:
-    from observability.tracing import default_tracer
+    from observability.tracing import default_tracer  # noqa: F401
+
     _TRACING_AVAILABLE = True
 except ImportError:
     _TRACING_AVAILABLE = False
 
 try:
-    from lineage.tracker import LineageTracker
+    from lineage.tracker import LineageTracker  # noqa: F401
+
     _LINEAGE_AVAILABLE = True
 except ImportError:
     _LINEAGE_AVAILABLE = False
@@ -145,7 +150,7 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
     rate_limiters: Optional[object] = enterprise.get("rate_limiters")
     idempotency_cache: Optional[object] = enterprise.get("idempotency_cache")
     lineage_tracker: Optional[object] = enterprise.get("lineage_tracker")
-    audit_log: Optional[object] = enterprise.get("audit_log")
+    _audit_log: Optional[object] = enterprise.get("audit_log")
 
     # ── 1. Task Selection ────────────────────────────────────────────────────
     # Ask the task engine for the next task to work on.  If there's nothing
@@ -171,7 +176,8 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
             if await idempotency_cache.exists(idem_key):
                 logger.info(
                     "micro[%d] SKIP task=%s (idempotency hit — already processed)",
-                    iteration, task["id"],
+                    iteration,
+                    task["id"],
                 )
                 # Build a minimal SUCCESS record so the orchestrator's
                 # counters increment correctly without doing redundant work.
@@ -196,7 +202,12 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         subsystem=task.get("subsystem", "unknown"),
         started_at=time.monotonic(),
     )
-    logger.info("micro[%d] START task=%s subsystem=%s", iteration, task["id"], task.get("subsystem"))
+    logger.info(
+        "micro[%d] START task=%s subsystem=%s",
+        iteration,
+        task["id"],
+        task.get("subsystem"),
+    )
 
     try:
         # ── 2. Context Assembly ──────────────────────────────────────────────
@@ -228,10 +239,13 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                     await arch_limiter.acquire()
             except Exception as exc:
                 logger.warning(
-                    "Architect rate limiter acquire failed (continuing unthrottled): %s", exc
+                    "Architect rate limiter acquire failed (continuing unthrottled): %s",
+                    exc,
                 )
 
-        architect_result = await _call_architect(orch, task, context, cfg.architect_timeout)
+        architect_result = await _call_architect(
+            orch, task, context, cfg.architect_timeout
+        )
         # Record how many tokens the Architect used — useful for cost tracking.
         record.architect_tokens = architect_result.get("tokens_used", 0)
 
@@ -242,7 +256,9 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                 if arch_limiter is not None:
                     arch_limiter.record_tokens(record.architect_tokens)
             except Exception as exc:
-                logger.debug("Architect rate limiter record_tokens failed (non-fatal): %s", exc)
+                logger.debug(
+                    "Architect rate limiter record_tokens failed (non-fatal): %s", exc
+                )
 
         # ── 4. Researcher Routing (optional) ─────────────────────────────────
         # The Architect may say "I'm not sure about X — I have a knowledge gap."
@@ -274,7 +290,9 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
             except Exception as exc:
                 logger.debug("Critic rate limiter acquire failed (non-fatal): %s", exc)
 
-        critic_result = await _call_critic(orch, task, architect_result, cfg.critic_timeout)
+        critic_result = await _call_critic(
+            orch, task, architect_result, cfg.critic_timeout
+        )
         record.critic_tokens = critic_result.get("tokens_used", 0)
 
         if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
@@ -283,7 +301,9 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                 if critic_limiter is not None:
                     critic_limiter.record_tokens(record.critic_tokens)
             except Exception as exc:
-                logger.debug("Critic rate limiter record_tokens failed (non-fatal): %s", exc)
+                logger.debug(
+                    "Critic rate limiter record_tokens failed (non-fatal): %s", exc
+                )
         # Store the raw score on the record so the orchestrator can forward it
         # to the StagnationMonitor (Critique Collapse detector) after the loop.
         record.critic_score = critic_result.get("score")
@@ -367,7 +387,10 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         record.finished_at = time.monotonic()
         logger.info(
             "micro[%d] END status=%s duration=%.2fs artifact=%s",
-            iteration, record.status.value, record.duration(), record.artifact_id
+            iteration,
+            record.status.value,
+            record.duration(),
+            record.artifact_id,
         )
 
     return record
@@ -377,6 +400,7 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
 # Each function below handles exactly one step of the micro loop.
 # They are all private (prefixed with _) because only run_micro_loop should
 # call them — they are implementation details, not part of any public API.
+
 
 async def _select_task(orch: "Orchestrator") -> Optional[dict]:
     """
@@ -458,9 +482,7 @@ async def _call_architect(
     """
     try:
         return await asyncio.wait_for(
-            coroutine_if_needed(orch.architect_agent.call)(
-                task=task, context=context
-            ),
+            coroutine_if_needed(orch.architect_agent.call)(task=task, context=context),
             timeout=timeout,
         )
     except asyncio.TimeoutError:
@@ -522,7 +544,9 @@ async def _route_researcher(
             )
             research_results.append({"gap": gap, "result": result})
             calls_made += 1
-            logger.debug("researcher: gap=%r resolved (%d chars)", gap, len(str(result)))
+            logger.debug(
+                "researcher: gap=%r resolved (%d chars)", gap, len(str(result))
+            )
         except asyncio.TimeoutError:
             # This particular gap lookup was too slow — skip it and try the next.
             logger.warning("researcher: timeout on gap=%r — skipping", gap)
@@ -747,7 +771,9 @@ def _enrich_review_context(task: dict, context: dict) -> dict:
                 grub_result.get("score", 0.0),
             )
     except Exception as exc:
-        logger.debug("_enrich_review_context: could not parse grub result (non-fatal): %s", exc)
+        logger.debug(
+            "_enrich_review_context: could not parse grub result (non-fatal): %s", exc
+        )
     return enriched
 
 

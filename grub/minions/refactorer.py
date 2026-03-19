@@ -24,13 +24,12 @@ STATUS: FULLY IMPLEMENTED
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 from .base import BaseMinion
-from ..contracts.task   import GrubTask
+from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus, TestSummary
-from ..tools.file_ops   import read_file, write_file
-from ..tools.shell      import run_tests, check_syntax
+from ..tools.file_ops import read_file, write_file
+from ..tools.shell import run_tests, check_syntax
 
 
 class RefactorerMinion(BaseMinion):
@@ -91,10 +90,12 @@ If no changes are needed:
         self.logger.info("RefactorerMinion.run: task=%s (%s)", task.id[:8], task.title)
 
         files_to_refactor = task.context.get("files_to_refactor", task.target_files)
-        test_file         = task.context.get("test_file", "")
+        test_file = task.context.get("test_file", "")
 
         if not files_to_refactor:
-            return self._make_failed_result(task, "No files_to_refactor in task.context")
+            return self._make_failed_result(
+                task, "No files_to_refactor in task.context"
+            )
 
         # ── Load files ────────────────────────────────────────────────────────
         originals: dict[str, str] = {}
@@ -110,9 +111,10 @@ If no changes are needed:
 
         # ── Ask LLM to refactor ───────────────────────────────────────────────
         prompt = (
-            f"## Task\nRefactor the following code for better readability "
-            f"and maintainability.\n\n"
-            + "## Code\n" + "\n\n".join(code_sections)
+            "## Task\nRefactor the following code for better readability "
+            "and maintainability.\n\n"
+            + "## Code\n"
+            + "\n\n".join(code_sections)
             + "\n\n## Instructions\n"
             "Apply the refactoring goals from your instructions. "
             "Output a 'Changes Made' section followed by each refactored file "
@@ -125,7 +127,7 @@ If no changes are needed:
             return self._make_failed_result(task, response)
 
         # ── Extract and write refactored files ────────────────────────────────
-        code_blocks   = self._extract_code_blocks(response, "python")
+        code_blocks = self._extract_code_blocks(response, "python")
         if not code_blocks:
             code_blocks = self._extract_code_blocks(response)
 
@@ -145,8 +147,12 @@ If no changes are needed:
                 continue
 
             # Syntax check
-            import tempfile, os
-            with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w") as tmp:
+            import tempfile
+            import os
+
+            with tempfile.NamedTemporaryFile(
+                suffix=".py", delete=False, mode="w"
+            ) as tmp:
                 tmp.write(block)
                 tmp_path = tmp.name
             chk = check_syntax(tmp_path)
@@ -159,7 +165,7 @@ If no changes are needed:
             else:
                 self.logger.warning(
                     "RefactorerMinion: refactored %s has syntax errors — keeping original",
-                    fpath
+                    fpath,
                 )
                 files_with_errors.append(fpath)
                 # Restore original
@@ -171,7 +177,7 @@ If no changes are needed:
         test_summary: TestSummary | None = None
 
         if test_file and files_written:
-            run_result   = run_tests(test_file, timeout=60.0)
+            run_result = run_tests(test_file, timeout=60.0)
             test_summary = self._parse_pytest_summary(run_result.output)
 
             if not test_summary.all_passed:
@@ -182,19 +188,19 @@ If no changes are needed:
                 for fpath, original in originals.items():
                     write_file(fpath, original)
                 return MinionResult(
-                    task_id          = task.id,
-                    minion_name      = self.name,
-                    status           = ResultStatus.FAILED,
-                    score            = 0.0,
-                    summary          = "Refactoring broke tests — originals restored.",
-                    notes            = run_result.output[:2000],
-                    test_results     = test_summary,
-                    duration_seconds = duration,
+                    task_id=task.id,
+                    minion_name=self.name,
+                    status=ResultStatus.FAILED,
+                    score=0.0,
+                    summary="Refactoring broke tests — originals restored.",
+                    notes=run_result.output[:2000],
+                    test_results=test_summary,
+                    duration_seconds=duration,
                 )
 
         if not files_written and not files_with_errors:
             summary = "No changes needed — code is already clean."
-            score   = 0.95
+            score = 0.95
         elif files_with_errors:
             summary = (
                 f"Refactored {len(files_written)} file(s). "
@@ -203,34 +209,36 @@ If no changes are needed:
             score = 0.7
         else:
             summary = f"Successfully refactored {len(files_written)} file(s)."
-            score   = 0.9
+            score = 0.9
 
         return MinionResult(
-            task_id          = task.id,
-            minion_name      = self.name,
-            status           = ResultStatus.SUCCESS,
-            score            = score,
-            files_written    = files_written,
-            test_results     = test_summary,
-            summary          = summary,
-            duration_seconds = duration,
-            raw_llm_output   = response,
+            task_id=task.id,
+            minion_name=self.name,
+            status=ResultStatus.SUCCESS,
+            score=score,
+            files_written=files_written,
+            test_results=test_summary,
+            summary=summary,
+            duration_seconds=duration,
+            raw_llm_output=response,
         )
 
     def _parse_pytest_summary(self, output: str) -> TestSummary:
         import re
+
         passed = failed = errors = skipped = 0
         for line in reversed(output.splitlines()):
             ll = line.lower()
             if " passed" in ll or " failed" in ll or " error" in ll:
-                p = re.search(r"(\d+) passed",  ll)
-                f = re.search(r"(\d+) failed",  ll)
-                e = re.search(r"(\d+) error",   ll)
+                p = re.search(r"(\d+) passed", ll)
+                f = re.search(r"(\d+) failed", ll)
+                e = re.search(r"(\d+) error", ll)
                 s = re.search(r"(\d+) skipped", ll)
-                passed  = int(p.group(1)) if p else 0
-                failed  = int(f.group(1)) if f else 0
-                errors  = int(e.group(1)) if e else 0
+                passed = int(p.group(1)) if p else 0
+                failed = int(f.group(1)) if f else 0
+                errors = int(e.group(1)) if e else 0
                 skipped = int(s.group(1)) if s else 0
                 break
-        return TestSummary(passed=passed, failed=failed,
-                           errors=errors, skipped=skipped, output=output)
+        return TestSummary(
+            passed=passed, failed=failed, errors=errors, skipped=skipped, output=output
+        )

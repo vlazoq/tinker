@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import ast
 import logging
-import re
 from pathlib import Path
 from typing import Union
 
@@ -35,17 +34,17 @@ def count_lines(path: Union[str, Path]) -> dict:
     dict with keys: total, code, comments, blank, error
     """
     try:
-        text  = Path(path).read_text(encoding="utf-8")
+        text = Path(path).read_text(encoding="utf-8")
         lines = text.splitlines()
-        blank    = sum(1 for l in lines if not l.strip())
-        comments = sum(1 for l in lines if l.strip().startswith("#"))
-        code     = len(lines) - blank - comments
+        blank = sum(1 for ln in lines if not ln.strip())
+        comments = sum(1 for ln in lines if ln.strip().startswith("#"))
+        code = len(lines) - blank - comments
         return {
-            "total":    len(lines),
-            "code":     code,
+            "total": len(lines),
+            "code": code,
             "comments": comments,
-            "blank":    blank,
-            "error":    None,
+            "blank": blank,
+            "error": None,
         }
     except Exception as exc:
         return {"total": 0, "code": 0, "comments": 0, "blank": 0, "error": str(exc)}
@@ -74,7 +73,7 @@ def extract_functions(path: Union[str, Path]) -> list[dict]:
     """
     try:
         source = Path(path).read_text(encoding="utf-8")
-        tree   = ast.parse(source)
+        tree = ast.parse(source)
     except Exception as exc:
         logger.warning("extract_functions: could not parse %s: %s", path, exc)
         return []
@@ -84,25 +83,27 @@ def extract_functions(path: Union[str, Path]) -> list[dict]:
     def _visit(node, class_name: str = ""):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             # Get argument names (skip 'self', 'cls')
-            args = [
-                a.arg for a in node.args.args
-                if a.arg not in ("self", "cls")
-            ]
+            args = [a.arg for a in node.args.args if a.arg not in ("self", "cls")]
             # Get first line of docstring if present
             docstring = ""
-            if (node.body and isinstance(node.body[0], ast.Expr)
-                    and isinstance(node.body[0].value, ast.Constant)
-                    and isinstance(node.body[0].value.value, str)):
+            if (
+                node.body
+                and isinstance(node.body[0], ast.Expr)
+                and isinstance(node.body[0].value, ast.Constant)
+                and isinstance(node.body[0].value.value, str)
+            ):
                 docstring = node.body[0].value.value.split("\n")[0].strip()
 
-            functions.append({
-                "name":       node.name,
-                "lineno":     node.lineno,
-                "args":       args,
-                "is_async":   isinstance(node, ast.AsyncFunctionDef),
-                "docstring":  docstring,
-                "class_name": class_name,
-            })
+            functions.append(
+                {
+                    "name": node.name,
+                    "lineno": node.lineno,
+                    "args": args,
+                    "is_async": isinstance(node, ast.AsyncFunctionDef),
+                    "docstring": docstring,
+                    "class_name": class_name,
+                }
+            )
             # Recurse into nested functions
             for child in ast.iter_child_nodes(node):
                 _visit(child, class_name)
@@ -133,7 +134,7 @@ def extract_imports(path: Union[str, Path]) -> list[str]:
     """
     try:
         source = Path(path).read_text(encoding="utf-8")
-        tree   = ast.parse(source)
+        tree = ast.parse(source)
     except Exception as exc:
         logger.warning("extract_imports: could not parse %s: %s", path, exc)
         return []
@@ -142,7 +143,7 @@ def extract_imports(path: Union[str, Path]) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                imports.add(alias.name.split(".")[0])   # top-level module
+                imports.add(alias.name.split(".")[0])  # top-level module
         elif isinstance(node, ast.ImportFrom):
             if node.module:
                 imports.add(node.module.split(".")[0])
@@ -166,26 +167,24 @@ def summarise_file(path: Union[str, Path]) -> dict:
     dict with keys: path, lines, functions, imports, classes
     """
     path = Path(path)
-    lines     = count_lines(path)
+    lines = count_lines(path)
     functions = extract_functions(path)
-    imports   = extract_imports(path)
+    imports = extract_imports(path)
 
     # Extract class names separately
     try:
         source = path.read_text(encoding="utf-8")
-        tree   = ast.parse(source)
+        tree = ast.parse(source)
         classes = [
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ClassDef)
+            node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
         ]
     except Exception:
         classes = []
 
     return {
-        "path":      str(path),
-        "lines":     lines,
+        "path": str(path),
+        "lines": lines,
         "functions": [f["name"] for f in functions],
-        "classes":   classes,
-        "imports":   imports,
+        "classes": classes,
+        "imports": imports,
     }

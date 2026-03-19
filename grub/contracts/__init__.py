@@ -14,7 +14,7 @@ This is the 'dependency inversion' principle: depend on abstractions,
 not on concrete implementations.
 """
 
-from .task   import GrubTask, TaskPriority
+from .task import GrubTask, TaskPriority
 from .result import MinionResult, ResultStatus
 
 __all__ = [

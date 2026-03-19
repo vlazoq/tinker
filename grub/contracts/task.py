@@ -45,9 +45,10 @@ class TaskPriority(str, Enum):
     In sequential mode (A) this is informational only — tasks run one by one.
     In queue mode (C) workers pick HIGH priority tasks first.
     """
-    HIGH   = "high"
+
+    HIGH = "high"
     NORMAL = "normal"
-    LOW    = "low"
+    LOW = "low"
 
 
 @dataclass
@@ -74,61 +75,61 @@ class GrubTask:
     """
 
     # Required fields (must be provided)
-    title:          str
-    description:    str
+    title: str
+    description: str
 
     # Auto-generated if not provided
-    id:             str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at:     str = field(
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
 
     # Optional context fields
-    artifact_path:  str            = ""    # path to Tinker design doc
-    target_files:   list[str]      = field(default_factory=list)
-    language:       str            = "python"
-    subsystem:      str            = "unknown"
-    priority:       TaskPriority   = TaskPriority.NORMAL
-    tinker_task_id: str            = ""    # traceability back to Tinker
-    context:        dict[str, Any] = field(default_factory=dict)
+    artifact_path: str = ""  # path to Tinker design doc
+    target_files: list[str] = field(default_factory=list)
+    language: str = "python"
+    subsystem: str = "unknown"
+    priority: TaskPriority = TaskPriority.NORMAL
+    tinker_task_id: str = ""  # traceability back to Tinker
+    context: dict[str, Any] = field(default_factory=dict)
 
     # Filled in after Minion runs
-    assigned_minion: str = ""   # which minion handled this
-    attempt_count:   int = 0    # how many times it has been retried
+    assigned_minion: str = ""  # which minion handled this
+    attempt_count: int = 0  # how many times it has been retried
 
     def to_dict(self) -> dict:
         """Serialise to a plain dict (for SQLite storage in queue mode)."""
         return {
-            "id":              self.id,
-            "title":           self.title,
-            "description":     self.description,
-            "artifact_path":   self.artifact_path,
-            "target_files":    self.target_files,
-            "language":        self.language,
-            "subsystem":       self.subsystem,
-            "priority":        self.priority.value,
-            "tinker_task_id":  self.tinker_task_id,
-            "context":         self.context,
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "artifact_path": self.artifact_path,
+            "target_files": self.target_files,
+            "language": self.language,
+            "subsystem": self.subsystem,
+            "priority": self.priority.value,
+            "tinker_task_id": self.tinker_task_id,
+            "context": self.context,
             "assigned_minion": self.assigned_minion,
-            "attempt_count":   self.attempt_count,
-            "created_at":      self.created_at,
+            "attempt_count": self.attempt_count,
+            "created_at": self.created_at,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "GrubTask":
         """Deserialise from a plain dict (when loading from SQLite)."""
         return cls(
-            id              = d["id"],
-            title           = d["title"],
-            description     = d["description"],
-            artifact_path   = d.get("artifact_path", ""),
-            target_files    = d.get("target_files", []),
-            language        = d.get("language", "python"),
-            subsystem       = d.get("subsystem", "unknown"),
-            priority        = TaskPriority(d.get("priority", "normal")),
-            tinker_task_id  = d.get("tinker_task_id", ""),
-            context         = d.get("context", {}),
-            assigned_minion = d.get("assigned_minion", ""),
-            attempt_count   = d.get("attempt_count", 0),
-            created_at      = d.get("created_at", ""),
+            id=d["id"],
+            title=d["title"],
+            description=d["description"],
+            artifact_path=d.get("artifact_path", ""),
+            target_files=d.get("target_files", []),
+            language=d.get("language", "python"),
+            subsystem=d.get("subsystem", "unknown"),
+            priority=TaskPriority(d.get("priority", "normal")),
+            tinker_task_id=d.get("tinker_task_id", ""),
+            context=d.get("context", {}),
+            assigned_minion=d.get("assigned_minion", ""),
+            attempt_count=d.get("attempt_count", 0),
+            created_at=d.get("created_at", ""),
         )

@@ -8,21 +8,23 @@ system prompt building.  No LLM calls needed.
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from grub.config           import GrubConfig
-from grub.contracts.task   import GrubTask
+from grub.config import GrubConfig
+from grub.contracts.task import GrubTask
 from grub.contracts.result import MinionResult, ResultStatus
-from grub.minions.base     import BaseMinion
+from grub.minions.base import BaseMinion
 
 
 # ── Concrete subclass for testing ─────────────────────────────────────────────
 
+
 class ConcreteMinion(BaseMinion):
-    MINION_NAME        = "concrete"
+    MINION_NAME = "concrete"
     BASE_SYSTEM_PROMPT = "You are a test minion."
 
     async def run(self, task: GrubTask) -> MinionResult:
-        return MinionResult(task_id=task.id, minion_name=self.name,
-                            status=ResultStatus.SUCCESS)
+        return MinionResult(
+            task_id=task.id, minion_name=self.name, status=ResultStatus.SUCCESS
+        )
 
 
 @pytest.fixture
@@ -38,16 +40,17 @@ def task():
 
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class TestBuildSystemPrompt:
 
+class TestBuildSystemPrompt:
     def test_contains_base_prompt(self, minion):
         prompt = minion._build_system_prompt()
         assert "You are a test minion." in prompt
 
     def test_injects_skills(self):
-        cfg    = GrubConfig()
-        m      = ConcreteMinion(name="concrete", config=cfg,
-                                skills=["Skill A content", "Skill B content"])
+        cfg = GrubConfig()
+        m = ConcreteMinion(
+            name="concrete", config=cfg, skills=["Skill A content", "Skill B content"]
+        )
         prompt = m._build_system_prompt()
         assert "Skill A content" in prompt
         assert "Skill B content" in prompt
@@ -57,16 +60,15 @@ class TestBuildSystemPrompt:
         assert "Extra context here" in prompt
 
     def test_skills_separated_by_divider(self):
-        cfg    = GrubConfig()
-        m      = ConcreteMinion(name="c", config=cfg, skills=["Skill X"])
+        cfg = GrubConfig()
+        m = ConcreteMinion(name="c", config=cfg, skills=["Skill X"])
         prompt = m._build_system_prompt()
-        assert "---" in prompt   # separator between sections
+        assert "---" in prompt  # separator between sections
 
 
 class TestExtractCodeBlocks:
-
     def test_extracts_python_block(self, minion):
-        text   = "Here's the code:\n```python\ndef hello(): pass\n```\nDone."
+        text = "Here's the code:\n```python\ndef hello(): pass\n```\nDone."
         blocks = minion._extract_code_blocks(text, "python")
         assert len(blocks) == 1
         assert "def hello()" in blocks[0]
@@ -81,13 +83,12 @@ class TestExtractCodeBlocks:
         assert blocks == []
 
     def test_strips_whitespace_from_blocks(self, minion):
-        text   = "```python\n\n  def foo(): pass\n\n```"
+        text = "```python\n\n  def foo(): pass\n\n```"
         blocks = minion._extract_code_blocks(text, "python")
         assert blocks[0] == "def foo(): pass"
 
 
 class TestScoreFromText:
-
     def test_parses_decimal_score(self, minion):
         score = minion._score_from_text("The code is good. Score: 0.82")
         assert abs(score - 0.82) < 0.01
@@ -111,11 +112,10 @@ class TestScoreFromText:
 
 
 class TestMakeFailedResult:
-
     def test_returns_failed_status(self, minion, task):
         result = minion._make_failed_result(task, "Something went wrong")
         assert result.status == ResultStatus.FAILED
-        assert result.score  == 0.0
+        assert result.score == 0.0
 
     def test_includes_reason_in_notes(self, minion, task):
         result = minion._make_failed_result(task, "Connection refused")
@@ -127,12 +127,12 @@ class TestMakeFailedResult:
 
 
 class TestLlmMethod:
-
     @pytest.mark.asyncio
     async def test_returns_error_string_when_cannot_connect(self, minion, task):
         """When Ollama is not running, _llm() should return an ERROR: string."""
         with patch("httpx.AsyncClient") as mock_client:
             import httpx
+
             mock_client.return_value.__aenter__.return_value.post = AsyncMock(
                 side_effect=httpx.ConnectError("connection refused")
             )
@@ -144,9 +144,9 @@ class TestLlmMethod:
         """When Ollama responds correctly, _llm() returns the content string."""
         mock_response = AsyncMock()
         mock_response.raise_for_status = AsyncMock()
-        mock_response.json = AsyncMock(return_value={
-            "message": {"content": "Generated code here"}
-        })
+        mock_response.json = AsyncMock(
+            return_value={"message": {"content": "Generated code here"}}
+        )
         with patch("httpx.AsyncClient") as mock_client:
             mock_client.return_value.__aenter__.return_value.post = AsyncMock(
                 return_value=mock_response

@@ -9,6 +9,7 @@ Run with:
     # or directly:
     python tinker/orchestrator/test_orchestrator_integration.py
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +17,6 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 # ── allow running from repo root ──────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -24,7 +24,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from orchestrator.orchestrator import Orchestrator
 from orchestrator.config import OrchestratorConfig
 from orchestrator.state import LoopStatus
-from orchestrator.stubs import build_stub_components, StubMemoryManager, StubArchStateManager
+from orchestrator.stubs import (
+    build_stub_components,
+    StubMemoryManager,
+    StubArchStateManager,
+)
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -38,10 +42,11 @@ logger = logging.getLogger("test.integration")
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_orchestrator(
     target_micro_loops: int = 3,
     meso_trigger: int = 2,
-    macro_interval: float = 9999.0,   # disable timer-based macro in most tests
+    macro_interval: float = 9999.0,  # disable timer-based macro in most tests
     **config_overrides,
 ) -> tuple[Orchestrator, dict]:
     """
@@ -61,7 +66,7 @@ def _make_orchestrator(
         "tool_timeout": 5.0,
         "state_snapshot_path": "/tmp/tinker_test_state.json",
     }
-    overrides.update(config_overrides)   # caller wins on conflicts
+    overrides.update(config_overrides)  # caller wins on conflicts
     cfg = OrchestratorConfig(**overrides)
 
     orch = Orchestrator(config=cfg, **components)
@@ -80,6 +85,7 @@ def _make_orchestrator(
         return result
 
     import types
+
     orch._run_micro = types.MethodType(_patched_run_micro, orch)
 
     return orch, components
@@ -88,6 +94,7 @@ def _make_orchestrator(
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 1: 3 micro loops complete successfully
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def test_three_micro_loops():
     logger.info("=" * 60)
@@ -127,6 +134,7 @@ async def test_three_micro_loops():
 # Test 2: Meso escalation triggers after N micro loops on same subsystem
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def test_meso_escalation():
     logger.info("=" * 60)
     logger.info("TEST 2: Meso escalation triggers correctly")
@@ -134,13 +142,14 @@ async def test_meso_escalation():
 
     # Force all tasks to the same subsystem so the counter accumulates
     from orchestrator.stubs import StubTaskEngine
-    import uuid, time as _time
+    import uuid
+    import time as _time
 
     class SingleSubsystemTaskEngine(StubTaskEngine):
         def _make_task(self, parent_id=None):
             return {
                 "id": str(uuid.uuid4()),
-                "subsystem": "api_gateway",   # always the same
+                "subsystem": "api_gateway",  # always the same
                 "description": "API gateway design task",
                 "priority": 3,
                 "tags": ["api_gateway"],
@@ -153,7 +162,7 @@ async def test_meso_escalation():
     memory: StubMemoryManager = components["memory_manager"]
 
     cfg = OrchestratorConfig(
-        meso_trigger_count=2,           # meso fires after every 2 micro loops
+        meso_trigger_count=2,  # meso fires after every 2 micro loops
         macro_interval_seconds=9999.0,
         micro_loop_idle_seconds=0.0,
         failure_backoff_seconds=0.1,
@@ -161,7 +170,7 @@ async def test_meso_escalation():
         critic_timeout=5.0,
         synthesizer_timeout=5.0,
         tool_timeout=5.0,
-        meso_min_artifacts=1,           # ensure meso doesn't skip for low artifact count
+        meso_min_artifacts=1,  # ensure meso doesn't skip for low artifact count
         state_snapshot_path="/tmp/tinker_test_meso_state.json",
     )
 
@@ -173,6 +182,7 @@ async def test_meso_escalation():
     async def _patched(self_: Orchestrator) -> bool:
         from orchestrator.micro_loop import run_micro_loop, MicroLoopError
         from orchestrator.state import LoopStatus
+
         try:
             record = await run_micro_loop(self_)
             self_.state.total_micro_loops += 1
@@ -206,13 +216,15 @@ async def test_meso_escalation():
     assert memory.document_count >= 1, "Expected at least 1 subsystem document stored"
 
     logger.info(
-        "✓ test_meso_escalation PASSED — %d meso loop(s) fired", orch.state.total_meso_loops
+        "✓ test_meso_escalation PASSED — %d meso loop(s) fired",
+        orch.state.total_meso_loops,
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 3: Graceful shutdown — finish current loop, write snapshot, exit
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def test_graceful_shutdown():
     logger.info("=" * 60)
@@ -231,7 +243,9 @@ async def test_graceful_shutdown():
     assert orch.state.status == LoopStatus.SHUTDOWN, (
         f"Expected SHUTDOWN status, got {orch.state.status}"
     )
-    import json, os
+    import json
+    import os
+
     assert os.path.exists(snapshot_path), "State snapshot not written to disk"
     with open(snapshot_path) as f:
         snapshot = json.load(f)
@@ -244,6 +258,7 @@ async def test_graceful_shutdown():
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 4: Failure recovery — orchestrator survives repeated agent errors
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def test_failure_recovery():
     logger.info("=" * 60)
@@ -272,7 +287,7 @@ async def test_failure_recovery():
         meso_trigger_count=999,
         macro_interval_seconds=9999.0,
         micro_loop_idle_seconds=0.0,
-        failure_backoff_seconds=0.01,   # fast in tests
+        failure_backoff_seconds=0.01,  # fast in tests
         max_consecutive_failures=2,
         architect_timeout=5.0,
         critic_timeout=5.0,
@@ -309,20 +324,28 @@ async def test_failure_recovery():
     await orch.run()
     elapsed = time.monotonic() - start
 
-    assert call_count["n"] >= 3, f"Expected at least 3 architect calls, got {call_count['n']}"
-    assert orch.state.total_micro_loops >= 1, "Expected at least 1 successful micro loop"
-    success_records = [r for r in orch.state.micro_history if r.status == LoopStatus.SUCCESS]
+    assert call_count["n"] >= 3, (
+        f"Expected at least 3 architect calls, got {call_count['n']}"
+    )
+    assert orch.state.total_micro_loops >= 1, (
+        "Expected at least 1 successful micro loop"
+    )
+    success_records = [
+        r for r in orch.state.micro_history if r.status == LoopStatus.SUCCESS
+    ]
     assert len(success_records) >= 1
 
     logger.info(
         "✓ test_failure_recovery PASSED — recovered after %d failures (%.2fs)",
-        call_count["n"] - 1, elapsed,
+        call_count["n"] - 1,
+        elapsed,
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 5: State snapshot is valid JSON and contains expected fields
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def test_state_snapshot():
     logger.info("=" * 60)
@@ -334,8 +357,16 @@ async def test_state_snapshot():
 
     snapshot = orch.get_state_snapshot()
 
-    required_keys = {"uptime_seconds", "status", "current_level", "totals",
-                     "subsystem_micro_counts", "micro_history", "meso_history", "macro_history"}
+    required_keys = {
+        "uptime_seconds",
+        "status",
+        "current_level",
+        "totals",
+        "subsystem_micro_counts",
+        "micro_history",
+        "meso_history",
+        "macro_history",
+    }
     missing = required_keys - set(snapshot.keys())
     assert not missing, f"Snapshot missing keys: {missing}"
 
@@ -353,6 +384,7 @@ async def test_state_snapshot():
 # Test 6: Macro loop fires when interval elapses
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def test_macro_fires():
     logger.info("=" * 60)
     logger.info("TEST 6: Macro loop fires when interval elapses")
@@ -360,9 +392,11 @@ async def test_macro_fires():
 
     orch, components = _make_orchestrator(
         target_micro_loops=2,
-        macro_interval=0.0,   # fire immediately
+        macro_interval=1.0,  # minimum allowed by config validation
     )
     arch_state: StubArchStateManager = components["arch_state_manager"]
+    # Force last_macro_at into the distant past so the macro fires on the first check
+    orch.state.last_macro_at = 0.0
 
     await orch.run()
 
@@ -376,13 +410,15 @@ async def test_macro_fires():
 
     logger.info(
         "✓ test_macro_fires PASSED — %d macro(s), %d commit(s)",
-        orch.state.total_macro_loops, arch_state.commit_count,
+        orch.state.total_macro_loops,
+        arch_state.commit_count,
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Runner
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def run_all_tests():
     tests = [
