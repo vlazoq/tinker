@@ -181,11 +181,16 @@ class Experiment:
 
     Attributes
     ----------
-    name     : Unique experiment identifier.
-    variants : Dict mapping variant names to their values.
-               The first key is the "control" variant by convention.
-    metric   : Name of the metric being measured (for reporting).
-    active   : Whether the experiment is currently accepting new assignments.
+    name               : Unique experiment identifier.
+    variants           : Dict mapping variant names to their values.
+                         The first key is the "control" variant by convention.
+    metric             : Name of the metric being measured (for reporting).
+    active             : Whether the experiment is currently accepting new assignments.
+    traffic_percentage : Fraction of traffic (0.0–1.0) that is eligible to
+                         receive a non-control variant.  The remaining fraction
+                         always gets the control.  Use ``ramp_up()`` to increase
+                         this gradually (e.g. 1 % → 10 % → 100 %).  Default: 1.0
+                         (all traffic participates in the experiment).
     """
 
     name: str
@@ -193,8 +198,11 @@ class Experiment:
     metric: str = "critic_score"
     active: bool = True
     outcomes: dict[str, list[float]] = field(default_factory=dict)
+    traffic_percentage: float = 1.0  # 0.0–1.0; fraction in the experiment
 
     def __post_init__(self):
+        # Clamp traffic_percentage to [0, 1]
+        self.traffic_percentage = max(0.0, min(1.0, self.traffic_percentage))
         # Initialise outcome buckets for each variant
         for v in self.variants:
             if v not in self.outcomes:
@@ -224,6 +232,7 @@ class ABTestingFramework:
         name: str,
         variants: dict,
         metric: str = "critic_score",
+        traffic_percentage: float = 1.0,
     ) -> Experiment:
         """
         Define a new A/B experiment.
@@ -253,10 +262,18 @@ class ABTestingFramework:
                 context={"experiment": name, "variant_count": len(variants)},
             )
 
-        exp = Experiment(name=name, variants=dict(variants), metric=metric)
+        exp = Experiment(
+            name=name,
+            variants=dict(variants),
+            metric=metric,
+            traffic_percentage=traffic_percentage,
+        )
         self._experiments[name] = exp
         logger.info(
-            "A/B experiment '%s' created with variants: %s", name, list(variants.keys())
+            "A/B experiment '%s' created with variants: %s traffic=%.0f%%",
+            name,
+            list(variants.keys()),
+            traffic_percentage * 100,
         )
         return exp
 
@@ -293,6 +310,24 @@ class ABTestingFramework:
             # Return control if experiment is paused
             control = next(iter(exp.variants))
             return control, exp.variants[control]
+
+        # ── Gradual rollout / traffic gate ────────────────────────────────────
+        # Use a second hash (different seed suffix) to decide whether this unit
+        # is in the eligible traffic slice.  Units outside the slice always get
+        # the control variant, keeping them unaffected by the experiment.
+        #
+        # Example: traffic_percentage=0.1 means 10 % of units see the experiment;
+        # the other 90 % transparently get the control.
+        if exp.traffic_percentage < 1.0:
+            traffic_input = f"{self._seed}:traffic:{experiment_name}:{unit_id}"
+            traffic_val = int(
+                hashlib.sha256(traffic_input.encode()).hexdigest(), 16
+            )
+            # Map the 256-bit hash to [0, 1) by dividing by 2^256
+            traffic_frac = traffic_val / (2**256)
+            if traffic_frac >= exp.traffic_percentage:
+                control = next(iter(exp.variants))
+                return control, exp.variants[control]
 
         # Deterministic hash assignment — SHA-256 avoids FIPS-mode MD5 restrictions
         # while remaining just as fast for this use case (non-cryptographic hashing).
@@ -412,6 +447,48 @@ class ABTestingFramework:
     def list_experiments(self) -> list[str]:
         """Return names of all registered experiments."""
         return list(self._experiments.keys())
+
+    def ramp_up(self, experiment_name: str, traffic_percentage: float) -> None:
+        """
+        Increase (or decrease) the fraction of traffic eligible for this experiment.
+
+        Parameters
+        ----------
+        experiment_name    : Name of the experiment to ramp.
+        traffic_percentage : New traffic fraction in [0.0, 1.0].
+                             0.0 → all traffic gets control (experiment off).
+                             1.0 → all traffic participates (fully ramped).
+
+        Raises
+        ------
+        ExperimentError : If the experiment doesn't exist.
+
+        Example
+        -------
+        ::
+
+            # Gradual canary rollout: 1 % → 10 % → 50 % → 100 %
+            ab.ramp_up("new_prompt_v2", 0.01)
+            # ... monitor for 1 hour ...
+            ab.ramp_up("new_prompt_v2", 0.10)
+            # ... monitor for 2 hours ...
+            ab.ramp_up("new_prompt_v2", 1.0)
+        """
+        exp = self._experiments.get(experiment_name)
+        if not exp:
+            raise ExperimentError(
+                f"Experiment '{experiment_name}' not found",
+                context={"experiment": experiment_name},
+            )
+        new_pct = max(0.0, min(1.0, traffic_percentage))
+        old_pct = exp.traffic_percentage
+        exp.traffic_percentage = new_pct
+        logger.info(
+            "A/B experiment '%s' traffic ramped: %.0f%% → %.0f%%",
+            experiment_name,
+            old_pct * 100,
+            new_pct * 100,
+        )
 
     def deactivate(self, experiment_name: str) -> None:
         """Stop a running experiment (stops new assignments, keeps data)."""

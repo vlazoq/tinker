@@ -341,6 +341,53 @@ class CircuitBreaker:
             except Exception as e:
                 logger.warning("Circuit breaker state-change callback raised: %s", e)
 
+    # ------------------------------------------------------------------
+    # Redis state persistence
+    # ------------------------------------------------------------------
+
+    async def save_state(self, redis_client) -> None:
+        """Serialise breaker state to Redis hash ``tinker:cb:{name}`` with TTL 86400s."""
+        key = f"tinker:cb:{self.name}"
+        try:
+            mapping = {
+                "state": self._state.value,
+                "failure_count": str(self._failure_count),
+                "success_count": str(self._success_count),
+                "open_at": str(self._open_at),
+                "total_calls": str(self._total_calls),
+                "total_failures": str(self._total_failures),
+                "total_short_circuits": str(self._total_short_circuits),
+            }
+            await redis_client.hset(key, mapping=mapping)
+            await redis_client.expire(key, 86400)
+        except Exception as exc:
+            logger.warning("CircuitBreaker.save_state failed for '%s': %s", self.name, exc)
+
+    async def load_state(self, redis_client) -> None:
+        """Restore breaker state from Redis hash ``tinker:cb:{name}``. No-op if key absent."""
+        key = f"tinker:cb:{self.name}"
+        try:
+            data = await redis_client.hgetall(key)
+            if not data:
+                return
+            if b"state" in data:
+                state_val = data[b"state"].decode() if isinstance(data[b"state"], bytes) else data[b"state"]
+                self._state = CircuitState(state_val)
+            if b"failure_count" in data:
+                self._failure_count = int(data[b"failure_count"])
+            if b"success_count" in data:
+                self._success_count = int(data[b"success_count"])
+            if b"open_at" in data:
+                self._open_at = float(data[b"open_at"])
+            if b"total_calls" in data:
+                self._total_calls = int(data[b"total_calls"])
+            if b"total_failures" in data:
+                self._total_failures = int(data[b"total_failures"])
+            if b"total_short_circuits" in data:
+                self._total_short_circuits = int(data[b"total_short_circuits"])
+        except Exception as exc:
+            logger.warning("CircuitBreaker.load_state failed for '%s': %s", self.name, exc)
+
 
 class CircuitBreakerRegistry:
     """
@@ -422,6 +469,16 @@ class CircuitBreakerRegistry:
     def any_open(self) -> bool:
         """True if at least one breaker is currently OPEN (degraded mode)."""
         return any(b.is_open for b in self._breakers.values())
+
+    async def save_all(self, redis_client) -> None:
+        """Persist state of every registered breaker to Redis."""
+        for breaker in self._breakers.values():
+            await breaker.save_state(redis_client)
+
+    async def load_all(self, redis_client) -> None:
+        """Restore state of every registered breaker from Redis."""
+        for breaker in self._breakers.values():
+            await breaker.load_state(redis_client)
 
 
 def build_default_registry(

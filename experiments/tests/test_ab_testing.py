@@ -91,12 +91,14 @@ class TestAnalysis:
         assert report["winner"] is None
 
     def test_clear_winner_detected(self, ab):
+        import random
+        rng = random.Random(42)
         ab.create_experiment("clear_win", {"control": 1, "treatment": 2})
-        # control gets low scores, treatment gets high scores
-        for _ in range(15):
-            ab.record_outcome("clear_win", "control", 0.3)
-        for _ in range(15):
-            ab.record_outcome("clear_win", "treatment", 0.9)
+        # control gets low scores, treatment gets high scores (with variance so t-test fires)
+        for _ in range(20):
+            ab.record_outcome("clear_win", "control", 0.3 + rng.uniform(-0.05, 0.05))
+        for _ in range(20):
+            ab.record_outcome("clear_win", "treatment", 0.9 + rng.uniform(-0.05, 0.05))
         report = ab.analyse("clear_win")
         assert report["winner"] == "treatment"
         assert report["significant"] is True
@@ -124,3 +126,66 @@ class TestListAndDeactivate:
         ab.create_experiment("r1", {"a": 1, "b": 2})
         reports = ab.all_reports()
         assert "r1" in reports
+
+
+class TestTrafficGateAndRampUp:
+    def test_get_variant_returns_control_outside_traffic(self, ab):
+        """With traffic_percentage=0.0, all units get control."""
+        ab.create_experiment(
+            "low_traffic",
+            {"control": "ctl", "treatment": "trt"},
+            traffic_percentage=0.0,
+        )
+        # With 0% traffic, every unit should get the control
+        for i in range(20):
+            variant, _ = ab.get_variant("low_traffic", f"unit-{i}")
+            assert variant == "control"
+
+    def test_ramp_up_changes_traffic_percentage(self, ab):
+        ab.create_experiment("ramp_exp", {"control": 1, "treatment": 2})
+        assert ab._experiments["ramp_exp"].traffic_percentage == 1.0
+        ab.ramp_up("ramp_exp", 0.5)
+        assert ab._experiments["ramp_exp"].traffic_percentage == 0.5
+
+    def test_ramp_up_clamps_to_bounds(self, ab):
+        ab.create_experiment("clamp_exp", {"control": 1, "treatment": 2})
+        ab.ramp_up("clamp_exp", 1.5)
+        assert ab._experiments["clamp_exp"].traffic_percentage == 1.0
+        ab.ramp_up("clamp_exp", -0.1)
+        assert ab._experiments["clamp_exp"].traffic_percentage == 0.0
+
+    def test_ramp_up_unknown_experiment_raises(self, ab):
+        with pytest.raises(ExperimentError):
+            ab.ramp_up("does_not_exist", 0.5)
+
+
+class TestResetAndMeanStd:
+    def test_reset_experiment_clears_outcomes(self, ab):
+        ab.create_experiment("reset_me", {"control": 1, "treatment": 2})
+        ab.record_outcome("reset_me", "control", 0.8)
+        ab.record_outcome("reset_me", "control", 0.9)
+        ab.reset_experiment("reset_me")
+        report = ab.analyse("reset_me")
+        assert report["variants"]["control"].get("n", 0) == 0
+
+    def test_analyse_mean_and_std(self, ab):
+        ab.create_experiment("stats_exp", {"control": 1, "treatment": 2})
+        values = [0.6, 0.7, 0.8, 0.9, 1.0]
+        for v in values:
+            ab.record_outcome("stats_exp", "control", v)
+        report = ab.analyse("stats_exp")
+        stats = report["variants"]["control"]
+        assert stats["n"] == 5
+        assert abs(stats["mean"] - 0.8) < 0.001
+        import statistics
+        expected_std = round(statistics.stdev(values), 4)
+        assert abs(stats["std"] - expected_std) < 0.001
+
+    def test_insufficient_data_all_variants_no_winner(self, ab):
+        """Fewer than 10 observations per variant → no winner declared."""
+        ab.create_experiment("tiny", {"control": 1, "treatment": 2})
+        for _ in range(9):
+            ab.record_outcome("tiny", "control", 0.2)
+            ab.record_outcome("tiny", "treatment", 0.9)
+        report = ab.analyse("tiny")
+        assert report["winner"] is None

@@ -91,7 +91,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     started_at                TEXT,
     completed_at              TEXT,
     critique_notes            TEXT,
-    attempt_count             INTEGER NOT NULL DEFAULT 0
+    attempt_count             INTEGER NOT NULL DEFAULT 0,
+    tokens_used               INTEGER NOT NULL DEFAULT 0,
+    duration_seconds          REAL NOT NULL DEFAULT 0.0
 );
 
 -- Index on status lets us quickly fetch all PENDING or BLOCKED tasks
@@ -134,6 +136,8 @@ _COLUMNS = [
     "completed_at",
     "critique_notes",
     "attempt_count",
+    "tokens_used",
+    "duration_seconds",
 ]
 
 
@@ -269,6 +273,10 @@ class SQLiteTaskRegistry(AbstractTaskRegistry):
 
         # Convert Python bool → SQLite integer (True → 1, False → 0)
         d["is_exploration"] = int(d["is_exploration"])
+
+        # Provide defaults for cost columns not present on the Task dataclass
+        d.setdefault("tokens_used", 0)
+        d.setdefault("duration_seconds", 0.0)
         return d
 
     # =========================================================================
@@ -459,6 +467,88 @@ class SQLiteTaskRegistry(AbstractTaskRegistry):
 
         log.debug("Saved batch of %d tasks", len(tasks))
         return tasks
+
+    def complete_task(
+        self,
+        task_id: str,
+        tokens_used: int = 0,
+        duration_seconds: float = 0.0,
+    ) -> bool:
+        """Update cost fields for a completed task.
+
+        This supplements the normal ``save()`` path by writing cost attribution
+        data that is not stored on the Task dataclass itself.
+
+        Parameters
+        ----------
+        task_id          : ID of the task to update.
+        tokens_used      : LLM tokens consumed while completing this task.
+        duration_seconds : Wall-clock time taken to complete this task.
+
+        Returns
+        -------
+        True if a row was updated, False if the task was not found.
+        """
+        with self._tx() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE tasks
+                SET tokens_used = ?, duration_seconds = ?
+                WHERE id = ?
+                """,
+                (tokens_used, duration_seconds, task_id),
+            )
+        return cursor.rowcount > 0
+
+    def cost_report(self) -> dict:
+        """Return aggregate cost statistics grouped by subsystem.
+
+        Returns
+        -------
+        dict with keys:
+          - total_tasks_completed : int
+          - total_tokens          : int
+          - total_duration_seconds: float
+          - by_subsystem          : dict mapping subsystem name to
+                                   {"tasks": N, "tokens": T, "duration": D}
+        """
+        rows = self._conn.execute(
+            """
+            SELECT subsystem,
+                   COUNT(*)             AS tasks,
+                   SUM(tokens_used)     AS tokens,
+                   SUM(duration_seconds) AS duration
+            FROM tasks
+            WHERE status = 'complete'
+            GROUP BY subsystem
+            """
+        ).fetchall()
+
+        by_subsystem: dict[str, dict] = {}
+        total_tasks = 0
+        total_tokens = 0
+        total_duration = 0.0
+
+        for row in rows:
+            subsystem = row["subsystem"]
+            tasks = row["tasks"] or 0
+            tokens = row["tokens"] or 0
+            duration = row["duration"] or 0.0
+            by_subsystem[subsystem] = {
+                "tasks": tasks,
+                "tokens": tokens,
+                "duration": duration,
+            }
+            total_tasks += tasks
+            total_tokens += tokens
+            total_duration += duration
+
+        return {
+            "total_tasks_completed": total_tasks,
+            "total_tokens": total_tokens,
+            "total_duration_seconds": total_duration,
+            "by_subsystem": by_subsystem,
+        }
 
     def health_check(self) -> bool:
         """Return True if the SQLite connection is live and the schema is present.

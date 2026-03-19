@@ -164,6 +164,17 @@ class OrchestratorConfig:
     # if you wanted to reduce API costs or CPU usage during development.
     micro_loop_idle_seconds: float = 0.0
 
+    # ── Quality gate ─────────────────────────────────────────────────────────
+    # When the Critic scores a micro loop result below this threshold, the
+    # alerter fires a CUSTOM alert so an operator can intervene.  Set to 0.0
+    # to disable the quality gate entirely.  Consecutive low-score loops
+    # are tracked separately and can also trigger stagnation detection.
+    quality_gate_threshold: float = 0.4
+
+    # How many consecutive sub-threshold critic scores to tolerate before
+    # escalating from WARNING to ERROR severity.
+    quality_gate_escalation_count: int = 3
+
     # ── Meso loop ───────────────────────────────────────────────────────────
     # The meso loop synthesises a subsystem-level design document from the
     # individual artifacts produced by recent micro loops.

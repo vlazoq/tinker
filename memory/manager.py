@@ -528,26 +528,38 @@ class MemoryManager:
         """
         filter_topic = (filters or {}).get("artifact_type")
         filter_session = (filters or {}).get("session_id")
-        notes = await self.search_research(
-            query=query,
+        # Query ChromaDB directly to expose the raw distance scores.
+        # Converting L2 distance → relevance: score = 1 / (1 + distance)
+        # so 0-distance (exact match) → 1.0, and larger distances → 0.
+        embedding = await self._embeddings.embed(query)
+        where: dict = {}
+        if filter_topic:
+            where["topic"] = {"$eq": filter_topic}
+        if filter_session:
+            where["session_id"] = {"$eq": filter_session}
+        raw_results = await self._chroma.query(
+            embedding=embedding,
             n_results=top_k,
-            filter_topic=filter_topic,
-            filter_session=filter_session,
+            where=where if where else None,
         )
         return [
             {
-                "id": n.id,
-                "memory_id": n.id,
-                "score": 1.0,  # ChromaDB distance not exposed here
-                "title": n.topic,
+                "id": r["id"],
+                "memory_id": r["id"],
+                "score": round(1.0 / (1.0 + r["distance"]), 4),
+                "title": r["metadata"].get("topic", ""),
                 "artifact_type": "research_note",
-                "task_id": n.task_id or "",
-                "created_at": n.created_at.isoformat(),
-                "tags": n.tags,
-                "snippet": n.content[:300],
-                "text": n.content,
+                "task_id": r["metadata"].get("task_id") or "",
+                "created_at": r["metadata"].get("created_at", ""),
+                "tags": (
+                    r["metadata"].get("tags", "").split(",")
+                    if r["metadata"].get("tags")
+                    else []
+                ),
+                "snippet": r["document"][:300],
+                "text": r["document"],
             }
-            for n in notes
+            for r in raw_results
         ]
 
     # ------------------------------------------------------------------

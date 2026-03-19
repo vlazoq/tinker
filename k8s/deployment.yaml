@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tinker
+  namespace: tinker
+  labels:
+    app.kubernetes.io/name: tinker
+    app.kubernetes.io/component: orchestrator
+spec:
+  # Tinker is stateful (SQLite databases, local workspace) — run a single instance.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tinker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tinker
+        app.kubernetes.io/component: orchestrator
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+
+      containers:
+        - name: tinker
+          image: tinker:latest
+          # IfNotPresent so locally-built images are used without a registry push.
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            - name: webui
+              containerPort: 8082
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+
+          # Load all non-secret configuration from the ConfigMap.
+          envFrom:
+            - configMapRef:
+                name: tinker-config
+            - secretRef:
+                name: tinker-secrets
+
+          # Mount persistent storage for all runtime data.
+          volumeMounts:
+            - name: tinker-data
+              mountPath: /app/data
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+      volumes:
+        - name: tinker-data
+          persistentVolumeClaim:
+            claimName: tinker-data
+
+      restartPolicy: Always

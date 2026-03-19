@@ -75,17 +75,32 @@ class TaskEngine:
         task_id: str,
         artifact_id: Optional[str] = None,
         outputs: Optional[list[str]] = None,
+        tokens_used: int = 0,
+        duration_seconds: float = 0.0,
     ) -> None:
         """
         Mark a task as COMPLETE.
 
         Accepts *artifact_id* (the micro loop's convention) OR *outputs*
         (the TaskQueue's native convention).  Either form works.
+
+        Parameters
+        ----------
+        tokens_used      : LLM tokens consumed while completing this task.
+        duration_seconds : Wall-clock time taken to complete this task.
         """
         out = outputs or ([artifact_id] if artifact_id else [])
         await asyncio.get_running_loop().run_in_executor(
             None, self.queue.complete_task, task_id, out
         )
+        if tokens_used or duration_seconds:
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                self.registry.complete_task,
+                task_id,
+                tokens_used,
+                duration_seconds,
+            )
 
     async def fail_task(
         self,
@@ -215,3 +230,18 @@ class TaskEngine:
 
     def stats(self) -> dict[str, Any]:
         return self.queue.stats()
+
+    def get_cost_report(self) -> dict:
+        """
+        Return aggregate cost statistics across all completed tasks.
+
+        Returns
+        -------
+        dict with keys:
+          - total_tasks_completed  : int
+          - total_tokens           : int
+          - total_duration_seconds : float
+          - by_subsystem           : dict mapping subsystem name to
+                                     {"tasks": N, "tokens": T, "duration": D}
+        """
+        return self.registry.cost_report()
