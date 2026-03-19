@@ -7,28 +7,42 @@ Unified secret management for Tinker.
 Why not just use os.getenv()?
 --------------------------------
 ``os.getenv()`` works fine for development, but in production:
-  - Secrets stored in .env files are visible in container image layers
-  - They're not rotated automatically
-  - Access is not audited
+  - Secrets stored in .env files are visible in shell history
   - There's no expiry mechanism
-  - Multiple instances share the same static credentials
+  - Access is not audited
+  - Multiple processes sharing a .env file have no isolation
 
 This module provides a unified interface that:
   1. Always falls back to environment variables (zero dependencies)
-  2. Can transparently read from secret managers (Vault, AWS, Azure)
-  3. Caches secrets for a configurable TTL (avoids rate limiting)
-  4. Validates secrets on load (fails fast vs. failing mid-operation)
-  5. Can be swapped out in tests with a stub
+  2. Can read from a local secrets file (homelab-friendly)
+  3. Can transparently read from HashiCorp Vault (optional)
+  4. Caches secrets for a configurable TTL (avoids repeated I/O)
+  5. Validates secrets on load (fails fast vs. failing mid-operation)
+  6. Warns when secret files have insecure permissions
+  7. Can be swapped out in tests with a stub
 
 Secret backend selection
 -------------------------
 The backend is selected by the ``TINKER_SECRET_BACKEND`` environment variable:
-  - "env"   (default) : Uses environment variables only
-  - "vault" : HashiCorp Vault (requires ``hvac`` package)
-  - "aws"   : AWS Secrets Manager (requires ``boto3`` package)
+  - "env"  (default) : Uses environment variables only — zero extra deps
+  - "file" : Reads KEY=VALUE pairs from a local file (homelab default)
+              File path: ``TINKER_SECRETS_FILE`` (default: ``~/.tinker/secrets``)
+  - "vault": HashiCorp Vault (requires ``hvac`` package)
 
 Regardless of backend, environment variables always take precedence.
 This allows local overrides without changing infrastructure.
+
+File backend
+-------------
+Create ``~/.tinker/secrets`` (mode 600) with one KEY=VALUE per line::
+
+    TINKER_REDIS_URL=redis://localhost:6379
+    TINKER_OLLAMA_KEY=sk-...
+
+Blank lines and lines starting with ``#`` are ignored.
+The file **must** be owned by the current user with mode 0o600 (no
+group/other read). Tinker logs a warning (but does not refuse) if the
+file has wider permissions — to let you fix it without a hard crash.
 
 Usage
 ------
@@ -40,8 +54,8 @@ Usage
     # With validation:
     api_key = get_secret("TINKER_OLLAMA_KEY", required=True)
 
-    # With a specific backend:
-    secrets = SecretManager(backend="vault", vault_url="http://vault:8200")
+    # Explicit file backend:
+    secrets = SecretManager(backend="file", secrets_file="~/.tinker/secrets")
     redis_pw = await secrets.get("TINKER_REDIS_PASSWORD")
 """
 
@@ -49,7 +63,9 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 import time
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -103,38 +119,82 @@ def get_secret(
     return None
 
 
+def check_file_permissions(path: Path) -> None:
+    """
+    Warn if a secrets file has insecure permissions (group or other read/write).
+
+    Does nothing on Windows (no POSIX permission model).
+
+    Parameters
+    ----------
+    path : Path to the secrets file to check.
+    """
+    try:
+        file_stat = path.stat()
+        mode = file_stat.st_mode
+        # Warn if group or others have any access (read, write, execute)
+        if mode & (
+            stat.S_IRGRP
+            | stat.S_IWGRP
+            | stat.S_IXGRP
+            | stat.S_IROTH
+            | stat.S_IWOTH
+            | stat.S_IXOTH
+        ):
+            logger.warning(
+                "SECURITY WARNING: secrets file '%s' has insecure permissions "
+                "(mode %o). Run: chmod 600 %s",
+                path,
+                stat.S_IMODE(mode),
+                path,
+            )
+    except (OSError, AttributeError):
+        pass  # Non-POSIX systems or file doesn't exist yet
+
+
 class SecretManager:
     """
     Unified secret manager with multiple backend support and caching.
 
     Parameters
     ----------
-    backend    : "env" (default), "vault", or "aws".
-    vault_url  : Vault server URL (for backend="vault").
-    vault_token: Vault token (for backend="vault").
-                 Reads ``VAULT_TOKEN`` env var if not provided.
-    aws_region : AWS region (for backend="aws").
-                 Reads ``AWS_DEFAULT_REGION`` env var if not provided.
-    cache_ttl  : How long to cache secrets in seconds (default: 300).
-                 Set to 0 to disable caching.
+    backend      : "env" (default), "file", or "vault".
+    secrets_file : Path to the secrets file (for backend="file").
+                   Defaults to ``~/.tinker/secrets``.
+                   Reads ``TINKER_SECRETS_FILE`` env var if not provided.
+    vault_url    : Vault server URL (for backend="vault").
+    vault_token  : Vault token (for backend="vault").
+                   Reads ``VAULT_TOKEN`` env var if not provided.
+    cache_ttl    : How long to cache secrets in seconds (default: 300).
+                   Set to 0 to disable caching.
     """
 
     def __init__(
         self,
         backend: str = "env",
+        secrets_file: Optional[str] = None,
         vault_url: Optional[str] = None,
         vault_token: Optional[str] = None,
-        aws_region: Optional[str] = None,
         cache_ttl: int = 300,
     ) -> None:
         self._backend = backend
         self._vault_url = vault_url
         self._vault_token = vault_token or os.getenv("VAULT_TOKEN")
-        self._aws_region = aws_region or os.getenv("AWS_DEFAULT_REGION", "us-east-1")
         self._cache_ttl = cache_ttl
         self._cache: dict[
             str, tuple[Optional[str], float]
         ] = {}  # key → (value, expires_at)
+
+        # Resolve secrets file path for the "file" backend
+        raw_path = (
+            secrets_file
+            or os.getenv("TINKER_SECRETS_FILE")
+            or str(Path.home() / ".tinker" / "secrets")
+        )
+        self._secrets_file = Path(raw_path).expanduser().resolve()
+        # In-memory cache of file contents (reloaded when file changes)
+        self._file_cache: dict[str, str] = {}
+        self._file_mtime: float = 0.0
 
     async def get(
         self,
@@ -190,11 +250,11 @@ class SecretManager:
         if self._backend == "env":
             return None  # Only env vars, no additional backend
 
+        elif self._backend == "file":
+            return self._fetch_from_file(key)
+
         elif self._backend == "vault":
             return await self._fetch_from_vault(key)
-
-        elif self._backend == "aws":
-            return await self._fetch_from_aws(key)
 
         else:
             logger.warning(
@@ -202,8 +262,64 @@ class SecretManager:
             )
             return None
 
+    def _fetch_from_file(self, key: str) -> Optional[str]:
+        """
+        Read a secret from a local KEY=VALUE secrets file.
+
+        The file is re-read only when its mtime changes (cheap stat check
+        on every call, full re-read only on change).
+
+        File format::
+
+            # Comments are ignored
+            TINKER_REDIS_URL=redis://localhost:6379
+            TINKER_OLLAMA_KEY=sk-...
+
+        Parameters
+        ----------
+        key : The environment-variable-style key to look up.
+
+        Returns
+        -------
+        str | None : The secret value, or None if not found.
+        """
+        if not self._secrets_file.exists():
+            return None
+
+        check_file_permissions(self._secrets_file)
+
+        try:
+            mtime = self._secrets_file.stat().st_mtime
+        except OSError:
+            return None
+
+        if mtime != self._file_mtime:
+            # Re-parse the file on change
+            new_cache: dict[str, str] = {}
+            try:
+                for raw_line in self._secrets_file.read_text(
+                    encoding="utf-8"
+                ).splitlines():
+                    line = raw_line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        k, _, v = line.partition("=")
+                        new_cache[k.strip()] = v.strip()
+                self._file_cache = new_cache
+                self._file_mtime = mtime
+                logger.debug(
+                    "SecretManager: loaded %d keys from %s",
+                    len(new_cache),
+                    self._secrets_file,
+                )
+            except Exception as exc:
+                logger.warning("SecretManager: failed to read secrets file: %s", exc)
+
+        return self._file_cache.get(key)
+
     async def _fetch_from_vault(self, key: str) -> Optional[str]:
-        """Fetch a secret from HashiCorp Vault."""
+        """Fetch a secret from HashiCorp Vault (requires ``hvac`` package)."""
         try:
             import hvac  # type: ignore
         except ImportError:
@@ -229,37 +345,6 @@ class SecretManager:
             logger.warning("Vault fetch failed for '%s': %s", key, exc)
         return None
 
-    async def _fetch_from_aws(self, key: str) -> Optional[str]:
-        """Fetch a secret from AWS Secrets Manager."""
-        try:
-            import boto3  # type: ignore
-            import json as _json
-        except ImportError:
-            logger.warning(
-                "boto3 not installed — AWS Secrets Manager backend unavailable"
-            )
-            return None
-
-        try:
-            import asyncio
-
-            loop = asyncio.get_running_loop()
-            client = boto3.client("secretsmanager", region_name=self._aws_region)
-
-            def _get():
-                response = client.get_secret_value(SecretId=key)
-                secret = response.get("SecretString", "{}")
-                try:
-                    data = _json.loads(secret)
-                    return data.get(key) or data.get("value") or secret
-                except Exception:
-                    return secret
-
-            return await loop.run_in_executor(None, _get)
-        except Exception as exc:
-            logger.warning("AWS Secrets Manager fetch failed for '%s': %s", key, exc)
-            return None
-
     def invalidate_cache(self, key: Optional[str] = None) -> None:
         """
         Invalidate cached secrets.
@@ -279,17 +364,30 @@ def build_secret_manager() -> SecretManager:
     """
     Build a SecretManager from environment variable configuration.
 
-    Reads TINKER_SECRET_BACKEND to determine which backend to use.
-    Falls back to "env" (environment variables only) if not set.
+    Backend selection order:
+      1. ``TINKER_SECRET_BACKEND`` env var (explicit override)
+      2. "file" if ``~/.tinker/secrets`` exists (homelab auto-detection)
+      3. "env" (fallback — environment variables only)
 
     Returns
     -------
     SecretManager configured per environment variables.
     """
-    backend = os.getenv("TINKER_SECRET_BACKEND", "env").lower()
+    explicit = os.getenv("TINKER_SECRET_BACKEND", "").lower()
+
+    if explicit:
+        backend = explicit
+    elif (Path.home() / ".tinker" / "secrets").exists():
+        backend = "file"
+        logger.info(
+            "SecretManager: auto-detected ~/.tinker/secrets — using file backend"
+        )
+    else:
+        backend = "env"
+
     return SecretManager(
         backend=backend,
+        secrets_file=os.getenv("TINKER_SECRETS_FILE"),
         vault_url=os.getenv("TINKER_VAULT_URL") or os.getenv("VAULT_ADDR"),
         vault_token=os.getenv("TINKER_VAULT_TOKEN") or os.getenv("VAULT_TOKEN"),
-        aws_region=os.getenv("TINKER_AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),
     )

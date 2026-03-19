@@ -18,9 +18,19 @@ Without validation:
   - A web search could return a URL that causes the scraper to read local files
   - An AI could output a file path like "../../etc/passwd" for artifact storage
   - A corrupt AI response could crash the micro loop with a KeyError
+  - A base64-encoded payload could smuggle injection through the string check
 
-This module provides Pydantic-based validators for all major input types.
+This module provides validators for all major input types.
 Validation happens at the boundary — not deep in the business logic.
+
+Key features
+-------------
+- ``sanitize_string``: strip control chars, Unicode-normalise (NFC), truncate
+- ``check_prompt_injection``: regex heuristics + encoded-payload detection
+  (base64 and URL-encoded payloads are decoded and re-checked)
+- ``validate_batch``: run multiple validators at once, collect all errors
+- ``validate_problem_statement``, ``validate_task``, ``validate_url``,
+  ``validate_file_path``, ``validate_ai_json``: domain-specific validators
 
 Usage
 ------
@@ -32,6 +42,7 @@ Usage
         validate_url,
         validate_file_path,
         validate_ai_json,
+        validate_batch,
     )
 
     # Validate user input at startup:
@@ -45,15 +56,26 @@ Usage
 
     # Validate AI output before storing:
     safe_output = validate_ai_json(raw_output, expected_keys=["content", "score"])
+
+    # Collect all validation errors without raising on the first one:
+    errors = validate_batch([
+        (validate_problem_statement, raw_problem),
+        (validate_url, raw_url),
+    ])
+    if errors:
+        for err in errors:
+            print(err)
 """
 
 from __future__ import annotations
 
+import base64
 import logging
 import re
 import unicodedata
+import urllib.parse
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -202,24 +224,109 @@ def sanitize_string(
 # ---------------------------------------------------------------------------
 
 
+def _decode_encoded_payloads(text: str) -> list[str]:
+    """
+    Attempt to decode base64 and URL-encoded payloads embedded in text.
+
+    Returns a list of decoded strings to check alongside the original.
+    This catches injection attempts that wrap their payload in encoding to
+    bypass naive regex filters.
+
+    Only decodes chunks that look like well-formed encoded data — does not
+    raise on decode failures.
+    """
+    decoded: list[str] = []
+
+    # URL-decode: catch %XX-encoded sequences
+    try:
+        url_decoded = urllib.parse.unquote(text)
+        if url_decoded != text:
+            decoded.append(url_decoded)
+    except Exception:
+        pass
+
+    # Base64-decode: find long runs of base64 chars and try to decode them
+    # Pattern: 20+ contiguous base64 chars (likely encoded payload, not a word)
+    b64_candidates = re.findall(r"[A-Za-z0-9+/]{20,}={0,2}", text)
+    for candidate in b64_candidates:
+        try:
+            raw = base64.b64decode(candidate + "==")  # pad to avoid errors
+            decoded_str = raw.decode("utf-8", errors="ignore")
+            if decoded_str and len(decoded_str) >= 10:
+                decoded.append(decoded_str)
+        except Exception:
+            pass
+
+    return decoded
+
+
 def check_prompt_injection(text: str, field: str = "input") -> Optional[str]:
     """
     Detect potential prompt injection attempts in a string.
+
+    Checks the raw text AND any base64/URL-decoded payloads embedded in it,
+    so encoding tricks cannot bypass the heuristic filter.
 
     Returns a warning message if suspicious patterns are found, or None if clean.
 
     Note: This is a heuristic best-effort check, not a security guarantee.
     It prevents obvious injection attempts but may miss sophisticated ones.
     """
-    lower = text.lower()
-    for pattern in INJECTION_PATTERNS:
-        if re.search(pattern, lower, re.IGNORECASE):
-            msg = (
-                f"Potential prompt injection detected in '{field}': pattern '{pattern}'"
-            )
-            logger.warning(msg)
-            return msg
+    candidates = [text] + _decode_encoded_payloads(text)
+
+    for candidate in candidates:
+        lower = candidate.lower()
+        for pattern in INJECTION_PATTERNS:
+            if re.search(pattern, lower, re.IGNORECASE):
+                source = "" if candidate is text else " (in encoded payload)"
+                msg = (
+                    f"Potential prompt injection detected in '{field}'{source}: "
+                    f"pattern '{pattern}'"
+                )
+                logger.warning(msg)
+                return msg
     return None
+
+
+def validate_batch(
+    validators: list[tuple[Callable, Any]],
+) -> list[str]:
+    """
+    Run multiple validators, collecting all errors instead of raising on the first.
+
+    Each entry is a ``(validator_fn, raw_value)`` tuple.  The validator is
+    called as ``validator_fn(raw_value)`` and is expected to raise
+    ``ValidationError`` on failure.
+
+    Parameters
+    ----------
+    validators : List of ``(callable, value)`` pairs to validate.
+
+    Returns
+    -------
+    list[str] : List of error messages.  Empty list means all passed.
+
+    Example
+    -------
+    ::
+
+        errors = validate_batch([
+            (validate_problem_statement, raw_problem),
+            (validate_url, raw_url),
+        ])
+        if errors:
+            for e in errors:
+                logger.warning(e)
+    """
+    errors: list[str] = []
+    for validator, value in validators:
+        try:
+            validator(value)
+        except ValidationError as exc:
+            errors.append(str(exc))
+        except Exception as exc:
+            errors.append(f"Unexpected validation error: {exc}")
+    return errors
 
 
 # ---------------------------------------------------------------------------

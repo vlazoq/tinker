@@ -7,43 +7,51 @@ Lightweight HTTP health check server for Tinker.
 Why health endpoints?
 ----------------------
 Without HTTP health endpoints:
-  - Kubernetes doesn't know if a Tinker pod is ready to receive traffic
-  - Load balancers can't detect unhealthy instances
   - Monitoring tools can't verify Tinker is responsive
-  - Engineers have to SSH into the machine to check if the process is alive
+  - Engineers have to check logs to know if the process is alive
+  - There's no programmatic way to check if Ollama is reachable
 
 With health endpoints:
-  - Kubernetes restarts pods that fail liveness probes
-  - Load balancers route traffic only to ready instances
-  - Monitoring alerts when Tinker becomes unhealthy
   - Engineers can check health with a simple ``curl localhost:8080/health``
+  - Dashboards and monitoring tools get structured JSON status
+  - Prometheus scrapes ``/metrics`` for time-series alerting
 
 Endpoints
 ----------
-  GET /live  — Liveness probe: is the process alive and not deadlocked?
-               Returns 200 OK immediately.  If this fails, the process is dead.
+  GET /live    — Liveness probe: process alive? Returns 200 immediately.
+  GET /healthz — Alias for /live (Kubernetes convention).
 
-  GET /ready — Readiness probe: is the system ready to accept work?
-               Checks all component connections (Redis, DuckDB, Ollama, etc.)
-               Returns 200 if all critical services are up, 503 otherwise.
+  GET /ready   — Readiness probe: all critical services up?
+                 Checks circuit breakers, memory backends, Ollama connectivity,
+                 and disk space.  Returns 200 or 503.
+  GET /readyz  — Alias for /ready.
 
-  GET /health — Detailed health report as JSON.
-               Returns all component statuses and key metrics.
+  GET /health  — Detailed health report as JSON.
+                 Includes loop counters, SLA compliance, DLQ stats, disk usage.
 
-  GET /status — Live orchestrator state (micro/meso/macro counters, etc.)
+  GET /status  — Live orchestrator state dict.
+
+  GET /metrics — Prometheus text format exposition.
+                 Counters and gauges for scraping by Prometheus/VictoriaMetrics.
+                 No extra dependencies — emits plain text with the standard
+                 ``# HELP`` / ``# TYPE`` / metric-value lines.
 
 Usage
 ------
 ::
 
     server = HealthServer(
-        orchestrator   = orchestrator,
-        memory_manager = memory_manager,
+        orchestrator     = orchestrator,
+        memory_manager   = memory_manager,
         circuit_registry = circuit_registry,
-        rate_registry  = rate_registry,
-        sla_tracker    = sla_tracker,
+        rate_registry    = rate_registry,
+        sla_tracker      = sla_tracker,
+        ollama_url       = "http://localhost:11434",   # optional liveness check
+        data_dir         = "./tinker_workspace",       # for disk usage check
     )
     await server.start(port=8080)
+
+    # Prometheus scrape target: http://localhost:8080/metrics
 
     # In main cleanup:
     await server.stop()
@@ -54,6 +62,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
 import time
 from typing import Any
 
@@ -62,7 +71,8 @@ logger = logging.getLogger(__name__)
 
 class HealthServer:
     """
-    Tiny asyncio HTTP server exposing liveness, readiness, and status endpoints.
+    Tiny asyncio HTTP server exposing liveness, readiness, status, and
+    Prometheus metrics endpoints.
 
     Does not require any external HTTP framework (no fastapi, no aiohttp server
     dependency).  Uses raw asyncio sockets for minimal overhead.
@@ -75,6 +85,11 @@ class HealthServer:
     rate_registry    : RateLimiterRegistry (for rate limiter stats).
     sla_tracker      : SLATracker (for SLA compliance).
     dlq              : DeadLetterQueue (for DLQ stats).
+    ollama_url       : Base URL of the Ollama server to probe on /ready checks
+                       (e.g. "http://localhost:11434").  Optional.
+    data_dir         : Path to Tinker's data directory for disk usage reporting.
+    disk_warn_pct    : Disk usage percentage at which /ready returns 503.
+                       Default: 90 (warn when 90 % of disk is used).
     """
 
     def __init__(
@@ -85,6 +100,9 @@ class HealthServer:
         rate_registry: Any = None,
         sla_tracker: Any = None,
         dlq: Any = None,
+        ollama_url: str = "",
+        data_dir: str = ".",
+        disk_warn_pct: float = 90.0,
     ) -> None:
         self._orchestrator = orchestrator
         self._memory_manager = memory_manager
@@ -92,6 +110,9 @@ class HealthServer:
         self._rate_registry = rate_registry
         self._sla_tracker = sla_tracker
         self._dlq = dlq
+        self._ollama_url = ollama_url.rstrip("/")
+        self._data_dir = data_dir
+        self._disk_warn_pct = disk_warn_pct
         self._server = None
         self._start_time = time.monotonic()
         self._request_count = 0
@@ -151,6 +172,8 @@ class HealthServer:
                 await self._handle_health(writer)
             elif path == "/status":
                 await self._handle_status(writer)
+            elif path == "/metrics":
+                await self._handle_metrics(writer)
             else:
                 await self._send_response(writer, 404, {"error": "not found"})
 
@@ -185,9 +208,13 @@ class HealthServer:
         """
         Readiness probe: returns 200 only if all critical services are up.
 
-        Checks: Ollama reachability, Redis connectivity.
-        Returns 503 if any critical service is down (so load balancers stop
-        routing traffic to this instance).
+        Checks:
+          - Open circuit breakers
+          - Memory backend health (Redis, DuckDB, ChromaDB)
+          - Ollama connectivity (if ollama_url is configured)
+          - Disk space (warns at disk_warn_pct% full)
+
+        Returns 503 if any critical service is down.
         """
         issues = []
 
@@ -209,17 +236,53 @@ class HealthServer:
             except Exception as exc:
                 issues.append(f"memory health check failed: {exc}")
 
+        # Check Ollama connectivity
+        if self._ollama_url:
+            ollama_ok = await self._check_ollama()
+            if not ollama_ok:
+                issues.append(f"ollama:{self._ollama_url} is unreachable")
+
+        # Check disk space
+        disk_issue = self._check_disk()
+        if disk_issue:
+            issues.append(disk_issue)
+
         if issues:
             await self._send_response(
                 writer,
                 503,
-                {
-                    "status": "not_ready",
-                    "issues": issues,
-                },
+                {"status": "not_ready", "issues": issues},
             )
         else:
             await self._send_response(writer, 200, {"status": "ready"})
+
+    async def _check_ollama(self) -> bool:
+        """Ping Ollama's /api/tags endpoint; return True if reachable."""
+        try:
+            import aiohttp  # type: ignore
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self._ollama_url}/api/tags",
+                    timeout=aiohttp.ClientTimeout(total=3),
+                ) as resp:
+                    return resp.status < 500
+        except Exception:
+            return False
+
+    def _check_disk(self) -> str:
+        """Return a warning string if disk is over threshold, else empty string."""
+        try:
+            usage = shutil.disk_usage(self._data_dir)
+            pct = usage.used / usage.total * 100
+            if pct >= self._disk_warn_pct:
+                return (
+                    f"disk:{self._data_dir} is {pct:.1f}% full "
+                    f"({usage.free // (1024**3)}GB free)"
+                )
+        except Exception:
+            pass
+        return ""
 
     async def _handle_health(self, writer) -> None:
         """
@@ -277,6 +340,26 @@ class HealthServer:
             except Exception:
                 report["dlq"] = {"error": "unavailable"}
 
+        # Disk usage
+        try:
+            usage = shutil.disk_usage(self._data_dir)
+            report["disk"] = {
+                "path": self._data_dir,
+                "used_bytes": usage.used,
+                "free_bytes": usage.free,
+                "total_bytes": usage.total,
+                "used_pct": round(usage.used / usage.total * 100, 1),
+            }
+        except Exception:
+            pass
+
+        # Ollama status
+        if self._ollama_url:
+            report["ollama"] = {
+                "url": self._ollama_url,
+                "reachable": await self._check_ollama(),
+            }
+
         # Determine overall status
         has_open_circuits = (
             self._circuit_registry is not None and self._circuit_registry.any_open()
@@ -296,6 +379,140 @@ class HealthServer:
             await self._send_response(
                 writer, 503, {"error": "orchestrator not available"}
             )
+
+    async def _handle_metrics(self, writer) -> None:
+        """
+        Prometheus text format exposition endpoint.
+
+        Emits standard ``# HELP`` / ``# TYPE`` / metric lines that Prometheus,
+        VictoriaMetrics, or Grafana Alloy can scrape directly.  No extra
+        dependencies — uses only built-in Python.
+
+        Exposed metrics:
+          tinker_uptime_seconds          gauge
+          tinker_http_requests_total     counter
+          tinker_micro_loops_total       counter
+          tinker_meso_loops_total        counter
+          tinker_macro_loops_total       counter
+          tinker_consecutive_failures    gauge
+          tinker_stagnation_events_total counter
+          tinker_llm_tokens_total        counter
+          tinker_disk_used_bytes         gauge
+          tinker_disk_free_bytes         gauge
+          tinker_dlq_pending_total       gauge
+        """
+        lines: list[str] = []
+
+        def metric(
+            name: str, mtype: str, help_text: str, value: Any, labels: str = ""
+        ) -> None:
+            lines.append(f"# HELP {name} {help_text}")
+            lines.append(f"# TYPE {name} {mtype}")
+            label_str = f"{{{labels}}}" if labels else ""
+            lines.append(f"{name}{label_str} {value}")
+
+        metric(
+            "tinker_uptime_seconds",
+            "gauge",
+            "Seconds since health server started",
+            round(time.monotonic() - self._start_time, 1),
+        )
+        metric(
+            "tinker_http_requests_total",
+            "counter",
+            "Total HTTP requests handled by health server",
+            self._request_count,
+        )
+
+        # Orchestrator loop counters
+        if self._orchestrator and hasattr(self._orchestrator, "state"):
+            state = self._orchestrator.state
+            metric(
+                "tinker_micro_loops_total",
+                "counter",
+                "Total micro loops executed",
+                getattr(state, "total_micro_loops", 0),
+            )
+            metric(
+                "tinker_meso_loops_total",
+                "counter",
+                "Total meso loops executed",
+                getattr(state, "total_meso_loops", 0),
+            )
+            metric(
+                "tinker_macro_loops_total",
+                "counter",
+                "Total macro loops executed",
+                getattr(state, "total_macro_loops", 0),
+            )
+            metric(
+                "tinker_consecutive_failures",
+                "gauge",
+                "Consecutive micro loop failures",
+                getattr(state, "consecutive_failures", 0),
+            )
+            metric(
+                "tinker_stagnation_events_total",
+                "counter",
+                "Total stagnation events detected",
+                getattr(state, "stagnation_events_total", 0),
+            )
+
+        # LLM token usage
+        if self._rate_registry and hasattr(self._rate_registry, "total_llm_tokens"):
+            metric(
+                "tinker_llm_tokens_total",
+                "counter",
+                "Total LLM tokens consumed",
+                self._rate_registry.total_llm_tokens(),
+            )
+
+        # Disk usage
+        try:
+            usage = shutil.disk_usage(self._data_dir)
+            metric(
+                "tinker_disk_used_bytes",
+                "gauge",
+                "Bytes used on the data partition",
+                usage.used,
+            )
+            metric(
+                "tinker_disk_free_bytes",
+                "gauge",
+                "Bytes free on the data partition",
+                usage.free,
+            )
+        except Exception:
+            pass
+
+        # DLQ pending count
+        if self._dlq and hasattr(self._dlq, "stats"):
+            try:
+                dlq_stats = await asyncio.wait_for(self._dlq.stats(), timeout=2.0)
+                pending = dlq_stats.get("pending", 0)
+                metric(
+                    "tinker_dlq_pending_total",
+                    "gauge",
+                    "DLQ entries awaiting replay",
+                    pending,
+                )
+            except Exception:
+                pass
+
+        body = "\n".join(lines) + "\n"
+        body_bytes = body.encode("utf-8")
+        response = (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain; version=0.0.4; charset=utf-8\r\n"
+            f"Content-Length: {len(body_bytes)}\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+        ).encode() + body_bytes
+        try:
+            writer.write(response)
+            await writer.drain()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Low-level HTTP response writer

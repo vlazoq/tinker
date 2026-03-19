@@ -31,6 +31,16 @@ Edges represent derivation relationships:
   - research → artifact (this research informed this artifact)
   - synthesis → macro (this synthesis contributed to the macro snapshot)
 
+Key capabilities
+-----------------
+- ``record_derivation``: write a parent→child edge with cycle detection
+- ``get_parents`` / ``get_children``: immediate neighbours
+- ``get_full_ancestry``: all ancestors up to a depth limit
+- ``get_descendants``: all downstream entities (impact analysis)
+- ``get_by_type``: all edges involving a given entity type
+- ``get_by_operation``: all edges created by a given operation
+- ``get_stats``: summary counts (total edges, breakdown by type/operation)
+
 Usage
 ------
 ::
@@ -52,6 +62,13 @@ Usage
 
     # Find all artifacts that contributed to a synthesis:
     children = await lineage.get_children(synthesis_id)
+
+    # Impact analysis — what will be affected if this task changes?
+    descendants = await lineage.get_descendants(task_id)
+
+    # Statistics:
+    stats = await lineage.get_stats()
+    # {"total_edges": 142, "by_type": {"task": 42, ...}, "by_operation": {...}}
 """
 
 from __future__ import annotations
@@ -132,7 +149,11 @@ class LineageTracker:
         metadata: Optional[dict] = None,
     ) -> Optional[str]:
         """
-        Record a parent→child derivation edge.
+        Record a parent→child derivation edge with cycle detection.
+
+        Cycle detection: if recording this edge would create a cycle
+        (i.e. ``parent_id`` is already a descendant of ``child_id``),
+        the edge is rejected and ``None`` is returned with a warning.
 
         Parameters
         ----------
@@ -146,9 +167,23 @@ class LineageTracker:
 
         Returns
         -------
-        str : The edge ID, or None if the tracker is disabled.
+        str : The edge ID, or None if the tracker is disabled or cycle detected.
         """
         if not self._conn:
+            return None
+
+        # Cycle detection: would parent_id become a descendant of child_id?
+        # That happens when child_id already appears in the ancestry of parent_id,
+        # i.e. child_id is an ancestor of parent_id — adding parent→child would
+        # create a cycle.
+        ancestors = await self.get_full_ancestry(parent_id, max_depth=50)
+        ancestor_ids = {e["parent_id"] for e in ancestors}
+        if child_id in ancestor_ids or child_id == parent_id:
+            logger.warning(
+                "LineageTracker: cycle detected — refusing to add edge %s→%s",
+                parent_id,
+                child_id,
+            )
             return None
 
         edge_id = str(uuid.uuid4())
@@ -260,6 +295,150 @@ class LineageTracker:
 
         await _recurse(entity_id, 0)
         return all_edges
+
+    async def get_descendants(self, entity_id: str, max_depth: int = 10) -> list[dict]:
+        """
+        Recursively get all descendants of an entity (downstream impact analysis).
+
+        Useful for answering "if I change task X, what artifacts and syntheses
+        will be affected?".
+
+        Parameters
+        ----------
+        entity_id : Starting entity ID.
+        max_depth : Maximum recursion depth.
+
+        Returns
+        -------
+        list[dict] : All descendant edges, ordered from immediate children outward.
+        """
+        visited: set[str] = set()
+        all_edges: list[dict] = []
+
+        async def _recurse(eid: str, depth: int) -> None:
+            if depth >= max_depth or eid in visited:
+                return
+            visited.add(eid)
+            children = await self.get_children(eid)
+            for edge in children:
+                all_edges.append(edge)
+                await _recurse(edge["child_id"], depth + 1)
+
+        await _recurse(entity_id, 0)
+        return all_edges
+
+    async def get_by_type(self, entity_type: str, role: str = "either") -> list[dict]:
+        """
+        Get all edges where an entity of ``entity_type`` appears.
+
+        Parameters
+        ----------
+        entity_type : Entity type to filter on ("task", "artifact", "synthesis",
+                      "research", "macro").
+        role        : Which side to match: "parent", "child", or "either"
+                      (default).
+
+        Returns
+        -------
+        list[dict] : Matching edges.
+        """
+        if not self._conn:
+            return []
+        try:
+            if role == "parent":
+                cursor = await self._conn.execute(
+                    "SELECT * FROM lineage_edges WHERE parent_type=? ORDER BY created_at",
+                    (entity_type,),
+                )
+            elif role == "child":
+                cursor = await self._conn.execute(
+                    "SELECT * FROM lineage_edges WHERE child_type=? ORDER BY created_at",
+                    (entity_type,),
+                )
+            else:
+                cursor = await self._conn.execute(
+                    "SELECT * FROM lineage_edges WHERE parent_type=? OR child_type=? ORDER BY created_at",
+                    (entity_type, entity_type),
+                )
+            rows = await cursor.fetchall()
+            return [self._row_to_dict(row) for row in rows]
+        except Exception as exc:
+            logger.error("LineageTracker.get_by_type failed: %s", exc)
+            return []
+
+    async def get_by_operation(self, operation: str) -> list[dict]:
+        """
+        Get all edges created by a specific operation.
+
+        Parameters
+        ----------
+        operation : Operation name (e.g. "micro_loop", "meso_synthesis").
+
+        Returns
+        -------
+        list[dict] : All edges with that operation, ordered by creation time.
+        """
+        if not self._conn:
+            return []
+        try:
+            cursor = await self._conn.execute(
+                "SELECT * FROM lineage_edges WHERE operation=? ORDER BY created_at",
+                (operation,),
+            )
+            rows = await cursor.fetchall()
+            return [self._row_to_dict(row) for row in rows]
+        except Exception as exc:
+            logger.error("LineageTracker.get_by_operation failed: %s", exc)
+            return []
+
+    async def get_stats(self) -> dict:
+        """
+        Return summary statistics for the lineage graph.
+
+        Returns
+        -------
+        dict with keys:
+          - ``total_edges``: int
+          - ``by_parent_type``: dict[str, int]
+          - ``by_child_type``: dict[str, int]
+          - ``by_operation``: dict[str, int]
+        """
+        stats: dict = {
+            "total_edges": 0,
+            "by_parent_type": {},
+            "by_child_type": {},
+            "by_operation": {},
+        }
+        if not self._conn:
+            return stats
+
+        try:
+            cur = await self._conn.execute("SELECT COUNT(*) FROM lineage_edges")
+            row = await cur.fetchone()
+            stats["total_edges"] = row[0] if row else 0
+
+            cur = await self._conn.execute(
+                "SELECT parent_type, COUNT(*) FROM lineage_edges GROUP BY parent_type"
+            )
+            for r in await cur.fetchall():
+                stats["by_parent_type"][r[0]] = r[1]
+
+            cur = await self._conn.execute(
+                "SELECT child_type, COUNT(*) FROM lineage_edges GROUP BY child_type"
+            )
+            for r in await cur.fetchall():
+                stats["by_child_type"][r[0]] = r[1]
+
+            cur = await self._conn.execute(
+                "SELECT operation, COUNT(*) FROM lineage_edges GROUP BY operation"
+            )
+            for r in await cur.fetchall():
+                stats["by_operation"][r[0]] = r[1]
+
+        except Exception as exc:
+            logger.error("LineageTracker.get_stats failed: %s", exc)
+
+        return stats
 
     def _row_to_dict(self, row: Any) -> dict:
         """Convert an aiosqlite Row to a plain dict with parsed metadata."""
