@@ -243,7 +243,8 @@ class ContextAssembler:
     prompt_builder : _PromptBuilderProtocol
         Fills agent-role–specific prompt templates.
     budget_manager : TokenBudgetManager | None
-        Defaults to TokenBudgetManager(total_tokens=8192).
+        Defaults to TokenBudgetManager(), which reads total_tokens from the
+        TINKER_SERVER_CTX environment variable (falling back to 8192).
     retrieval_top_k : int
         Number of memory items fetched per semantic search.
     retrieval_timeout : float
