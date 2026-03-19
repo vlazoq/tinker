@@ -20,6 +20,7 @@ RedisAdapter  DuckDBAdapter  ChromaAdapter  SQLiteAdapter
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Awaitable, Optional
@@ -37,6 +38,18 @@ from .embeddings import EmbeddingPipeline
 from .compression import MemoryCompressor
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_row_metadata(row: dict) -> dict:
+    """Parse the ``metadata`` field of a DB row from JSON string to dict in-place."""
+    if isinstance(row.get("metadata"), str):
+        try:
+            row["metadata"] = json.loads(row["metadata"])
+        except Exception:
+            row["metadata"] = {}
+    elif row.get("metadata") is None:
+        row["metadata"] = {}
+    return row
 
 
 class MemoryManager:
@@ -224,12 +237,7 @@ class MemoryManager:
         row = await self._duckdb.get_artifact(artifact_id)
         if not row:
             return None
-        row["metadata"] = row.get("metadata") or {}
-        if isinstance(row["metadata"], str):
-            import json
-
-            row["metadata"] = json.loads(row["metadata"])
-        return Artifact.from_dict(row)
+        return Artifact.from_dict(_parse_row_metadata(row))
 
     async def get_recent_artifacts(
         self,
@@ -248,14 +256,7 @@ class MemoryManager:
         rows = await self._duckdb.get_recent(
             sid, artifact_type=type_val, limit=limit, include_archived=include_archived
         )
-        result = []
-        for row in rows:
-            if isinstance(row.get("metadata"), str):
-                import json
-
-                row["metadata"] = json.loads(row["metadata"])
-            result.append(Artifact.from_dict(row))
-        return result
+        return [Artifact.from_dict(_parse_row_metadata(row)) for row in rows]
 
     async def get_artifacts_by_task_ids(
         self,
@@ -281,14 +282,7 @@ class MemoryManager:
         if not task_ids:
             return []
         rows = await self._duckdb.get_by_task_ids(task_ids, limit_each=limit_each)
-        result = []
-        for row in rows:
-            if isinstance(row.get("metadata"), str):
-                import json
-
-                row["metadata"] = json.loads(row["metadata"])
-            result.append(row)
-        return result
+        return [_parse_row_metadata(row) for row in rows]
 
     async def get_artifacts_by_task(
         self,
@@ -297,14 +291,7 @@ class MemoryManager:
     ) -> list[Artifact]:
         """Return artifacts stored under a specific task_id, newest first."""
         rows = await self._duckdb.get_by_task_id(task_id, limit=limit)
-        result = []
-        for row in rows:
-            if isinstance(row.get("metadata"), str):
-                import json
-
-                row["metadata"] = json.loads(row["metadata"])
-            result.append(Artifact.from_dict(row))
-        return result
+        return [Artifact.from_dict(_parse_row_metadata(row)) for row in rows]
 
     async def count_artifacts(
         self, session_id: Optional[str] = None, include_archived: bool = False
@@ -470,10 +457,7 @@ class MemoryManager:
         rows = await self._duckdb.get_recent(sid, artifact_type=None, limit=limit * 5)
         result = []
         for row in rows:
-            if isinstance(row.get("metadata"), str):
-                import json
-
-                row["metadata"] = json.loads(row["metadata"])
+            _parse_row_metadata(row)
             meta = row.get("metadata", {})
             if meta.get("subsystem", "") == subsystem or not subsystem:
                 result.append(
@@ -520,23 +504,17 @@ class MemoryManager:
             limit=500,
             include_archived=True,
         )
-        result = []
-        for row in rows:
-            if isinstance(row.get("metadata"), str):
-                import json
-
-                row["metadata"] = json.loads(row["metadata"])
-            result.append(
-                {
-                    "id": row["id"],
-                    "content": row["content"],
-                    "artifact_type": row.get("artifact_type", "summary"),
-                    "task_id": row.get("task_id"),
-                    "created_at": row.get("created_at", ""),
-                    "metadata": row.get("metadata", {}),
-                }
-            )
-        return result
+        return [
+            {
+                "id": row["id"],
+                "content": row["content"],
+                "artifact_type": row.get("artifact_type", "summary"),
+                "task_id": row.get("task_id"),
+                "created_at": row.get("created_at", ""),
+                "metadata": _parse_row_metadata(row).get("metadata", {}),
+            }
+            for row in rows
+        ]
 
     async def search(
         self,

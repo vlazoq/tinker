@@ -177,6 +177,44 @@ class ArchitectureStateManager:
 
     # ── Update / Merge ───────────────────────────────────────────────
 
+    def commit(self, payload: dict[str, Any]) -> str:
+        """
+        Accept a macro-loop snapshot payload, merge it into the current state,
+        and return a short commit identifier.
+
+        This is the interface the Orchestrator's macro loop expects:
+        ``commit_hash = await arch_state_manager.commit(commit_payload)``
+
+        The payload may include:
+          - ``content`` : the AI-generated architectural narrative (stored as a loop note)
+          - ``version``  : the snapshot version number
+          - ``total_micro_loops`` / ``total_meso_loops`` : loop counters for the note
+          - any other keys are merged as-is into the update payload
+
+        Returns
+        -------
+        str : Short hex identifier derived from the Git commit hash (or a UUID
+              if Git is disabled).
+        """
+        update: dict[str, Any] = {k: v for k, v in payload.items() if k != "content"}
+        if payload.get("content"):
+            version = payload.get("version", "?")
+            micro = payload.get("total_micro_loops", "?")
+            update["loop_note"] = (
+                f"[macro v{version} micro={micro}] {payload['content'][:200]}"
+            )
+
+        self.apply_update(update)
+
+        # Return the latest git commit hash if available, otherwise a timestamp token.
+        if self.auto_git:
+            try:
+                return self._run_git("rev-parse", "--short", "HEAD")
+            except Exception:
+                pass
+        import uuid as _uuid
+        return _uuid.uuid4().hex[:8]
+
     def apply_update(self, update: dict[str, Any]) -> ArchitectureState:
         """
         Merge a new update payload into the current state, save it to disk,

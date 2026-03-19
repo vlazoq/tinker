@@ -207,7 +207,7 @@ async def run_meso_loop(
         # Record how many artifacts we're working with.
         record.artifacts_synthesised = len(artifacts)
 
-        # ── 2. Synthesizer call ───────────────────────────────────────────────
+        # ── 3. Synthesizer call ───────────────────────────────────────────────
         # Ask the Synthesizer AI to read all the artifacts and produce a
         # coherent subsystem design document.  We pass ``level="meso"`` so the
         # Synthesizer knows what kind of output to produce (as opposed to the
@@ -221,7 +221,7 @@ async def run_meso_loop(
             timeout=cfg.synthesizer_timeout,
         )
 
-        # ── 3. Store subsystem design document ───────────────────────────────
+        # ── 4. Store subsystem design document ───────────────────────────────
         # Package the synthesis into a document dict and store it.  This
         # document is distinct from the individual "artifacts" produced by
         # micro loops — it's a higher-level, synthesised summary.
@@ -273,7 +273,7 @@ async def run_meso_loop(
             # Never let Grub integration errors crash the meso loop
             logger.debug("meso: could not emit implementation task: %s", exc)
 
-        # ── 4. Reset the subsystem counter ───────────────────────────────────
+        # ── 5. Reset the subsystem counter ───────────────────────────────────
         # Now that we've synthesised this batch of micro-loop artifacts, reset
         # the counter to 0.  The subsystem will accumulate another batch of
         # micro loops before the next meso synthesis fires.

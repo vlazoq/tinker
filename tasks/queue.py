@@ -334,8 +334,12 @@ class TaskQueue:
         to_evict = scored[max_depth:]
 
         for task in to_evict:
-            task.mark_failed("evicted by max-depth pruning")
+            # Use ARCHIVED (not FAILED) — the task wasn't broken, just deprioritised.
+            # FAILED implies an execution error; ARCHIVED is the correct status for
+            # tasks removed from the active queue due to capacity constraints.
+            task.status = TaskStatus.ARCHIVED
             task.metadata["eviction_reason"] = "max_depth_pruning"
+            task.touch()
             self.registry.save(task)
 
         log.info(
