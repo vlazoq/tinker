@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import statistics
 from dataclasses import dataclass, field
 from typing import Any
@@ -68,6 +69,109 @@ from typing import Any
 from exceptions import ExperimentError
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Welch's t-test helper
+# ---------------------------------------------------------------------------
+
+def _welch_t_test_p(
+    mean1: float, std1: float, n1: int,
+    mean2: float, std2: float, n2: int,
+) -> float:
+    """
+    Compute the two-tailed p-value for Welch's t-test (unequal variances).
+
+    Uses scipy.stats.ttest_ind_from_stats when available; falls back to a
+    pure-Python implementation using the regularised incomplete beta function
+    approximation (accurate to within ~0.001 for df > 4).
+
+    Parameters
+    ----------
+    mean1, std1, n1 : Mean, std-dev, and sample size of group 1 (control).
+    mean2, std2, n2 : Mean, std-dev, and sample size of group 2 (treatment).
+
+    Returns
+    -------
+    float : Two-tailed p-value in [0, 1].  Smaller means more significant.
+            Returns 1.0 if std is zero for both groups (no variation → no test).
+    """
+    # Avoid division-by-zero when both groups have zero variance
+    var1 = std1 ** 2 / n1
+    var2 = std2 ** 2 / n2
+    se2 = var1 + var2
+    if se2 == 0:
+        return 1.0
+
+    try:
+        # Prefer scipy for accuracy
+        from scipy import stats  # type: ignore
+        result = stats.ttest_ind_from_stats(
+            mean1=mean1, std1=std1, nobs1=n1,
+            mean2=mean2, std2=std2, nobs2=n2,
+            equal_var=False,
+        )
+        return float(result.pvalue)
+    except ImportError:
+        pass
+
+    # Pure-Python Welch's t-test
+    t = (mean1 - mean2) / math.sqrt(se2)
+
+    # Welch–Satterthwaite degrees of freedom
+    df = se2 ** 2 / (var1 ** 2 / (n1 - 1) + var2 ** 2 / (n2 - 1))
+
+    # Two-tailed p-value via regularised incomplete beta function:
+    #   p = I(df / (df + t²), df/2, 1/2)
+    x = df / (df + t * t)
+    p = _betainc(df / 2.0, 0.5, x)
+    return min(1.0, max(0.0, p))
+
+
+def _betainc(a: float, b: float, x: float) -> float:
+    """
+    Regularised incomplete beta function I_x(a, b) via continued fraction.
+
+    Sufficient accuracy for Welch's t-test p-values (df > 2).  Uses the
+    Lentz method with up to 200 iterations.
+    """
+    if x <= 0:
+        return 0.0
+    if x >= 1:
+        return 1.0
+
+    # Use the continued-fraction representation when x < (a+1)/(a+b+2)
+    # to ensure convergence; otherwise use the symmetry relation.
+    if x > (a + 1) / (a + b + 2):
+        return 1.0 - _betainc(b, a, 1.0 - x)
+
+    lbeta = math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+    front = math.exp(lbeta + a * math.log(x) + b * math.log(1.0 - x)) / a
+
+    # Lentz continued-fraction algorithm
+    TINY = 1e-30
+    f = TINY
+    C = f
+    D = 0.0
+    for m in range(201):
+        for step in (0, 1):
+            if m == 0 and step == 0:
+                d = 1.0
+            elif step == 0:
+                d = m * (b - m) * x / ((a + 2 * m - 1) * (a + 2 * m))
+            else:
+                d = -(a + m) * (a + b + m) * x / ((a + 2 * m) * (a + 2 * m + 1))
+            D = 1.0 + d * D
+            if abs(D) < TINY:
+                D = TINY
+            D = 1.0 / D
+            C = 1.0 + d / C
+            if abs(C) < TINY:
+                C = TINY
+            f *= C * D
+            if abs(C * D - 1.0) < 1e-8:
+                return front * f
+    return front * f
 
 
 @dataclass
@@ -281,15 +385,24 @@ class ABTestingFramework:
             best = max(variant_means, key=lambda v: variant_means[v])
             control = next(iter(exp.variants))
 
-            # Simple significance test: is the difference > 1.0 std dev apart?
+            # Welch's t-test: does the best variant significantly outperform
+            # the control?  Unlike the naïve "diff > pooled_std" approach, this
+            # properly accounts for unequal variances and sample sizes.
             control_stats = report["variants"].get(control, {})
             best_stats = report["variants"].get(best, {})
-            if control_stats.get("n", 0) > 0 and best_stats.get("n", 0) > 0:
-                diff = abs(best_stats.get("mean", 0) - control_stats.get("mean", 0))
-                pooled_std = (
-                    control_stats.get("std", 1) + best_stats.get("std", 1)
-                ) / 2
-                report["significant"] = diff > pooled_std
+            n1 = control_stats.get("n", 0)
+            n2 = best_stats.get("n", 0)
+            if n1 > 1 and n2 > 1:
+                p_value = _welch_t_test_p(
+                    mean1=control_stats.get("mean", 0.0),
+                    std1=control_stats.get("std", 0.0),
+                    n1=n1,
+                    mean2=best_stats.get("mean", 0.0),
+                    std2=best_stats.get("std", 0.0),
+                    n2=n2,
+                )
+                report["p_value"] = round(p_value, 4)
+                report["significant"] = p_value < 0.05
                 if report["significant"]:
                     report["winner"] = best
 

@@ -445,7 +445,7 @@ async def _assemble_context(orch: "Orchestrator", task: dict) -> dict:
     Raises MicroLoopError on any failure, including timeout.
     """
     try:
-        return await asyncio.wait_for(
+        ctx = await asyncio.wait_for(
             coroutine_if_needed(orch.context_assembler.build)(
                 task=task,
                 # Limit the number of prior artifacts to keep the context
@@ -456,6 +456,21 @@ async def _assemble_context(orch: "Orchestrator", task: dict) -> dict:
         )
     except Exception as exc:
         raise MicroLoopError(f"context_assembler.build failed: {exc}") from exc
+
+    # Inject a one-shot stagnation hint if one was queued by the orchestrator.
+    # The hint tells the Architect to break out of a detected loop pattern.
+    # We clear it immediately so subsequent loops are not affected.
+    hint = getattr(orch.state, "pending_stagnation_hint", None)
+    if hint:
+        orch.state.pending_stagnation_hint = None
+        ctx = dict(ctx)  # shallow copy so we don't mutate the original
+        ctx["stagnation_hint"] = hint
+        logger.info(
+            "micro[%d] Stagnation hint injected into Architect context",
+            orch.state.total_micro_loops + 1,
+        )
+
+    return ctx
 
 
 async def _call_architect(
