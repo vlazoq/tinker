@@ -208,9 +208,10 @@ class CircuitBreaker:
         async with self._lock:
             await self._check_recovery()
             current = self._state
+            if current == CircuitState.OPEN:
+                self._total_short_circuits += 1
 
         if current == CircuitState.OPEN:
-            self._total_short_circuits += 1
             logger.debug(
                 "Circuit '%s' OPEN — short-circuiting call to %s", self.name, fn
             )

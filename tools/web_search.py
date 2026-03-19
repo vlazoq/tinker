@@ -216,8 +216,22 @@ class WebSearchTool(BaseTool):
         # This is "lazy importing" — if httpx isn't installed, this tool fails with
         # a clear ImportError when called, rather than breaking all of tools/ at import time.
         import httpx
+        import uuid as _uuid
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        # Propagate distributed trace context to the downstream SearXNG service
+        # so that log aggregators can correlate Tinker's research calls with
+        # SearXNG access logs for the same micro-loop iteration.
+        try:
+            from agents import _current_trace_id as _tid_var
+            _trace_id = _tid_var.get("") or str(_uuid.uuid4())
+        except Exception:
+            _trace_id = str(_uuid.uuid4())
+        trace_headers = {
+            "X-Trace-ID": _trace_id,
+            "X-Request-ID": str(_uuid.uuid4()),
+        }
+
+        async with httpx.AsyncClient(timeout=self._timeout, headers=trace_headers) as client:
             # POST to the /search endpoint with form data.
             resp = await client.post(f"{self._url}/search", data=payload)
             # raise_for_status() turns 4xx/5xx HTTP responses into exceptions,

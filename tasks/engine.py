@@ -32,6 +32,25 @@ class TaskEngine:
     """
     Thin async façade over the Task Engine's internal components.
 
+    Dependency Injection (DIP — "D" in SOLID)
+    ------------------------------------------
+    All internal components can be injected at construction time.  This
+    makes the engine testable without real SQLite and swappable without
+    subclassing.  Pass concrete implementations for production, stubs for
+    tests::
+
+        # Production
+        engine = TaskEngine(problem_statement="Design X")
+
+        # Test with injected doubles
+        engine = TaskEngine(
+            problem_statement="Design X",
+            registry=FakeRegistry(),
+            scorer=FakeScorer(),
+            queue=FakeQueue(),
+            generator=FakeGenerator(),
+        )
+
     Parameters
     ----------
     problem_statement : str
@@ -40,18 +59,35 @@ class TaskEngine:
     db_path : str
         Path to the SQLite file for persistent task storage.
         Defaults to ":memory:" for ephemeral runs.
+        Ignored when *registry* is injected directly.
+    registry : TaskRegistry or None
+        Inject a pre-built registry.  When None (default), a new
+        TaskRegistry is created from *db_path*.
+    scorer : PriorityScorer or None
+        Inject a custom scorer.  When None (default), PriorityScorer() is used.
+    queue : TaskQueue or None
+        Inject a pre-built queue.  When None (default), a new TaskQueue is
+        constructed from *registry* and *scorer*.
+    generator : TaskGenerator or None
+        Inject a custom generator.  When None (default), TaskGenerator() is used.
     """
 
     def __init__(
         self,
         problem_statement: str = "Design a robust software architecture",
         db_path: str = ":memory:",
+        registry: Optional[TaskRegistry] = None,
+        scorer: Optional[PriorityScorer] = None,
+        queue: Optional[TaskQueue] = None,
+        generator: Optional[TaskGenerator] = None,
     ) -> None:
         self._problem = problem_statement
-        self.registry = TaskRegistry(db_path=db_path)
-        self.scorer = PriorityScorer()
-        self.queue = TaskQueue(registry=self.registry, scorer=self.scorer)
-        self.generator = TaskGenerator()
+        self.registry = registry if registry is not None else TaskRegistry(db_path=db_path)
+        self.scorer = scorer if scorer is not None else PriorityScorer()
+        self.queue = queue if queue is not None else TaskQueue(
+            registry=self.registry, scorer=self.scorer
+        )
+        self.generator = generator if generator is not None else TaskGenerator()
 
         # Seed with an initial task so the orchestrator always has work
         self._seed_initial_task()

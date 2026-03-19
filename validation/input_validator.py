@@ -503,13 +503,27 @@ def validate_file_path(
     """
     raw_str = sanitize_string(raw, max_length=500, field=field)
 
-    # Remove null bytes that could confuse the OS
+    # Remove null bytes that could confuse the OS (sanitize_string already does
+    # this, but be explicit here since path-handling is security-critical)
     raw_str = raw_str.replace("\x00", "")
+
+    # Reject absolute paths outright — only relative paths are accepted.
+    # In pathlib, (base / "/abs/path") silently drops the base and returns
+    # "/abs/path", so this guard must come before the join to prevent that
+    # corner case from bypassing the relative_to() check.
+    if Path(raw_str).is_absolute():
+        raise ValidationError(
+            field,
+            raw,
+            f"Absolute paths are not allowed: '{raw_str}'",
+        )
 
     base = Path(base_dir).resolve()
     candidate = (base / raw_str).resolve()
 
-    # Ensure the resolved path is under base_dir
+    # Ensure the resolved path is under base_dir.
+    # Path.resolve() follows symlinks on Python 3.6+, so symlink attacks that
+    # would point outside the base directory are caught by relative_to().
     try:
         candidate.relative_to(base)
     except ValueError:

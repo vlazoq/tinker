@@ -631,6 +631,18 @@ async def _health_check() -> None:
     server_url = os.getenv("TINKER_SERVER_URL", "http://localhost:11434")
     redis_url = os.getenv("TINKER_REDIS_URL", "redis://localhost:6379")
 
+    # Redact credentials from URLs before logging (e.g. redis://:secret@host:6379)
+    def _redact_url(url: str) -> str:
+        from urllib.parse import urlparse, urlunparse
+        try:
+            p = urlparse(url)
+            if p.password:
+                netloc = f"{p.hostname}:{p.port}" if p.port else (p.hostname or "")
+                return urlunparse(p._replace(netloc=netloc))
+        except Exception:
+            pass
+        return url
+
     # --- Ollama ---
     try:
         import aiohttp
@@ -664,14 +676,14 @@ async def _health_check() -> None:
         client = aioredis.from_url(redis_url, socket_connect_timeout=3)
         await client.ping()
         await client.aclose()
-        logger.info("Health check OK: Redis reachable at %s", redis_url)
+        logger.info("Health check OK: Redis reachable at %s", _redact_url(redis_url))
     except ImportError:
         pass  # aioredis not installed; skip check (connection will fail later)
     except Exception as exc:
         logger.warning(
             "Health check WARN: Redis NOT reachable at %s (%s) — "
             "working memory will be unavailable",
-            redis_url,
+            _redact_url(redis_url),
             exc,
         )
 

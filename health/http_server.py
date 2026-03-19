@@ -251,10 +251,40 @@ class HealthServer:
             await self._send_response(
                 writer,
                 503,
-                {"status": "not_ready", "issues": issues},
+                {
+                    "status": "not_ready",
+                    "issues": issues,
+                    # Microservices: declare upstream dependencies so
+                    # orchestration layers (k8s, service mesh) know which
+                    # external services this bounded context requires.
+                    "dependencies": {
+                        "ollama": {
+                            "url": self._ollama_url or "not configured",
+                            "required": True,
+                        },
+                        "redis": {"required": False, "note": "degrades gracefully"},
+                        "chromadb": {"required": False, "note": "degrades gracefully"},
+                        "duckdb": {"required": True, "note": "local file"},
+                    },
+                },
             )
         else:
-            await self._send_response(writer, 200, {"status": "ready"})
+            await self._send_response(
+                writer,
+                200,
+                {
+                    "status": "ready",
+                    "dependencies": {
+                        "ollama": {
+                            "url": self._ollama_url or "not configured",
+                            "required": True,
+                        },
+                        "redis": {"required": False, "note": "degrades gracefully"},
+                        "chromadb": {"required": False, "note": "degrades gracefully"},
+                        "duckdb": {"required": True, "note": "local file"},
+                    },
+                },
+            )
 
     async def _check_ollama(self) -> bool:
         """Ping Ollama's /api/tags endpoint; return True if reachable."""
