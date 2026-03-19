@@ -155,6 +155,7 @@ jobs:
           pip-compile requirements/base.in \
             --generate-hashes \
             --quiet \
+            --no-header \
             --strip-extras \
             --no-upgrade \
             --output-file /tmp/base.txt.check
@@ -178,8 +179,10 @@ jobs:
           pip-compile requirements/dev.in \
             --generate-hashes \
             --quiet \
+            --no-header \
             --strip-extras \
             --no-upgrade \
+            --allow-unsafe \
             --output-file /tmp/dev.txt.check
           if ! diff --unified=5 requirements/dev.txt /tmp/dev.txt.check; then
             echo ""
@@ -201,6 +204,7 @@ jobs:
           pip-compile requirements/metrics.in \
             --generate-hashes \
             --quiet \
+            --no-header \
             --strip-extras \
             --no-upgrade \
             --output-file /tmp/metrics.txt.check

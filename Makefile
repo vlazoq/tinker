@@ -58,6 +58,7 @@ deps:
 	pip-compile requirements/base.in \
 	    --output-file requirements/base.txt \
 	    --generate-hashes \
+	    --no-header \
 	    --annotate \
 	    --strip-extras \
 	    --upgrade
@@ -67,6 +68,7 @@ deps-dev:
 	pip-compile requirements/dev.in \
 	    --output-file requirements/dev.txt \
 	    --generate-hashes \
+	    --no-header \
 	    --annotate \
 	    --strip-extras \
 	    --upgrade
@@ -76,6 +78,7 @@ deps-metrics:
 	pip-compile requirements/metrics.in \
 	    --output-file requirements/metrics.txt \
 	    --generate-hashes \
+	    --no-header \
 	    --annotate \
 	    --strip-extras \
 	    --upgrade
