@@ -69,7 +69,15 @@ import uuid
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional
 
+from .migrations import SQLiteMigrationRunner
+
 logger = logging.getLogger(__name__)
+
+# Baseline migration — establishes the schema_migrations table for this DB.
+# Future schema changes should be added as version 2, 3, etc.
+DLQ_MIGRATIONS: list[tuple[int, str]] = [
+    (1, "-- baseline"),
+]
 
 
 class DeadLetterQueue:
@@ -120,6 +128,7 @@ class DeadLetterQueue:
                 CREATE INDEX IF NOT EXISTS dlq_status_idx ON dlq_items (status, created_at)
             """)
             await self._conn.commit()
+            SQLiteMigrationRunner(self._db_path).migrate(DLQ_MIGRATIONS)
             logger.info("DeadLetterQueue connected to %s", self._db_path)
         except ImportError:
             logger.warning(

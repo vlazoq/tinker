@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tinker-config
+  namespace: tinker
+  labels:
+    app.kubernetes.io/name: tinker
+data:
+  # ── Ollama — Primary Server ──────────────────────────────────────────────────
+  TINKER_SERVER_URL: "http://ollama:11434"
+  TINKER_SERVER_MODEL: "qwen3:7b"
+  TINKER_SERVER_CTX: "8192"
+  TINKER_SERVER_MAX_OUT: "2048"
+  TINKER_SERVER_TIMEOUT: "120"
+
+  # ── Ollama — Secondary Machine ────────────────────────────────────────────────
+  TINKER_SECONDARY_URL: "http://ollama-secondary:11434"
+  TINKER_SECONDARY_MODEL: "phi3:mini"
+  TINKER_SECONDARY_CTX: "4096"
+  TINKER_SECONDARY_MAX_OUT: "1024"
+  TINKER_SECONDARY_TIMEOUT: "60"
+
+  # ── Memory backends ───────────────────────────────────────────────────────────
+  TINKER_REDIS_URL: "redis://redis:6379"
+  TINKER_DUCKDB_PATH: "/app/data/tinker_session.duckdb"
+  TINKER_CHROMA_PATH: "/app/data/chroma_db"
+  TINKER_SQLITE_PATH: "/app/data/tinker_tasks.sqlite"
+
+  # ── Tool Layer ────────────────────────────────────────────────────────────────
+  TINKER_SEARXNG_URL: "http://searxng:8888"
+
+  # ── Artifact / Diagram output dirs ────────────────────────────────────────────
+  TINKER_ARTIFACT_DIR: "/app/data/tinker_artifacts"
+  TINKER_DIAGRAM_DIR: "/app/data/tinker_diagrams"
+
+  # ── Task Engine ───────────────────────────────────────────────────────────────
+  TINKER_TASK_DB: "/app/data/tinker_tasks_engine.sqlite"
+
+  # ── Architecture State Manager ────────────────────────────────────────────────
+  TINKER_WORKSPACE: "/app/data/tinker_workspace"
+  TINKER_AUTO_GIT: "true"
+
+  # ── Orchestrator tuning ───────────────────────────────────────────────────────
+  TINKER_MACRO_INTERVAL: "14400"
+  TINKER_MESO_TRIGGER: "5"
+  TINKER_ARCHITECT_TIMEOUT: "120"
+  TINKER_CRITIC_TIMEOUT: "60"
+
+  # ── Orchestrator state snapshot ───────────────────────────────────────────────
+  TINKER_STATE_PATH: "/app/data/tinker_state.json"
+
+  # ── Logging ───────────────────────────────────────────────────────────────────
+  TINKER_LOG_LEVEL: "INFO"
+  TINKER_LOG_JSON: "true"
+  TINKER_LOG_FILE: ""
+
+  # ── Health HTTP endpoint ──────────────────────────────────────────────────────
+  TINKER_HEALTH_ENABLED: "true"
+  TINKER_HEALTH_PORT: "8081"
+
+  # ── Alerting — severity threshold only (webhook URLs are secrets) ─────────────
+  # see tinker-secrets for TINKER_SLACK_WEBHOOK and TINKER_ALERT_WEBHOOK
+  TINKER_ALERT_SEVERITY: "WARNING"
+
+  # ── Dead Letter Queue ─────────────────────────────────────────────────────────
+  TINKER_DLQ_PATH: "/app/data/tinker_dlq.sqlite"
+
+  # ── Audit Log ─────────────────────────────────────────────────────────────────
+  TINKER_AUDIT_LOG_PATH: "/app/data/tinker_audit.sqlite"
+
+  # ── Data Lineage Tracker ──────────────────────────────────────────────────────
+  TINKER_LINEAGE_PATH: "/app/data/tinker_lineage.sqlite"
+
+  # ── Backup / Restore ──────────────────────────────────────────────────────────
+  TINKER_BACKUP_DIR: "/app/data/tinker_backups"
+  TINKER_BACKUP_RETENTION_DAYS: "7"
+
+  # ── Secret Manager ────────────────────────────────────────────────────────────
+  # see tinker-secrets for TINKER_SECRET_KEY
+  TINKER_SECRET_BACKEND: "env"
+  TINKER_VAULT_URL: "http://vault:8200"
+  # TINKER_VAULT_TOKEN — see tinker-secrets
+  TINKER_AWS_REGION: "us-east-1"
+
+  # ── Feature Flags ─────────────────────────────────────────────────────────────
+  TINKER_FLAGS_FILE: ""
+
+  # ── Capacity Planning ─────────────────────────────────────────────────────────
+  TINKER_CAPACITY_TOKEN_LIMIT: "0"
+  TINKER_CAPACITY_DISK_LIMIT_MB: "0"

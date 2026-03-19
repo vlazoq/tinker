@@ -151,6 +151,7 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
     idempotency_cache: Optional[object] = enterprise.get("idempotency_cache")
     lineage_tracker: Optional[object] = enterprise.get("lineage_tracker")
     _audit_log: Optional[object] = enterprise.get("audit_log")
+    alerter: Optional[object] = enterprise.get("alerter")
 
     # ── 1. Task Selection ────────────────────────────────────────────────────
     # Ask the task engine for the next task to work on.  If there's nothing
@@ -307,6 +308,11 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # Store the raw score on the record so the orchestrator can forward it
         # to the StagnationMonitor (Critique Collapse detector) after the loop.
         record.critic_score = critic_result.get("score")
+
+        # ── Quality gate ─────────────────────────────────────────────────────
+        # Alert operators when critic quality drops below the configured threshold.
+        # Consecutive sub-threshold scores escalate from WARNING to ERROR.
+        _maybe_fire_quality_gate(orch, record, alerter, iteration)
 
         # ── 6. Artifact Storage ──────────────────────────────────────────────
         # Combine the Architect's proposal and the Critic's review into a
@@ -790,6 +796,80 @@ def _enrich_review_context(task: dict, context: dict) -> dict:
             "_enrich_review_context: could not parse grub result (non-fatal): %s", exc
         )
     return enriched
+
+
+def _maybe_fire_quality_gate(
+    orch: "Orchestrator",
+    record: "MicroLoopRecord",
+    alerter: Optional[object],
+    iteration: int,
+) -> None:
+    """
+    Check whether the critic score falls below the quality gate threshold and,
+    if so, fire an alert via the configured alerter.
+
+    The orchestrator tracks the count of consecutive sub-threshold scores on
+    a private attribute ``_quality_gate_fails`` so that repeated failures
+    escalate from WARNING to ERROR severity.
+
+    This function is synchronous and non-blocking: the actual alert is
+    dispatched as a fire-and-forget asyncio Task.
+    """
+    threshold = getattr(getattr(orch, "config", None), "quality_gate_threshold", 0.4)
+    escalation_count = getattr(
+        getattr(orch, "config", None), "quality_gate_escalation_count", 3
+    )
+    if threshold <= 0.0 or alerter is None:
+        return
+
+    score = record.critic_score
+    if score is None or score >= threshold:
+        # Score acceptable — reset the consecutive-fail counter.
+        orch.__dict__["_quality_gate_fails"] = 0
+        return
+
+    fails = orch.__dict__.get("_quality_gate_fails", 0) + 1
+    orch.__dict__["_quality_gate_fails"] = fails
+
+    try:
+        from observability.alerting import AlertType, AlertSeverity
+    except ImportError:
+        return
+
+    severity = (
+        AlertSeverity.ERROR
+        if fails >= escalation_count
+        else AlertSeverity.WARNING
+    )
+    asyncio.create_task(
+        alerter.alert(  # type: ignore[union-attr]
+            alert_type=AlertType.CUSTOM,
+            title=f"Quality gate breach: critic score {score:.2f} < {threshold:.2f}",
+            message=(
+                f"Micro loop {iteration} produced a critic score of {score:.2f}, "
+                f"which is below the quality gate threshold of {threshold:.2f}. "
+                f"This is the {fails} consecutive sub-threshold result."
+            ),
+            severity=severity,
+            context={
+                "iteration": iteration,
+                "critic_score": score,
+                "threshold": threshold,
+                "consecutive_failures": fails,
+                "task_id": record.task_id,
+                "subsystem": record.subsystem,
+            },
+        )
+    )
+    logger.warning(
+        "Quality gate breach: micro[%d] critic_score=%.2f < threshold=%.2f "
+        "(consecutive=%d, severity=%s)",
+        iteration,
+        score,
+        threshold,
+        fails,
+        severity.value,
+    )
 
 
 # MicroLoopError was previously defined here.  It now lives in exceptions.py

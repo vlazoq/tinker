@@ -62,7 +62,15 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from resilience.migrations import SQLiteMigrationRunner
+
 logger = logging.getLogger(__name__)
+
+# Baseline migration — establishes the schema_migrations table for this DB.
+# Future schema changes should be added as version 2, 3, etc.
+AUDIT_MIGRATIONS: list[tuple[int, str]] = [
+    (1, "-- baseline"),
+]
 
 
 class AuditEventType(Enum):
@@ -136,6 +144,7 @@ class AuditLog:
                 "CREATE INDEX IF NOT EXISTS audit_trace_idx ON audit_events (trace_id)"
             )
             await self._conn.commit()
+            SQLiteMigrationRunner(self._db_path).migrate(AUDIT_MIGRATIONS)
             logger.info("AuditLog connected to %s", self._db_path)
 
             # Start background flush task

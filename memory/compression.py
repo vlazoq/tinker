@@ -23,6 +23,7 @@ Orchestrator (e.g. every N minutes or after every K new artifacts).
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Awaitable, Optional
 
@@ -31,6 +32,23 @@ from .storage import DuckDBAdapter, ChromaAdapter
 from .embeddings import EmbeddingPipeline
 
 logger = logging.getLogger(__name__)
+
+# Minimum cosine similarity between the original chunk's centroid embedding
+# and the summary embedding.  Below this, a WARNING is emitted so operators
+# know the summariser may be producing low-quality or hallucinated output.
+_MIN_SUMMARY_SIMILARITY = 0.4
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two equal-length vectors."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
 
 # Type alias for "any async function that takes a prompt string and returns text"
 SummariserFn = Callable[[str], Awaitable[str]]
@@ -164,6 +182,38 @@ class MemoryCompressor:
             chunk = artifacts[i : i + chunk_size]
             summary_text = await self._summarise(chunk, reason)
             artifact_ids = [a["id"] for a in chunk]
+
+            # ── Quality validation ────────────────────────────────────────────
+            # Embed the concatenated original content and the generated summary,
+            # then measure cosine similarity.  A very low similarity suggests
+            # the summariser drifted from the source material (hallucination or
+            # stub output).  We log a warning but continue — archival is still
+            # better than losing the context entirely.
+            try:
+                original_text = " ".join(
+                    str(a.get("content", ""))[:500] for a in chunk
+                )
+                orig_emb = await self.embeddings.embed(original_text)
+                summ_emb = await self.embeddings.embed(summary_text)
+                similarity = _cosine_similarity(orig_emb, summ_emb)
+                if similarity < _MIN_SUMMARY_SIMILARITY:
+                    logger.warning(
+                        "[compression] Low summary quality: cosine_similarity=%.3f "
+                        "< threshold=%.3f for chunk starting at artifact %s. "
+                        "The summariser may be producing low-fidelity output.",
+                        similarity,
+                        _MIN_SUMMARY_SIMILARITY,
+                        artifact_ids[0] if artifact_ids else "unknown",
+                    )
+                else:
+                    logger.debug(
+                        "[compression] Summary quality OK: cosine_similarity=%.3f",
+                        similarity,
+                    )
+            except Exception as exc:
+                logger.debug(
+                    "[compression] Quality check failed (non-fatal): %s", exc
+                )
 
             # Store summary as a new DuckDB artifact
             summary_artifact = Artifact(

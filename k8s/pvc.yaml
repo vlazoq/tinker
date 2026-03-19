@@ -1,0 +1,32 @@
+---
+# PVC for SQLite databases, artifacts, diagrams, and other runtime data.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tinker-data
+  namespace: tinker
+  labels:
+    app.kubernetes.io/name: tinker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Gi
+---
+# PVC for Ollama model cache (if Ollama is co-located in the same node).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tinker-models
+  namespace: tinker
+  labels:
+    app.kubernetes.io/name: tinker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 10Gi

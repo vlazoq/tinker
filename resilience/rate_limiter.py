@@ -208,6 +208,46 @@ class TokenBucketRateLimiter:
         pass
 
     # ------------------------------------------------------------------
+    # Redis state persistence
+    # ------------------------------------------------------------------
+
+    async def save_state(self, redis_client) -> None:
+        """Serialise limiter state to Redis hash ``tinker:rl:{name}`` with TTL 3600s."""
+        key = f"tinker:rl:{self.name}"
+        try:
+            mapping = {
+                "tokens": str(self._tokens),
+                "last_refill": str(self._last_refill),
+                "total_calls": str(self._total_calls),
+                "total_tokens_used": str(self._total_tokens_used),
+                "calls_throttled": str(self._calls_throttled),
+            }
+            await redis_client.hset(key, mapping=mapping)
+            await redis_client.expire(key, 3600)
+        except Exception as exc:
+            logger.warning("TokenBucketRateLimiter.save_state failed for '%s': %s", self.name, exc)
+
+    async def load_state(self, redis_client) -> None:
+        """Restore limiter state from Redis hash ``tinker:rl:{name}``. No-op if key absent."""
+        key = f"tinker:rl:{self.name}"
+        try:
+            data = await redis_client.hgetall(key)
+            if not data:
+                return
+            if b"tokens" in data:
+                self._tokens = float(data[b"tokens"])
+            if b"last_refill" in data:
+                self._last_refill = float(data[b"last_refill"])
+            if b"total_calls" in data:
+                self._total_calls = int(data[b"total_calls"])
+            if b"total_tokens_used" in data:
+                self._total_tokens_used = int(data[b"total_tokens_used"])
+            if b"calls_throttled" in data:
+                self._calls_throttled = int(data[b"calls_throttled"])
+        except Exception as exc:
+            logger.warning("TokenBucketRateLimiter.load_state failed for '%s': %s", self.name, exc)
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
@@ -272,6 +312,16 @@ class RateLimiterRegistry:
     def total_llm_tokens(self) -> int:
         """Total LLM tokens consumed across all limiters (cost tracking)."""
         return sum(lim.total_tokens_used for lim in self._limiters.values())
+
+    async def save_all(self, redis_client) -> None:
+        """Persist state of every registered limiter to Redis."""
+        for limiter in self._limiters.values():
+            await limiter.save_state(redis_client)
+
+    async def load_all(self, redis_client) -> None:
+        """Restore state of every registered limiter from Redis."""
+        for limiter in self._limiters.values():
+            await limiter.load_state(redis_client)
 
 
 def build_default_rate_limiters() -> RateLimiterRegistry:
