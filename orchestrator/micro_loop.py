@@ -244,10 +244,12 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                     exc,
                 )
 
-        architect_result = await _call_architect(
-            orch, task, context, cfg.architect_timeout
+        architect_result = await _call_architect_with_validation_retry(
+            orch, task, context, cfg.architect_timeout, cfg.max_validation_retries
         )
         # Record how many tokens the Architect used — useful for cost tracking.
+        # _call_architect_with_validation_retry accumulates tokens across all
+        # retry attempts into the returned dict's tokens_used field.
         record.architect_tokens = architect_result.get("tokens_used", 0)
 
         # Track token cost in the rate limiter for usage reporting.
@@ -265,6 +267,11 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # The Architect may say "I'm not sure about X — I have a knowledge gap."
         # When that happens, we ask the Tool Layer to look X up, then re-run
         # the Architect with the new information in its context.
+        #
+        # _refinement_context tracks whichever context was used for the most
+        # recent Architect call so the refinement loop (step 5) can build on
+        # it when injecting Critic feedback.
+        _refinement_context = context
         researcher_calls = 0
         if architect_result.get("knowledge_gaps"):
             enriched_context, researcher_calls = await _route_researcher(
@@ -274,40 +281,98 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
             # Only re-run the Architect if the Tool Layer actually found
             # something useful (i.e., at least one call succeeded).
             if researcher_calls > 0:
-                architect_result = await _call_architect(
-                    orch, task, enriched_context, cfg.architect_timeout
+                _refinement_context = enriched_context
+                architect_result = await _call_architect_with_validation_retry(
+                    orch, task, _refinement_context, cfg.architect_timeout,
+                    cfg.max_validation_retries,
                 )
                 # Add the second call's token count to the running total.
                 record.architect_tokens += architect_result.get("tokens_used", 0)
 
-        # ── 5. Critic Call ───────────────────────────────────────────────────
-        # The Critic AI reads the Architect's proposal and gives it a score
-        # along with strengths, weaknesses, and recommendations.
-        if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
-            try:
-                critic_limiter = rate_limiters.get("critic")
-                if critic_limiter is not None:
-                    await critic_limiter.acquire()
-            except Exception as exc:
-                logger.debug("Critic rate limiter acquire failed (non-fatal): %s", exc)
+        # ── 5. Refinement loop (Architect → Critic until threshold met) ──────
+        # The Critic scores the Architect's proposal.  If the score is below
+        # cfg.min_critic_score and iterations remain, the Critic's feedback is
+        # injected into the Architect's context and both run again.
+        #
+        # When cfg.min_critic_score == 0.0 (the default), the loop runs
+        # exactly once, preserving the original single-pass behaviour.
+        record.critic_tokens = 0
+        _refinement_iter = 0
+        while True:
+            # Acquire rate-limiter token before each Critic call.
+            if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
+                try:
+                    critic_limiter = rate_limiters.get("critic")
+                    if critic_limiter is not None:
+                        await critic_limiter.acquire()
+                except Exception as exc:
+                    logger.debug(
+                        "Critic rate limiter acquire failed (non-fatal): %s", exc
+                    )
 
-        critic_result = await _call_critic(
-            orch, task, architect_result, cfg.critic_timeout
-        )
-        record.critic_tokens = critic_result.get("tokens_used", 0)
+            critic_result = await _call_critic(
+                orch, task, architect_result, cfg.critic_timeout
+            )
+            _call_tokens = critic_result.get("tokens_used", 0)
+            record.critic_tokens += _call_tokens
+            record.critic_score = critic_result.get("score")
+            _refinement_iter += 1
 
-        if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
-            try:
-                critic_limiter = rate_limiters.get("critic")
-                if critic_limiter is not None:
-                    critic_limiter.record_tokens(record.critic_tokens)
-            except Exception as exc:
-                logger.debug(
-                    "Critic rate limiter record_tokens failed (non-fatal): %s", exc
-                )
-        # Store the raw score on the record so the orchestrator can forward it
-        # to the StagnationMonitor (Critique Collapse detector) after the loop.
-        record.critic_score = critic_result.get("score")
+            if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
+                try:
+                    critic_limiter = rate_limiters.get("critic")
+                    if critic_limiter is not None:
+                        critic_limiter.record_tokens(_call_tokens)
+                except Exception as exc:
+                    logger.debug(
+                        "Critic rate limiter record_tokens failed (non-fatal): %s",
+                        exc,
+                    )
+
+            _score = record.critic_score or 0.0
+            _min_score = cfg.min_critic_score
+
+            # Exit: threshold disabled, score acceptable, or iterations exhausted.
+            if (
+                _min_score <= 0.0
+                or _score >= _min_score
+                or _refinement_iter >= cfg.max_refinement_iterations
+            ):
+                if _min_score > 0.0 and _score < _min_score:
+                    logger.warning(
+                        "micro[%d] refinement exhausted after %d iteration(s) "
+                        "(best score=%.2f < threshold=%.2f) — proceeding",
+                        iteration,
+                        _refinement_iter,
+                        _score,
+                        _min_score,
+                    )
+                break
+
+            # Score below threshold and iterations remain — re-run Architect
+            # with Critic feedback injected, then loop back to re-score.
+            logger.info(
+                "micro[%d] refinement iter %d: score=%.2f < %.2f — re-running Architect",
+                iteration,
+                _refinement_iter,
+                _score,
+                _min_score,
+            )
+            _refinement_context = dict(_refinement_context)
+            _refinement_context["critic_feedback"] = {
+                "score": _score,
+                "content": critic_result.get("content", ""),
+                "iteration": _refinement_iter,
+                "message": (
+                    "Your previous proposal scored below the quality threshold. "
+                    "Address the weaknesses identified above and produce an improved design."
+                ),
+            }
+            architect_result = await _call_architect_with_validation_retry(
+                orch, task, _refinement_context, cfg.architect_timeout,
+                cfg.max_validation_retries,
+            )
+            record.architect_tokens += architect_result.get("tokens_used", 0)
 
         # ── Quality gate ─────────────────────────────────────────────────────
         # Alert operators when critic quality drops below the configured threshold.
@@ -870,6 +935,57 @@ def _maybe_fire_quality_gate(
         fails,
         severity.value,
     )
+
+
+def _architect_result_is_thin(result: dict) -> bool:
+    """Return True if the Architect output looks incomplete or degraded.
+
+    A result is considered thin when its ``content`` field is shorter than
+    50 characters — too short to be a genuine architectural proposal.  This
+    catches generation failures (empty replies, refusals, truncated output)
+    without false-positives on real proposals.
+    """
+    return len(result.get("content", "").strip()) < 50
+
+
+async def _call_architect_with_validation_retry(
+    orch: "Orchestrator",
+    task: dict,
+    context: dict,
+    timeout: float,
+    max_retries: int,
+) -> dict:
+    """Call the Architect and retry up to *max_retries* times if the output
+    looks incomplete.
+
+    On each retry, a ``validation_feedback`` key is added to the context so
+    the model knows its previous attempt was inadequate.  Token counts from
+    all attempts are accumulated in the returned dict's ``tokens_used`` field
+    so the caller's token accounting stays correct.
+
+    When *max_retries* is 0 this behaves identically to ``_call_architect``.
+    """
+    result = await _call_architect(orch, task, context, timeout)
+    total_tokens = result.get("tokens_used", 0)
+
+    for attempt in range(max_retries):
+        if not _architect_result_is_thin(result):
+            break
+        logger.warning(
+            "architect: output appears incomplete (attempt %d/%d) — retrying with feedback",
+            attempt + 1,
+            max_retries,
+        )
+        retry_context = dict(context)
+        retry_context["validation_feedback"] = (
+            "Your previous response was incomplete or too short. "
+            "Please produce a complete response that strictly follows the output schema."
+        )
+        result = await _call_architect(orch, task, retry_context, timeout)
+        total_tokens += result.get("tokens_used", 0)
+
+    result["tokens_used"] = total_tokens
+    return result
 
 
 # MicroLoopError was previously defined here.  It now lives in exceptions.py

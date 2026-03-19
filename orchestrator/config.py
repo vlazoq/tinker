@@ -175,6 +175,22 @@ class OrchestratorConfig:
     # escalating from WARNING to ERROR severity.
     quality_gate_escalation_count: int = 3
 
+    # ── Refinement loop ──────────────────────────────────────────────────────
+    # When the Critic scores an Architect output below this threshold, the
+    # Architect is re-prompted with the Critic's feedback injected into its
+    # context and the Critic re-evaluates.  Repeats until the score meets the
+    # threshold or max_refinement_iterations is exhausted.
+    # Set to 0.0 to disable (default — preserves the original single-pass
+    # behaviour).
+    min_critic_score: float = 0.0
+    max_refinement_iterations: int = 3
+
+    # ── Validation retry ─────────────────────────────────────────────────────
+    # If the Architect returns an output that looks incomplete (very short
+    # content), Tinker re-prompts with a note about the failure and retries up
+    # to this many times before accepting the result.  Set to 0 to disable.
+    max_validation_retries: int = 2
+
     # ── Meso loop ───────────────────────────────────────────────────────────
     # The meso loop synthesises a subsystem-level design document from the
     # individual artifacts produced by recent micro loops.
@@ -297,6 +313,15 @@ class OrchestratorConfig:
         )
         self.context_max_artifacts = _positive_int(
             self.context_max_artifacts, "context_max_artifacts", min_val=1
+        )
+        self.min_critic_score = _positive_float(
+            self.min_critic_score, "min_critic_score", min_val=0.0
+        )
+        self.max_refinement_iterations = _positive_int(
+            self.max_refinement_iterations, "max_refinement_iterations", min_val=1
+        )
+        self.max_validation_retries = _positive_int(
+            self.max_validation_retries, "max_validation_retries", min_val=0
         )
 
         logger.debug(

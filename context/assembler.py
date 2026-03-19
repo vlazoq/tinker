@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -113,7 +114,10 @@ class TokenBudgetManager:
     Parameters
     ----------
     total_tokens : int
-        Hard ceiling for the assembled prompt (e.g. 8192, 16384).
+        Hard ceiling for the assembled prompt.  Defaults to the value of the
+        ``TINKER_SERVER_CTX`` environment variable (e.g. 32768 for a 32B
+        model), falling back to 8192 when the variable is not set.  Pass an
+        explicit value to override the environment variable.
     chars_per_token : float
         Conservative characters-per-token estimate used for length checks.
         OpenAI / LLaMA tokenizers average ~3.8–4.2 chars/token; we default
@@ -124,7 +128,7 @@ class TokenBudgetManager:
 
     def __init__(
         self,
-        total_tokens: int = 8192,
+        total_tokens: int = int(os.getenv("TINKER_SERVER_CTX", "8192")),
         chars_per_token: float = 3.8,
         allocation_overrides: dict[str, float] | None = None,
     ):
