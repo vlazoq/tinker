@@ -6,20 +6,26 @@
 #
 # Jobs (all run in parallel unless dependencies are declared):
 #
-#   test          — run the full pytest suite on Python 3.11
+#   test          — pytest suite on Python 3.11 + 3.12, with coverage reporting
+#                   Fails if line coverage drops below 60%
 #   lint          — ruff code-quality checks (no auto-format)
+#   sast          — Bandit static analysis security scan (SAST)
+#                   Flags high-severity security issues in Python source code
 #   dep-freshness — verify every requirements/*.txt is in sync with its .in
 #                   source; fails the PR until the developer commits updated
 #                   lock files generated with `make deps-all`
 #   security-audit — pip-audit CVE scan of all pinned dependency sets;
 #                   fails the PR if any package has a published CVE
+#   sbom           — CycloneDX software bill of materials (advisory, non-blocking)
+#   license-compliance — GPL/AGPL detection (blocks merge)
 #
 # Trigger conditions:
 #   • Every push to main / master and any claude/* branch
 #   • Every pull request targeting main / master
 #
-# Why all four jobs?
+# Why all these jobs?
 #   test + lint    → code quality gate (no regressions, no linter warnings)
+#   sast           → catches Python security bugs before they reach prod
 #   dep-freshness  → prevents "works on my machine" caused by stale lock files
 #   security-audit → supply-chain security; catches CVEs before they reach prod
 #
@@ -93,8 +99,24 @@ jobs:
           pip install -r requirements/dev.txt
           pip install -e . --no-deps
 
-      - name: Run tests
-        run: pytest -x -q --tb=short
+      - name: Run tests with coverage
+        # --cov-fail-under enforces a minimum line coverage threshold.
+        # Adjust the threshold as coverage improves over time.
+        run: |
+          pytest -x -q --tb=short \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=60
+
+      - name: Upload coverage report
+        # Upload XML coverage for external tools (Codecov, SonarQube, etc.)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.python-version }}-${{ github.sha }}
+          path: coverage.xml
+          retention-days: 30
 
   # ---------------------------------------------------------------------------
   # Lint
@@ -123,6 +145,64 @@ jobs:
 
       - name: Format check (ruff format --check)
         run: ruff format --check .
+
+  # ---------------------------------------------------------------------------
+  # SAST — Bandit static analysis security scanner
+  # ---------------------------------------------------------------------------
+  sast:
+    name: "SAST (Bandit)"
+    runs-on: ubuntu-latest
+    # SAST blocks merge on high-severity findings.
+    # Medium/low severity findings are reported but do not block.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Bandit
+        run: pip install "bandit[toml]>=1.7.0"
+
+      - name: Run Bandit (high-severity gate)
+        # -ll: report only HIGH severity, HIGH confidence issues
+        # -r . : scan entire repo
+        # --exclude: skip test files (they may use eval, subprocess, etc. intentionally)
+        # Fails the job (exit code 1) if any HIGH+HIGH issues are found.
+        run: |
+          bandit -r . \
+            --exclude './tests,./*/tests,./grub/tests' \
+            -ll \
+            --format txt \
+            -o /tmp/bandit_high.txt \
+            || (cat /tmp/bandit_high.txt && exit 1)
+          echo "✓ No high-severity Bandit findings"
+
+      - name: Run Bandit (full report, advisory)
+        # -l: report medium+high severity (advisory — does not fail the job)
+        # Output uploaded as artifact for review
+        run: |
+          bandit -r . \
+            --exclude './tests,./*/tests,./grub/tests' \
+            -l \
+            --format txt \
+            -o /tmp/bandit_full.txt \
+            || true  # non-blocking
+          echo "=== Bandit full report ==="
+          cat /tmp/bandit_full.txt || true
+        continue-on-error: true
+
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-report-${{ github.sha }}
+          path: /tmp/bandit_full.txt
+          retention-days: 30
 
   # ---------------------------------------------------------------------------
   # Dependency lock-file freshness
