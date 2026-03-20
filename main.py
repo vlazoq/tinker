@@ -721,6 +721,46 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         critic_timeout=float(os.getenv("TINKER_CRITIC_TIMEOUT", "60")),
     )
 
+    # ── TINKER.md — Project instructions ─────────────────────────────────────
+    # Load the project instruction file and inject it into every Architect
+    # prompt via PromptBuilder's class-level default.
+    # This is analogous to CLAUDE.md in Claude Code.
+    from prompts.builder import PromptBuilder as _PromptBuilder
+    _instructions_path = Path(config.project_instructions_path)
+    if _instructions_path.exists():
+        try:
+            _instructions_content = _instructions_path.read_text(encoding="utf-8")
+            _PromptBuilder.set_global_project_instructions(_instructions_content)
+            logger.info(
+                "Project instructions loaded from %s (%d chars)",
+                _instructions_path,
+                len(_instructions_content),
+            )
+        except Exception as _exc:
+            logger.warning("Could not read %s: %s — running without project instructions", _instructions_path, _exc)
+    else:
+        logger.info(
+            "No TINKER.md found at %s — running without project instructions "
+            "(create one to customize the Architect's behaviour)",
+            _instructions_path,
+        )
+
+    # ── Checkpoint manager ────────────────────────────────────────────────────
+    # Enables pause/resume and crash recovery.  CheckpointManager saves
+    # in-progress micro loop state to disk so the next run can resume without
+    # repeating the Architect/Critic calls.
+    from orchestrator.checkpoint import CheckpointManager
+    checkpoint_manager = CheckpointManager(
+        path=config.checkpoint_path,
+        enabled=config.checkpoint_enabled,
+    )
+    prior_checkpoint = checkpoint_manager.load()
+    if prior_checkpoint:
+        logger.info(
+            "Found checkpoint from micro iteration %d — will resume from this point",
+            prior_checkpoint.get("micro_iteration", 0),
+        )
+
     # Build either real or stub components depending on the --stubs flag
     if use_stubs:
         logger.info(
@@ -868,7 +908,34 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         stagnation_monitor=components.get("stagnation_monitor"),
         metrics=metrics,
         snapshot_callback=_dashboard_snapshot_cb,
+        checkpoint_manager=checkpoint_manager,
     )
+
+    # ── MCP setup ─────────────────────────────────────────────────────────────
+    # If MCP is enabled, mount the server on the webui FastAPI app and connect
+    # to any configured external MCP servers.
+    try:
+        from mcp.config import MCPConfig as _MCPConfig
+        from mcp.bridge import MCPBridge as _MCPBridge
+
+        _mcp_config = _MCPConfig.from_env()
+        if _mcp_config.enabled:
+            _mcp_bridge = _MCPBridge(_mcp_config, components["tool_layer"])
+            # Import the webui app and mount the MCP server on it.
+            try:
+                from webui.app import app as _webui_app
+                _mcp_bridge.mount_server(_webui_app)
+                # Attach bridge to app.state so /api/mcp/status can read it.
+                _webui_app.state.mcp_bridge = _mcp_bridge
+            except Exception as _exc:
+                logger.warning("Could not mount MCP server on webui app: %s", _exc)
+            # Connect to external MCP servers and import their tools.
+            await _mcp_bridge.connect_clients()
+            logger.info("MCP subsystem ready")
+        else:
+            logger.debug("MCP disabled (set TINKER_MCP_ENABLED=true to enable)")
+    except ImportError as _exc:
+        logger.debug("MCP subsystem not available: %s", _exc)
 
     # ── Wire the health server to the orchestrator (now that it exists) ──────
     # The Orchestrator was just created above. Update the health server so

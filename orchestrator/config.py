@@ -254,6 +254,70 @@ class OrchestratorConfig:
         default_factory=lambda: os.getenv("TINKER_STATE_PATH", "./tinker_state.json")
     )
 
+    # ── Human-in-the-loop confirmation gates ─────────────────────────────────
+    # List of action names that require human approval before proceeding.
+    # When an action in this list is about to happen, Tinker pauses and asks
+    # the operator to approve or deny it — either via stdin (CLI mode) or via
+    # the Dashboard's confirm API.
+    #
+    # Recognised action names:
+    #   "git_push"       — before Fritz pushes to a remote git branch
+    #   "artifact_delete"— before overwriting an existing artifact file
+    #   "macro_snapshot" — before committing an architecture snapshot to git
+    #
+    # Set to an empty list (the default) to disable all gates.
+    # Set via env: TINKER_CONFIRM_BEFORE="git_push,artifact_delete"
+    confirm_before: list = field(
+        default_factory=lambda: [
+            a.strip()
+            for a in os.getenv("TINKER_CONFIRM_BEFORE", "").split(",")
+            if a.strip()
+        ]
+    )
+
+    # How long (seconds) to wait for the operator to respond to a confirmation
+    # request before auto-approving.  Set to 0.0 to wait forever.
+    # Default: 5 minutes (300 seconds) — long enough for a human to notice but
+    # short enough not to stall an overnight run indefinitely.
+    confirm_timeout_seconds: float = field(
+        default_factory=lambda: float(os.getenv("TINKER_CONFIRM_TIMEOUT", "300"))
+    )
+
+    # ── Checkpoint / pause-resume ─────────────────────────────────────────────
+    # Checkpoint saves the current micro loop state to disk so that if the
+    # process is killed or paused, the next run can resume where it left off
+    # rather than repeating the Architect/Critic calls.
+    #
+    # Set TINKER_CHECKPOINT_ENABLED=false to disable (useful for testing).
+    checkpoint_enabled: bool = field(
+        default_factory=lambda: os.getenv(
+            "TINKER_CHECKPOINT_ENABLED", "true"
+        ).lower() == "true"
+    )
+
+    # Path to the checkpoint JSON file.  Same atomic-write pattern as the
+    # state snapshot file.
+    checkpoint_path: str = field(
+        default_factory=lambda: os.getenv(
+            "TINKER_CHECKPOINT_PATH", "./tinker_checkpoint.json"
+        )
+    )
+
+    # ── Project instructions (TINKER.md) ─────────────────────────────────────
+    # Path to a markdown file containing project-specific instructions that
+    # are injected into the Architect AI's system prompt on every micro loop.
+    # This is analogous to CLAUDE.md in Claude Code.
+    #
+    # If the file does not exist, a warning is logged and the feature is
+    # silently disabled — Tinker will start without project instructions.
+    #
+    # Set via env: TINKER_INSTRUCTIONS_PATH=/path/to/my-project.md
+    project_instructions_path: str = field(
+        default_factory=lambda: os.getenv(
+            "TINKER_INSTRUCTIONS_PATH", "./TINKER.md"
+        )
+    )
+
     def __post_init__(self) -> None:
         """
         Validate all configuration values after dataclass construction.
@@ -324,6 +388,11 @@ class OrchestratorConfig:
         )
         self.max_validation_retries = _positive_int(
             self.max_validation_retries, "max_validation_retries", min_val=0
+        )
+
+        # Confirmation gate timeout must be non-negative (0 = wait forever)
+        self.confirm_timeout_seconds = _positive_float(
+            self.confirm_timeout_seconds, "confirm_timeout_seconds", min_val=0.0
         )
 
         logger.debug(

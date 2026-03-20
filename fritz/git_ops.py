@@ -58,6 +58,10 @@ class FritzGitOps:
         self._repo = Path(config.repo_path).resolve()
         self._identity = identity
         self._identity_applied = False
+        # Optional ConfirmationGate — set by the caller after construction to
+        # enable "git_push" confirmation requests before pushing to a remote.
+        # If None, pushes proceed without confirmation.
+        self.confirmation_gate = None
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
@@ -181,6 +185,23 @@ class FritzGitOps:
     ) -> FritzGitResult:
         """Push a branch to a remote."""
         branch = branch or await self.current_branch()
+
+        # ── Confirmation gate ─────────────────────────────────────────────────
+        if self.confirmation_gate is not None:
+            allowed = await self.confirmation_gate.request(
+                "git_push",
+                details={"branch": branch, "remote": remote, "force": force},
+                message=f"Push branch '{branch}' to remote '{remote}'",
+            )
+            if not allowed:
+                logger.info("git push cancelled by operator (branch=%s, remote=%s)", branch, remote)
+                return FritzGitResult(
+                    ok=False,
+                    operation="push",
+                    stderr="Cancelled by operator via confirmation gate",
+                    returncode=1,
+                )
+
         args = ["push"]
         if set_upstream:
             args += ["-u"]

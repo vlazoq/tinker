@@ -362,6 +362,20 @@ class OrchestratorState:
     # the prompt injection is one-shot (it doesn't persist across many loops).
     pending_stagnation_hint: Optional[str] = None
 
+    # ── Pause / resume ────────────────────────────────────────────────────────
+
+    # True when the orchestrator has been asked to pause (but not stop).
+    # The main loop waits on a _pause_event asyncio.Event when this is True.
+    paused: bool = False
+
+    # ── Human-in-the-loop confirmation gates ─────────────────────────────────
+
+    # Dict of pending confirmation requests.  Keyed by request_id (8-char UUID).
+    # Each value is a dict: {id, action, message, details, approved (None/bool)}.
+    # The Dashboard reads this from the state snapshot and displays pending
+    # requests to the operator.  The operator responds via POST /api/confirm/{id}.
+    pending_confirmations: dict = field(default_factory=dict)
+
     # ── Shutdown ─────────────────────────────────────────────────────────────
 
     # Set to True when shutdown has been requested (via signal or API call).
@@ -503,6 +517,8 @@ class OrchestratorState:
             # Per-subsystem micro-loop counts since last meso synthesis.
             "subsystem_micro_counts": self.subsystem_micro_counts,
             "shutdown_requested": self.shutdown_requested,
+            "paused": self.paused,
+            "pending_confirmations": list(self.pending_confirmations.values()),
             # Only expose the most recent history in the snapshot to keep
             # the file small — the full history lives in memory.
             "micro_history": [_record(r) for r in self.micro_history[-10:]],

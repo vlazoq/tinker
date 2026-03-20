@@ -111,8 +111,12 @@ Rules:
             self.logger.info("DebuggerMinion: iteration %d/%d", iteration, max_iter)
 
             # ── Build debug prompt ────────────────────────────────────────────
+            # Compress test output if it's large (long stack traces, verbose logs).
+            compressed_output = await self.compress_context(
+                test_output, "test output and stack trace"
+            )
             prompt = (
-                f"## Failing Test Output\n```\n{test_output[:3000]}\n```\n\n"
+                f"## Failing Test Output\n```\n{compressed_output}\n```\n\n"
                 + "## Source Code\n"
                 + "\n\n".join(code_sections)
                 + test_section

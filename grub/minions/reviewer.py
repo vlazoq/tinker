@@ -139,10 +139,8 @@ Below 5 means it needs to be rewritten.
             f"## Task Being Reviewed\n{task.title}\n\n{task.description}",
         ]
         if design_text:
-            # Truncate long design docs
-            design_excerpt = design_text[:3000]
-            if len(design_text) > 3000:
-                design_excerpt += "\n\n[... design document truncated ...]"
+            # Summarize instead of truncating — preserves key decisions.
+            design_excerpt = await self.compress_context(design_text, "design document")
             prompt_parts.append(f"## Original Design Document\n{design_excerpt}")
 
         prompt_parts.append("## Code to Review\n" + "\n\n".join(code_sections))
