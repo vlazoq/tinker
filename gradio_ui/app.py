@@ -33,9 +33,11 @@ from webui.core import (  # noqa: E402
     BACKUP_DIR,
     DLQ_DB,
     FLAGS_FILE,
+    FRITZ_CONFIG_FILE,
     TASKS_DB,
     db_query_sync as dbq,
     db_execute_sync as dbe,
+    fetch_fritz_status_sync,
     fetch_grub_status_sync,
     list_backups,
     load_config,
@@ -250,6 +252,148 @@ def _grub_impl_df():
     df["id"] = df["id"].str[:8] + "…"
     df["priority_score"] = df["priority_score"].round(3)
     return df
+
+
+def _fritz_md() -> str:
+    """Return a Markdown summary of Fritz config + live git state."""
+    s = fetch_fritz_status_sync()
+    git = s.get("git", {})
+    pp = s.get("push_policy", {})
+    lines = [
+        "## Fritz — Git Integration",
+        "",
+    ]
+    if not s.get("config_exists"):
+        lines.append("> ⚠️ `fritz_config.json` not found — showing defaults.")
+        lines.append("")
+
+    lines += [
+        f"**Branch:** `{git.get('branch') or '—'}`  "
+        f"**SHA:** `{git.get('sha') or '—'}`  "
+        f"**Tree:** {'✓ clean' if git.get('clean') else '⚠ dirty'}",
+        f"**Identity:** {s.get('identity_mode', '—')}  "
+        f"({s.get('git_name', '')} `{s.get('git_email', '')}`)",
+        "",
+        "### Platforms",
+    ]
+    gh = "✅" if s.get("github_enabled") else "❌"
+    gt = "✅" if s.get("gitea_enabled") else "❌"
+    gh_target = f"{s.get('github_owner','')}/{s.get('github_repo','')}".strip("/")
+    gt_url = s.get("gitea_base_url", "")
+    lines += [
+        f"- GitHub {gh} {gh_target}",
+        f"- Gitea  {gt} {gt_url}",
+        "",
+        "### Push Policy",
+        f"| Setting | Value |",
+        f"|---------|-------|",
+        f"| allow_push_to_main | `{pp.get('allow_push_to_main', False)}` |",
+        f"| require_pr | `{pp.get('require_pr', True)}` |",
+        f"| require_ci_green | `{pp.get('require_ci_green', True)}` |",
+        f"| auto_merge_method | `{pp.get('auto_merge_method', 'squash')}` |",
+    ]
+
+    remotes = git.get("remotes", [])
+    if remotes:
+        lines += ["", "### Remotes"]
+        for r in remotes:
+            lines.append(f"- `{r}`")
+
+    git_changes = git.get("status", "")
+    if git_changes:
+        lines += ["", "### Uncommitted changes", f"```\n{git_changes}\n```"]
+
+    return "\n".join(lines)
+
+
+async def _fritz_ship_async(message: str, task_id: str, auto_merge: bool) -> str:
+    """Async helper for commit-and-ship; returns a status string."""
+    from fritz.config import FritzConfig
+    from fritz.agent import FritzAgent
+
+    config = (
+        FritzConfig.from_file(FRITZ_CONFIG_FILE)
+        if FRITZ_CONFIG_FILE.exists()
+        else FritzConfig()
+    )
+    agent = FritzAgent(config)
+    await agent.setup()
+    result = await agent.commit_and_ship(
+        message=message, task_id=task_id or "gradio", auto_merge=auto_merge
+    )
+    if result.ok:
+        parts = ["✓ Success"]
+        if result.branch:
+            parts.append(f"branch={result.branch}")
+        if result.commit_sha:
+            parts.append(f"sha={result.commit_sha}")
+        if result.pr_url:
+            parts.append(f"pr={result.pr_url}")
+        if result.merged:
+            parts.append("merged=true")
+        return "  ".join(parts)
+    return "✗ " + "; ".join(result.errors or ["Unknown error"])
+
+
+async def _fritz_push_async(branch: str) -> str:
+    from fritz.config import FritzConfig
+    from fritz.agent import FritzAgent
+
+    config = (
+        FritzConfig.from_file(FRITZ_CONFIG_FILE)
+        if FRITZ_CONFIG_FILE.exists()
+        else FritzConfig()
+    )
+    agent = FritzAgent(config)
+    await agent.setup()
+    res = await agent.git.push(branch or None)
+    return "✓ Pushed successfully." if res.ok else f"✗ {res.stderr}"
+
+
+async def _fritz_pr_async(title: str, body: str, head: str, base: str) -> str:
+    from fritz.config import FritzConfig
+    from fritz.agent import FritzAgent
+
+    config = (
+        FritzConfig.from_file(FRITZ_CONFIG_FILE)
+        if FRITZ_CONFIG_FILE.exists()
+        else FritzConfig()
+    )
+    agent = FritzAgent(config)
+    await agent.setup()
+    res = await agent.create_pr(title=title, body=body, head=head, base=base or None)
+    return f"✓ PR created: {res.url}" if res.ok else f"✗ {res.error}"
+
+
+async def _fritz_verify_async() -> str:
+    from fritz.config import FritzConfig
+    from fritz.agent import FritzAgent
+
+    config = (
+        FritzConfig.from_file(FRITZ_CONFIG_FILE)
+        if FRITZ_CONFIG_FILE.exists()
+        else FritzConfig()
+    )
+    agent = FritzAgent(config)
+    await agent.setup()
+    results = await agent.verify_connections()
+    parts = [f"{p}: {'✓' if ok else '✗'}" for p, ok in results.items()]
+    return "  |  ".join(parts) if parts else "No platforms enabled."
+
+
+def _run_async(coro):
+    """Run an async coroutine from a synchronous Gradio callback."""
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, coro)
+                return future.result()
+    except RuntimeError:
+        pass
+    return asyncio.run(coro)
 
 
 # ── App builder ───────────────────────────────────────────────────────────────
@@ -562,6 +706,65 @@ def build_app() -> gr.Blocks:
                 grub_refresh.click(
                     fn=lambda: (_grub_md(), _grub_impl_df()),
                     outputs=[grub_md_out, grub_df_out],
+                )
+
+            # ── Fritz ─────────────────────────────────────────────────────────
+            with gr.Tab("🔀 Fritz"):
+                fritz_md_out = gr.Markdown(_fritz_md())
+                fritz_result_out = gr.Textbox(label="Result", interactive=False, lines=2)
+                fritz_refresh_btn = gr.Button("↻ Refresh Status", variant="secondary", size="sm")
+                fritz_refresh_btn.click(fn=_fritz_md, outputs=fritz_md_out)
+
+                with gr.Row():
+                    fritz_verify_btn = gr.Button("🔌 Verify Connections", variant="secondary", size="sm")
+                fritz_verify_btn.click(
+                    fn=lambda: _run_async(_fritz_verify_async()),
+                    outputs=fritz_result_out,
+                )
+
+                gr.Markdown("### 🚀 Commit & Ship")
+                with gr.Row():
+                    fritz_msg = gr.Textbox(
+                        label="Commit message",
+                        placeholder="fix: correct off-by-one in parser",
+                        scale=3,
+                    )
+                    fritz_task = gr.Textbox(label="Task ID (optional)", placeholder="grub-abc123", scale=1)
+                fritz_auto_merge = gr.Checkbox(label="Auto-merge PR (if policy allows)", value=False)
+                fritz_ship_btn = gr.Button("⚡ Commit & Ship", variant="primary")
+                fritz_ship_btn.click(
+                    fn=lambda msg, tid, am: _run_async(_fritz_ship_async(msg, tid, am)),
+                    inputs=[fritz_msg, fritz_task, fritz_auto_merge],
+                    outputs=fritz_result_out,
+                )
+
+                gr.Markdown("### ⬆ Push Branch")
+                with gr.Row():
+                    fritz_push_branch = gr.Textbox(
+                        label="Branch (leave blank for current)",
+                        placeholder="main",
+                        scale=2,
+                    )
+                    fritz_push_btn = gr.Button("⬆ Push", variant="primary", scale=1)
+                fritz_push_btn.click(
+                    fn=lambda b: _run_async(_fritz_push_async(b)),
+                    inputs=fritz_push_branch,
+                    outputs=fritz_result_out,
+                )
+
+                gr.Markdown("### 🔀 Create Pull Request")
+                with gr.Row():
+                    fritz_pr_title = gr.Textbox(label="Title", placeholder="fix: …", scale=3)
+                    fritz_pr_head  = gr.Textbox(label="Head branch", placeholder="feature/xyz", scale=1)
+                    fritz_pr_base  = gr.Textbox(label="Base branch", placeholder="main", scale=1)
+                fritz_pr_body = gr.Textbox(
+                    label="Description", placeholder="Describe what this PR does…", lines=3
+                )
+                fritz_pr_btn = gr.Button("🔀 Create PR", variant="primary")
+                fritz_pr_btn.click(
+                    fn=lambda t, b, h, bs: _run_async(_fritz_pr_async(t, b, h, bs)),
+                    inputs=[fritz_pr_title, fritz_pr_body, fritz_pr_head, fritz_pr_base],
+                    outputs=fritz_result_out,
                 )
 
             # ── Audit Log ─────────────────────────────────────────────────────

@@ -30,9 +30,11 @@ from webui.core import (  # noqa: E402
     BACKUP_DIR,
     DLQ_DB,
     FLAGS_FILE,
+    FRITZ_CONFIG_FILE,
     TASKS_DB,
     db_query_sync as dbq,
     db_execute_sync as dbe,
+    fetch_fritz_status_sync,
     fetch_grub_status_sync,
     list_backups,
     load_config,
@@ -73,6 +75,7 @@ tabs = st.tabs(
         "💀 DLQ",
         "💾 Backups",
         "🤖 Grub",
+        "🔀 Fritz",
         "📜 Audit Log",
     ]
 )
@@ -441,8 +444,172 @@ with tabs[6]:
         st.info(f"No artifacts yet. Grub writes to `{arts_dir}` when tasks complete.")
 
 
-# ── Audit Log ─────────────────────────────────────────────────────────────────
+# ── Fritz ─────────────────────────────────────────────────────────────────────
 with tabs[7]:
+    import asyncio as _asyncio
+
+    fritz_col1, fritz_col2 = st.columns([1, 1])
+
+    with fritz_col1:
+        if st.button("↻ Refresh", key="fritz_refresh"):
+            st.rerun()
+
+    fritz_status = fetch_fritz_status_sync()
+    git_info = fritz_status.get("git", {})
+    pp = fritz_status.get("push_policy", {})
+
+    if not fritz_status.get("config_exists"):
+        st.warning("`fritz_config.json` not found — showing defaults. Run Fritz once to generate a config file.")
+
+    # ── Status summary ────────────────────────────────────────────────────────
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Branch", git_info.get("branch") or "—")
+    m2.metric("HEAD SHA", git_info.get("sha") or "—")
+    m3.metric("Working tree", "✓ clean" if git_info.get("clean") else "⚠ dirty")
+    m4.metric("Identity", fritz_status.get("identity_mode", "—"))
+
+    pc1, pc2 = st.columns(2)
+    with pc1:
+        st.markdown("**Platforms**")
+        gh_enabled = fritz_status.get("github_enabled", False)
+        gt_enabled = fritz_status.get("gitea_enabled", False)
+        gh_target = fritz_status.get("github_owner", "") + "/" + fritz_status.get("github_repo", "")
+        gt_target = fritz_status.get("gitea_base_url", "")
+        st.markdown(
+            f"- GitHub: {'✅' if gh_enabled else '❌'} {gh_target.strip('/')}\n"
+            f"- Gitea:  {'✅' if gt_enabled else '❌'} {gt_target}"
+        )
+    with pc2:
+        st.markdown("**Push Policy**")
+        st.markdown(
+            f"- push to main: `{pp.get('allow_push_to_main', False)}`\n"
+            f"- require PR: `{pp.get('require_pr', True)}`\n"
+            f"- require CI: `{pp.get('require_ci_green', True)}`\n"
+            f"- merge method: `{pp.get('auto_merge_method', 'squash')}`"
+        )
+
+    remotes = git_info.get("remotes", [])
+    if remotes:
+        with st.expander("Remotes"):
+            for r in remotes:
+                st.code(r, language=None)
+
+    git_changes = git_info.get("status", "")
+    if git_changes:
+        with st.expander("Uncommitted changes"):
+            st.code(git_changes, language=None)
+
+    st.divider()
+
+    # ── Commit & Ship ─────────────────────────────────────────────────────────
+    with st.expander("🚀 Commit & Ship", expanded=True):
+        ship_msg = st.text_input(
+            "Commit message",
+            placeholder="fix: correct off-by-one in parser",
+            key="fritz_ship_msg",
+        )
+        ship_task = st.text_input("Task ID (optional)", placeholder="grub-abc123", key="fritz_ship_task")
+        ship_auto_merge = st.checkbox("Auto-merge PR (if policy allows)", key="fritz_auto_merge")
+
+        if st.button("⚡ Commit & Ship", key="fritz_ship_btn", disabled=not ship_msg.strip()):
+            try:
+                from fritz.config import FritzConfig
+                from fritz.agent import FritzAgent
+
+                config = (
+                    FritzConfig.from_file(FRITZ_CONFIG_FILE)
+                    if FRITZ_CONFIG_FILE.exists()
+                    else FritzConfig()
+                )
+                agent = FritzAgent(config)
+                result = _asyncio.run(_async_ship(agent, ship_msg, ship_task, ship_auto_merge))
+                if result.ok:
+                    st.success(
+                        f"✓ {'Merged' if result.merged else 'PR created' if result.pr_url else 'Pushed'}"
+                        + (f" — branch: `{result.branch}`" if result.branch else "")
+                        + (f" — SHA: `{result.commit_sha}`" if result.commit_sha else "")
+                        + (f"\n\nPR: {result.pr_url}" if result.pr_url else "")
+                    )
+                else:
+                    st.error("✗ " + "; ".join(result.errors or ["Unknown error"]))
+            except Exception as exc:
+                st.error(f"Fritz error: {exc}")
+
+    # ── Push branch ───────────────────────────────────────────────────────────
+    with st.expander("⬆ Push Branch"):
+        push_br = st.text_input(
+            "Branch (leave blank for current)",
+            placeholder=git_info.get("branch", "main"),
+            key="fritz_push_branch",
+        )
+        if st.button("⬆ Push", key="fritz_push_btn"):
+            try:
+                from fritz.config import FritzConfig
+                from fritz.agent import FritzAgent
+
+                config = (
+                    FritzConfig.from_file(FRITZ_CONFIG_FILE)
+                    if FRITZ_CONFIG_FILE.exists()
+                    else FritzConfig()
+                )
+                agent = FritzAgent(config)
+                res = _asyncio.run(_async_push(agent, push_br or None))
+                if res.ok:
+                    st.success(f"Pushed {push_br or 'current branch'} successfully.")
+                else:
+                    st.error(f"Push failed: {res.stderr}")
+            except Exception as exc:
+                st.error(f"Fritz error: {exc}")
+
+    # ── Create PR ─────────────────────────────────────────────────────────────
+    with st.expander("🔀 Create Pull Request"):
+        pr_c1, pr_c2 = st.columns(2)
+        with pr_c1:
+            pr_title  = st.text_input("Title", placeholder="fix: correct off-by-one", key="fritz_pr_title")
+            pr_head   = st.text_input("Head branch", placeholder=git_info.get("branch", "feature/xyz"), key="fritz_pr_head")
+        with pr_c2:
+            pr_base   = st.text_input("Base branch", placeholder="main", key="fritz_pr_base")
+            pr_body   = st.text_area("Description", placeholder="Describe what this PR does…", key="fritz_pr_body", height=80)
+        if st.button("🔀 Create PR", key="fritz_pr_btn", disabled=not (pr_title.strip() and pr_head.strip())):
+            try:
+                from fritz.config import FritzConfig
+                from fritz.agent import FritzAgent
+
+                config = (
+                    FritzConfig.from_file(FRITZ_CONFIG_FILE)
+                    if FRITZ_CONFIG_FILE.exists()
+                    else FritzConfig()
+                )
+                agent = FritzAgent(config)
+                res = _asyncio.run(_async_pr(agent, pr_title, pr_body, pr_head, pr_base or None))
+                if res.ok:
+                    st.success(f"PR created: {res.url or '(no URL returned)'}")
+                else:
+                    st.error(f"PR failed: {res.error}")
+            except Exception as exc:
+                st.error(f"Fritz error: {exc}")
+
+
+# Async helpers called from Streamlit's sync context
+async def _async_ship(agent, message, task_id, auto_merge):
+    await agent.setup()
+    return await agent.commit_and_ship(
+        message=message, task_id=task_id or "webui", auto_merge=auto_merge
+    )
+
+
+async def _async_push(agent, branch):
+    await agent.setup()
+    return await agent.git.push(branch) if branch else await agent.git.push()
+
+
+async def _async_pr(agent, title, body, head, base):
+    await agent.setup()
+    return await agent.create_pr(title=title, body=body, head=head, base=base)
+
+
+# ── Audit Log ─────────────────────────────────────────────────────────────────
+with tabs[8]:
     evt_types = [
         r["event_type"]
         for r in dbq(

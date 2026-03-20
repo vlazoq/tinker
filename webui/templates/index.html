@@ -897,10 +897,268 @@ const GrubStatus = () => {
   );
 };
 
+// ── Fritz tab ─────────────────────────────────────────────────────────────────
+const FritzPanel = () => {
+  const [status, setStatus]     = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [shipMsg, setShipMsg]   = useState('');
+  const [taskId, setTaskId]     = useState('');
+  const [autoMerge, setAutoMerge] = useState(false);
+  const [result, setResult]     = useState(null);
+  const [busy, setBusy]         = useState(false);
+  const [pushBranch, setPushBranch] = useState('');
+  const [prTitle, setPrTitle]   = useState('');
+  const [prBody, setPrBody]     = useState('');
+  const [prHead, setPrHead]     = useState('');
+  const [prBase, setPrBase]     = useState('');
+  const [verifyRes, setVerifyRes] = useState(null);
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    api.get('/api/fritz/status').then(d => { setStatus(d); setLoading(false); });
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const ship = () => {
+    setBusy(true); setResult(null);
+    api.post('/api/fritz/ship', { message: shipMsg, task_id: taskId, auto_merge: autoMerge })
+      .then(r => { setResult(r); setBusy(false); refresh(); });
+  };
+
+  const push = () => {
+    setBusy(true); setResult(null);
+    api.post('/api/fritz/push', { branch: pushBranch })
+      .then(r => { setResult(r); setBusy(false); refresh(); });
+  };
+
+  const createPr = () => {
+    setBusy(true); setResult(null);
+    api.post('/api/fritz/pr', { title: prTitle, body: prBody, head: prHead, base: prBase })
+      .then(r => { setResult(r); setBusy(false); });
+  };
+
+  const verify = () => {
+    setBusy(true); setVerifyRes(null);
+    api.get('/api/fritz/verify').then(r => { setVerifyRes(r); setBusy(false); });
+  };
+
+  if (loading) return <div className="card"><Spinner /> Loading Fritz status…</div>;
+
+  const git   = status?.git || {};
+  const pp    = status?.push_policy || {};
+  const ghOwner = status?.github_owner;
+  const ghRepo  = status?.github_repo;
+
+  return (
+    <div>
+      {/* ── Status card ── */}
+      <div className="card">
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+          <h2 style={{margin:0}}>🔀 Fritz — Git Integration</h2>
+          <button className="btn btn-secondary btn-sm" onClick={refresh}>↻ Refresh</button>
+        </div>
+
+        {!status?.config_exists && (
+          <Alert type="warning">
+            <code>fritz_config.json</code> not found — showing defaults.
+            Run Fritz once to generate a config file.
+          </Alert>
+        )}
+
+        <div className="stats-grid" style={{gridTemplateColumns:'repeat(4,1fr)', marginBottom:12}}>
+          <StatBox value={git.branch || '—'} label="Branch" />
+          <StatBox value={git.sha    || '—'} label="HEAD" />
+          <StatBox value={git.clean ? '✓ clean' : '⚠ dirty'} label="Working tree" />
+          <StatBox value={status?.identity_mode || '—'} label="Identity" />
+        </div>
+
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+          <div>
+            <strong>Platforms</strong>
+            <ul style={{margin:'4px 0', paddingLeft:18, fontSize:13}}>
+              <li>
+                GitHub: {status?.github_enabled
+                  ? <span className="badge badge-completed">enabled</span>
+                  : <span className="badge badge-failed">disabled</span>}
+                {ghOwner && ghRepo && <span className="muted"> {ghOwner}/{ghRepo}</span>}
+              </li>
+              <li>
+                Gitea: {status?.gitea_enabled
+                  ? <span className="badge badge-completed">enabled</span>
+                  : <span className="badge badge-failed">disabled</span>}
+                {status?.gitea_base_url && <span className="muted"> {status.gitea_base_url}</span>}
+              </li>
+            </ul>
+          </div>
+          <div>
+            <strong>Push Policy</strong>
+            <ul style={{margin:'4px 0', paddingLeft:18, fontSize:13}}>
+              <li>push to main: <code>{String(pp.allow_push_to_main)}</code></li>
+              <li>require PR: <code>{String(pp.require_pr)}</code></li>
+              <li>require CI: <code>{String(pp.require_ci_green)}</code></li>
+              <li>merge method: <code>{pp.auto_merge_method}</code></li>
+            </ul>
+          </div>
+        </div>
+
+        {git.remotes?.length > 0 && (
+          <div style={{marginTop:8}}>
+            <strong>Remotes</strong>
+            <ul style={{margin:'4px 0', paddingLeft:18, fontSize:12}} className="muted">
+              {git.remotes.map((r, i) => <li key={i}><code>{r}</code></li>)}
+            </ul>
+          </div>
+        )}
+
+        {git.status && (
+          <div style={{marginTop:8}}>
+            <strong>Uncommitted changes</strong>
+            <pre style={{fontSize:12, margin:'4px 0', background:'var(--bg-card-alt,#161b22)', padding:'6px 10px', borderRadius:4}}>
+              {git.status}
+            </pre>
+          </div>
+        )}
+
+        {/* Verify connections */}
+        <div style={{marginTop:12}}>
+          <button className="btn btn-secondary btn-sm" onClick={verify} disabled={busy}>
+            {busy ? <Spinner /> : '🔌 Verify Connections'}
+          </button>
+          {verifyRes && (
+            <span style={{marginLeft:10, fontSize:13}}>
+              {Object.entries(verifyRes.connections || {}).map(([p, ok]) => (
+                <span key={p} style={{marginRight:8}}>
+                  {p}: {ok
+                    ? <span className="badge badge-completed">OK</span>
+                    : <span className="badge badge-failed">FAIL</span>}
+                </span>
+              ))}
+              {verifyRes.error && <span className="badge badge-failed">{verifyRes.error}</span>}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Result banner ── */}
+      {result && (
+        <Alert type={result.ok ? 'success' : 'error'}>
+          {result.ok
+            ? <>
+                ✓ {result.merged ? 'Committed, pushed, and merged' : result.direct_push ? 'Pushed directly' : 'PR created'}
+                {result.branch && <> — branch: <code>{result.branch}</code></>}
+                {result.commit_sha && <> SHA: <code>{result.commit_sha}</code></>}
+                {result.pr_url && <> <a href={result.pr_url} target="_blank" rel="noreferrer">{result.pr_url}</a></>}
+              </>
+            : <>✗ {result.error || (result.errors || []).join('; ')}</>}
+        </Alert>
+      )}
+
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+        {/* ── Commit & Ship ── */}
+        <div className="card">
+          <h3 style={{marginTop:0}}>🚀 Commit &amp; Ship</h3>
+          <p style={{fontSize:13}} className="muted">
+            Stages all changes, commits, and ships via PR or direct push according to policy.
+          </p>
+          <label style={{fontSize:13}}>Commit message</label>
+          <input
+            className="form-input"
+            placeholder="fix: correct off-by-one in parser"
+            value={shipMsg}
+            onChange={e => setShipMsg(e.target.value)}
+          />
+          <label style={{fontSize:13, marginTop:8, display:'block'}}>Task ID (optional)</label>
+          <input
+            className="form-input"
+            placeholder="grub-abc123"
+            value={taskId}
+            onChange={e => setTaskId(e.target.value)}
+          />
+          <label style={{fontSize:13, marginTop:8, display:'flex', alignItems:'center', gap:6, cursor:'pointer'}}>
+            <input type="checkbox" checked={autoMerge} onChange={e => setAutoMerge(e.target.checked)} />
+            Auto-merge PR (if policy allows)
+          </label>
+          <button
+            className="btn btn-primary"
+            style={{marginTop:12}}
+            onClick={ship}
+            disabled={busy || !shipMsg.trim()}
+          >
+            {busy ? <Spinner /> : '⚡ Commit & Ship'}
+          </button>
+        </div>
+
+        {/* ── Push branch ── */}
+        <div className="card">
+          <h3 style={{marginTop:0}}>⬆ Push Branch</h3>
+          <p style={{fontSize:13}} className="muted">
+            Push a local branch to all configured remotes.
+          </p>
+          <label style={{fontSize:13}}>Branch name (leave blank for current)</label>
+          <input
+            className="form-input"
+            placeholder={git.branch || 'main'}
+            value={pushBranch}
+            onChange={e => setPushBranch(e.target.value)}
+          />
+          <button
+            className="btn btn-primary"
+            style={{marginTop:12}}
+            onClick={push}
+            disabled={busy}
+          >
+            {busy ? <Spinner /> : '⬆ Push'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Create PR ── */}
+      <div className="card">
+        <h3 style={{marginTop:0}}>🔀 Create Pull Request</h3>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+          <div>
+            <label style={{fontSize:13}}>Title</label>
+            <input className="form-input" placeholder="fix: correct off-by-one" value={prTitle} onChange={e=>setPrTitle(e.target.value)} />
+          </div>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+            <div>
+              <label style={{fontSize:13}}>Head branch</label>
+              <input className="form-input" placeholder={git.branch || 'feature/xyz'} value={prHead} onChange={e=>setPrHead(e.target.value)} />
+            </div>
+            <div>
+              <label style={{fontSize:13}}>Base branch</label>
+              <input className="form-input" placeholder="main" value={prBase} onChange={e=>setPrBase(e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <label style={{fontSize:13, marginTop:8, display:'block'}}>Description</label>
+        <textarea
+          className="form-input"
+          rows={3}
+          placeholder="Describe what this PR does…"
+          value={prBody}
+          onChange={e=>setPrBody(e.target.value)}
+          style={{resize:'vertical', fontFamily:'inherit'}}
+        />
+        <button
+          className="btn btn-primary"
+          style={{marginTop:12}}
+          onClick={createPr}
+          disabled={busy || !prTitle.trim() || !prHead.trim()}
+        >
+          {busy ? <Spinner /> : '🔀 Create PR'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'dashboard', label: '📊 Dashboard',     Component: Dashboard },
   { id: 'grub',      label: '🐛 Grub',           Component: GrubStatus },
+  { id: 'fritz',     label: '🔀 Fritz',           Component: FritzPanel },
   { id: 'config',    label: '⚙️ Config',         Component: Config },
   { id: 'flags',     label: '🚩 Feature Flags',  Component: FeatureFlags },
   { id: 'tasks',     label: '📋 Task Queue',     Component: TaskQueue },

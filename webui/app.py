@@ -34,9 +34,11 @@ from .core import (
     BACKUP_DIR,
     DLQ_DB,
     FLAGS_FILE,
+    FRITZ_CONFIG_FILE,
     TASKS_DB,
     db_execute,
     db_query,
+    fetch_fritz_status,
     fetch_grub_status,
     fetch_health,
     list_backups,
@@ -377,6 +379,127 @@ async def api_audit(
         "page": page,
         "has_next": len(items) == limit,
     }
+
+
+# ── Fritz ─────────────────────────────────────────────────────────────────────
+@app.get("/api/fritz/status")
+async def api_fritz_status():
+    """Return Fritz config + live git state (branch, SHA, dirty files, remotes)."""
+    return await fetch_fritz_status()
+
+
+@app.post("/api/fritz/ship")
+async def api_fritz_ship(request: Request):
+    """
+    Run Fritz commit-and-ship pipeline.
+    Body: { message, task_id, task_description, auto_merge }
+    """
+    body = await request.json()
+    try:
+        from .core import BASE_DIR as _BASE_DIR
+        from fritz.config import FritzConfig
+        from fritz.agent import FritzAgent
+
+        config = (
+            FritzConfig.from_file(FRITZ_CONFIG_FILE)
+            if FRITZ_CONFIG_FILE.exists()
+            else FritzConfig()
+        )
+        agent = FritzAgent(config)
+        await agent.setup()
+        result = await agent.commit_and_ship(
+            message=body.get("message", "chore: automated commit by Fritz"),
+            task_id=body.get("task_id", "webui"),
+            task_description=body.get("task_description", ""),
+            auto_merge=bool(body.get("auto_merge", False)),
+        )
+        return {
+            "ok": result.ok,
+            "branch": result.branch,
+            "commit_sha": result.commit_sha,
+            "pr_url": result.pr_url,
+            "pr_number": result.pr_number,
+            "merged": result.merged,
+            "direct_push": result.direct_push,
+            "errors": result.errors,
+        }
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.post("/api/fritz/push")
+async def api_fritz_push(request: Request):
+    """
+    Push the current (or specified) branch.
+    Body: { branch }
+    """
+    body = await request.json()
+    try:
+        from fritz.config import FritzConfig
+        from fritz.agent import FritzAgent
+
+        config = (
+            FritzConfig.from_file(FRITZ_CONFIG_FILE)
+            if FRITZ_CONFIG_FILE.exists()
+            else FritzConfig()
+        )
+        agent = FritzAgent(config)
+        await agent.setup()
+        branch = body.get("branch") or await agent.git.current_branch()
+        result = await agent.push(branch=branch)
+        return {"ok": result.ok, "branch": branch, "error": result.stderr}
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.post("/api/fritz/pr")
+async def api_fritz_create_pr(request: Request):
+    """
+    Create a pull request on GitHub or Gitea.
+    Body: { title, body, head, base, platform }
+    """
+    body = await request.json()
+    try:
+        from fritz.config import FritzConfig
+        from fritz.agent import FritzAgent
+
+        config = (
+            FritzConfig.from_file(FRITZ_CONFIG_FILE)
+            if FRITZ_CONFIG_FILE.exists()
+            else FritzConfig()
+        )
+        agent = FritzAgent(config)
+        await agent.setup()
+        result = await agent.create_pr(
+            title=body.get("title", ""),
+            body=body.get("body", ""),
+            head=body.get("head", ""),
+            base=body.get("base"),
+            platform=body.get("platform", "auto"),
+        )
+        return {"ok": result.ok, "url": result.url, "error": result.error, "data": result.data}
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.get("/api/fritz/verify")
+async def api_fritz_verify():
+    """Test GitHub and Gitea credentials. Returns {github: bool, gitea: bool}."""
+    try:
+        from fritz.config import FritzConfig
+        from fritz.agent import FritzAgent
+
+        config = (
+            FritzConfig.from_file(FRITZ_CONFIG_FILE)
+            if FRITZ_CONFIG_FILE.exists()
+            else FritzConfig()
+        )
+        agent = FritzAgent(config)
+        await agent.setup()
+        results = await agent.verify_connections()
+        return {"ok": True, "connections": results}
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
 
 # ── Log streaming (SSE) ───────────────────────────────────────────────────────
