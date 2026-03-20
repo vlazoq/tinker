@@ -362,7 +362,7 @@ class FritzAgent:
 
         if auto_merge and pr_number and self._github:
             ci_status: str | None = None
-            if self._policy.evaluate_merge("", None).requires_ci:  # type: ignore[union-attr]
+            if self.config.push_policy.require_ci_green:
                 ci_result = await self._github.wait_for_ci(
                     sha, timeout=self.config.push_policy.ci_timeout_seconds
                 )
@@ -455,10 +455,16 @@ class FritzAgent:
         crash because of a logging failure.
         """
         try:
-            from ..observability.audit_log import AuditLog, AuditEventType  # type: ignore[import]
+            # Support both package-relative and standalone import styles.
+            try:
+                from ..observability.audit_log import AuditLog, AuditEventType
+            except ImportError:
+                from observability.audit_log import AuditLog, AuditEventType  # type: ignore[no-redef]
 
             log_path = self.config.audit_log_path or None
             audit = AuditLog(db_path=log_path) if log_path else AuditLog()
+            # AuditLog requires an explicit connect() call before logging.
+            await audit.connect()
             await audit.log(
                 event_type=AuditEventType.CUSTOM,
                 actor="fritz",
@@ -466,5 +472,6 @@ class FritzAgent:
                 outcome="ok" if not details.get("errors") else "error",
                 details={"event": event_type, **details},
             )
+            await audit.close()
         except Exception as exc:
             logger.debug("Fritz audit log skipped: %s", exc)

@@ -21,7 +21,14 @@ from __future__ import annotations
 
 import logging
 
-from ..security.secrets import SecretManager
+# Fritz lives inside the tinker package but is also importable standalone
+# (the UI files add the tinker root to sys.path and do `from fritz.config import ...`).
+# Support both import styles with a graceful fallback.
+try:
+    from ..security.secrets import SecretManager
+except ImportError:
+    from security.secrets import SecretManager  # type: ignore[no-redef]
+
 from .config import FritzConfig
 
 logger = logging.getLogger(__name__)

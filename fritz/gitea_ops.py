@@ -117,7 +117,7 @@ class FritzGitea:
                     "body": body,
                     "head": head,
                     "base": base,
-                    "draft_id": 1 if draft else 0,  # Gitea draft field
+                    "draft": draft,
                 },
             )
             return FritzRemoteResult(
@@ -146,7 +146,7 @@ class FritzGitea:
             "merge": "merge",
             "rebase": "rebase",
             "squash": "squash",
-            "rebase": "rebase",
+            "fast-forward-only": "fast-forward-only",
         }
         payload: dict[str, Any] = {"Do": styles.get(method, "squash")}
         if commit_title:

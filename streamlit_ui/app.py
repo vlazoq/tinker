@@ -66,6 +66,30 @@ st.markdown(
 
 st.title("🔧 TINKER — Control Panel")
 
+
+# ── Fritz async helpers (defined before use) ──────────────────────────────────
+
+async def _async_ship(agent, message, task_id, auto_merge):
+    await agent.setup()
+    return await agent.commit_and_ship(
+        message=message, task_id=task_id or "webui", auto_merge=auto_merge
+    )
+
+
+async def _async_push(agent, branch):
+    await agent.setup()
+    if branch:
+        return await agent.git.push(branch)
+    return await agent.git.push()
+
+
+async def _async_pr(agent, title, body, head, base):
+    await agent.setup()
+    return await agent.create_pr(title=title, body=body, head=head, base=base)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 tabs = st.tabs(
     [
         "📊 Dashboard",
@@ -588,24 +612,6 @@ with tabs[7]:
                     st.error(f"PR failed: {res.error}")
             except Exception as exc:
                 st.error(f"Fritz error: {exc}")
-
-
-# Async helpers called from Streamlit's sync context
-async def _async_ship(agent, message, task_id, auto_merge):
-    await agent.setup()
-    return await agent.commit_and_ship(
-        message=message, task_id=task_id or "webui", auto_merge=auto_merge
-    )
-
-
-async def _async_push(agent, branch):
-    await agent.setup()
-    return await agent.git.push(branch) if branch else await agent.git.push()
-
-
-async def _async_pr(agent, title, body, head, base):
-    await agent.setup()
-    return await agent.create_pr(title=title, body=body, head=head, base=base)
 
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────

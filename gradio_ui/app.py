@@ -382,17 +382,15 @@ async def _fritz_verify_async() -> str:
 
 
 def _run_async(coro):
-    """Run an async coroutine from a synchronous Gradio callback."""
+    """
+    Run an async coroutine from a synchronous Gradio callback.
+
+    Gradio runs callbacks in a thread pool where there is no running event loop,
+    so asyncio.run() is always safe here.  We avoid the ThreadPoolExecutor
+    approach (running asyncio.run inside a thread) because that pattern can
+    deadlock when the outer loop holds resources the inner loop needs.
+    """
     import asyncio
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, coro)
-                return future.result()
-    except RuntimeError:
-        pass
     return asyncio.run(coro)
 
 
