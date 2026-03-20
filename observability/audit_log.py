@@ -66,6 +66,17 @@ from resilience.migrations import SQLiteMigrationRunner
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Tuneable constants (extracted from magic literals for maintainability)
+# ---------------------------------------------------------------------------
+
+#: How often the background flush task drains the event buffer to SQLite.
+_FLUSH_INTERVAL_SECONDS: float = 5.0
+
+#: Trigger an immediate flush when the in-memory buffer reaches this many events.
+#: Keeps memory bounded and ensures high-throughput bursts are persisted quickly.
+_FLUSH_BUFFER_MAX: int = 50
+
 # Baseline migration — establishes the schema_migrations table for this DB.
 # Future schema changes should be added as version 2, 3, etc.
 AUDIT_MIGRATIONS: list[tuple[int, str]] = [
@@ -113,7 +124,7 @@ class AuditLog:
         self._conn = None
         self._lock = asyncio.Lock()
         self._buffer: list[dict] = []
-        self._flush_interval = 5.0  # Flush buffer every 5 seconds
+        self._flush_interval = _FLUSH_INTERVAL_SECONDS
         self._flush_task: Optional[asyncio.Task] = None
 
     async def connect(self) -> None:
@@ -215,7 +226,7 @@ class AuditLog:
         self._buffer.append(event)
 
         # Flush immediately if buffer is large
-        if len(self._buffer) >= 50:
+        if len(self._buffer) >= _FLUSH_BUFFER_MAX:
             await self._flush_buffer()
 
         return event_id
@@ -274,8 +285,12 @@ class AuditLog:
                 if d.get("details"):
                     try:
                         d["details"] = json.loads(d["details"])
-                    except Exception:
-                        pass
+                    except Exception as _json_exc:
+                        logger.debug(
+                            "AuditLog.query: failed to parse details JSON for event %s: %s",
+                            d.get("id"),
+                            _json_exc,
+                        )
                 result.append(d)
             return result
         except Exception as exc:
