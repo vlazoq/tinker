@@ -138,6 +138,31 @@ class GrubConfig:
     enable_git: bool = os.getenv("GRUB_ENABLE_GIT", "false").lower() == "true"
     request_timeout: float = float(os.getenv("GRUB_REQUEST_TIMEOUT", "120.0"))
 
+    # ── Context summarization ──────────────────────────────────────────────────
+    # When a minion's input context (design docs, existing code, prior output)
+    # exceeds context_max_chars, it is compressed using a small LLM model
+    # instead of being hard-truncated.  This preserves more information than
+    # a raw cut-off while keeping the prompt within a manageable size.
+    #
+    # Set GRUB_CONTEXT_SUMMARIZATION=false to disable and revert to truncation.
+    context_summarization_enabled: bool = field(
+        default_factory=lambda: os.getenv(
+            "GRUB_CONTEXT_SUMMARIZATION", "true"
+        ).lower() == "true"
+    )
+
+    # Text longer than this (in characters) triggers summarization.
+    context_max_chars: int = int(os.getenv("GRUB_CONTEXT_MAX_CHARS", "6000"))
+
+    # Target length (in characters) after summarization.  The LLM is asked to
+    # aim for this length — actual results may vary by ±20%.
+    context_target_chars: int = int(os.getenv("GRUB_CONTEXT_TARGET_CHARS", "3000"))
+
+    # Which Ollama model to use for summarization.  Defaults to the reviewer's
+    # model (a fast 7B model).  Summarization doesn't need a large model.
+    # Set GRUB_SUMMARIZER_MODEL="" to use each minion's own model.
+    context_summarizer_model: str = os.getenv("GRUB_SUMMARIZER_MODEL", "")
+
     # ── Skills loaded for each minion ──────────────────────────────────────────
     # You can add more skill files by dropping them in grub/skills/ and
     # adding the filename to the list below.

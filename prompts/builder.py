@@ -46,7 +46,36 @@ class PromptBuilder:
       3. Substitutes context variables into the user prompt
       4. Validates that all required placeholders are filled
       5. Optionally stamps a build_id into the system prompt for observability
+
+    Project instructions (TINKER.md)
+    ----------------------------------
+    Call ``PromptBuilder.set_global_project_instructions(content)`` at startup
+    to inject TINKER.md content into every prompt built by any instance.
+    This class-level default is used by the factory classmethods (which create
+    their own builder instances) without requiring callers to change.
     """
+
+    # Class-level default for project instructions (TINKER.md content).
+    # Set via set_global_project_instructions() at process startup.
+    _global_project_instructions: str = ""
+
+    @classmethod
+    def set_global_project_instructions(cls, instructions: str) -> None:
+        """
+        Set the project instructions that every new PromptBuilder instance
+        will inject into its system prompts.
+
+        Call this once at startup after loading TINKER.md::
+
+            content = Path("TINKER.md").read_text()
+            PromptBuilder.set_global_project_instructions(content)
+
+        Parameters
+        ----------
+        instructions : Full text of TINKER.md (or equivalent).
+                       Pass an empty string to disable injection.
+        """
+        cls._global_project_instructions = instructions.strip()
 
     # Required context keys per (role, loop_level) combination
     REQUIRED_CONTEXT: dict[str, list[str]] = {
@@ -108,8 +137,19 @@ class PromptBuilder:
         ],
     }
 
-    def __init__(self, add_build_metadata: bool = True):
+    def __init__(
+        self,
+        add_build_metadata: bool = True,
+        project_instructions: str = "",
+    ):
         self.add_build_metadata = add_build_metadata
+        # Use the explicitly passed value, or fall back to the class-level default
+        # (set at startup via set_global_project_instructions).
+        self._project_instructions = (
+            project_instructions.strip()
+            if project_instructions.strip()
+            else self.__class__._global_project_instructions
+        )
 
     def build(
         self,
@@ -193,6 +233,23 @@ class PromptBuilder:
                 f"Missing required context keys for '{template_key}': {missing}"
             )
 
+    def with_project_instructions(self, instructions: str) -> "PromptBuilder":
+        """
+        Set the project instructions (TINKER.md content) to inject into every
+        system prompt built by this instance.
+
+        Returns self so this can be chained::
+
+            builder = PromptBuilder().with_project_instructions(content)
+
+        Parameters
+        ----------
+        instructions : The full text of TINKER.md (or equivalent).
+                       Pass an empty string to disable injection.
+        """
+        self._project_instructions = instructions.strip()
+        return self
+
     def _assemble_system(
         self,
         template: PromptTemplate,
@@ -201,6 +258,17 @@ class PromptBuilder:
         build_id: str,
     ) -> str:
         parts = [template.system]
+
+        # Inject project instructions (TINKER.md) right after the base system
+        # prompt, before variant injections and build metadata.
+        if self._project_instructions:
+            parts.append(
+                "## PROJECT INSTRUCTIONS\n"
+                "The following instructions describe the project you are working on.\n"
+                "Follow them on every reasoning loop — they take priority over your\n"
+                "default preferences but may be overridden by explicit task constraints.\n\n"
+                + self._project_instructions
+            )
 
         # Append variant injections in order
         for vk in variants:

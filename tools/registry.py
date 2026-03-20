@@ -123,6 +123,24 @@ class ToolRegistry:
             self.register(tool)
         return self
 
+    async def register_from_mcp(self, bridge: Any) -> "ToolRegistry":
+        """
+        Connect to external MCP servers via ``bridge`` and register their tools.
+
+        This is a convenience wrapper that calls ``bridge.connect_clients()``
+        (which imports remote tools into this registry via register_many).
+
+        Parameters
+        ----------
+        bridge : An MCPBridge instance (mcp.bridge.MCPBridge).
+
+        Returns
+        -------
+        self — for method chaining.
+        """
+        await bridge.connect_clients()
+        return self
+
     # ------------------------------------------------------------------
     # Inspection
     # ------------------------------------------------------------------

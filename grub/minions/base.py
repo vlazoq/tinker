@@ -43,6 +43,7 @@ import httpx
 
 from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus
+from ..context_summarizer import MinionContextSummarizer
 
 if TYPE_CHECKING:
     from ..config import GrubConfig
@@ -86,6 +87,22 @@ class BaseMinion(ABC):
         self.config = config
         self.skills = skills or []
         self.logger = logging.getLogger(f"grub.minion.{name}")
+
+        # Context summarizer — compresses large inputs instead of truncating.
+        # Uses the reviewer's model (fast 7B) or the minion's own model if
+        # context_summarizer_model is not set.
+        _summarizer_model = (
+            config.context_summarizer_model
+            or config.models.get("reviewer", config.models.get(name, "qwen3:7b"))
+        )
+        _summarizer_url = config.ollama_urls.get(name, "http://localhost:11434")
+        self._summarizer = MinionContextSummarizer(
+            model=_summarizer_model,
+            ollama_url=_summarizer_url,
+            max_chars=config.context_max_chars,
+            target_chars=config.context_target_chars,
+            enabled=config.context_summarization_enabled,
+        )
 
     # ── Public interface (what Grub calls) ────────────────────────────────────
 
@@ -209,6 +226,25 @@ class BaseMinion(ABC):
             msg = f"ERROR: LLM call failed: {exc}"
             self.logger.error(msg)
             return msg
+
+    async def compress_context(self, text: str, label: str = "context") -> str:
+        """
+        Compress ``text`` if it exceeds the configured context size limit.
+
+        Delegates to MinionContextSummarizer.  If the text is already short
+        enough, returns it unchanged with no LLM call.
+
+        Parameters
+        ----------
+        text  : The text to (possibly) compress.
+        label : Human-readable name for the context type (for logging and the
+                LLM prompt), e.g. "design document", "test output".
+
+        Returns
+        -------
+        str : Original or compressed text.
+        """
+        return await self._summarizer.compress(text, label)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

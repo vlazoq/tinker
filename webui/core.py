@@ -33,6 +33,7 @@ STATE_FILE = Path(os.getenv("TINKER_STATE_PATH", BASE_DIR / "tinker_state.json")
 HEALTH_URL = os.getenv("TINKER_HEALTH_URL", "http://localhost:8081")
 GRUB_QUEUE_DB = Path(os.getenv("GRUB_QUEUE_DB", BASE_DIR / "grub_queue.sqlite"))
 GRUB_ARTIFACTS = Path(os.getenv("GRUB_ARTIFACTS_DIR", BASE_DIR / "grub_artifacts"))
+FRITZ_CONFIG_FILE = Path(os.getenv("FRITZ_CONFIG_FILE", BASE_DIR / "fritz_config.json"))
 
 # ── Default flag values (mirrors features/flags.py) ──────────────────────────
 FLAG_DEFAULTS: dict[str, bool] = {
@@ -643,3 +644,86 @@ def fetch_grub_status_sync() -> dict:
 
 async def fetch_grub_status() -> dict:
     return await asyncio.to_thread(fetch_grub_status_sync)
+
+
+# ── Fritz status helpers ──────────────────────────────────────────────────────
+
+
+def fetch_fritz_status_sync() -> dict:
+    """
+    Read Fritz config + live git state.
+    Returns a dict safe for JSON serialisation.
+    Degrades gracefully: if fritz_config.json or git are absent, returns
+    whatever partial information is available.
+    """
+    import subprocess
+
+    config: dict = {}
+    if FRITZ_CONFIG_FILE.exists():
+        try:
+            config = json.loads(FRITZ_CONFIG_FILE.read_text())
+        except Exception:
+            pass
+
+    push_policy = config.get("push_policy", {})
+
+    # ── Live git state ────────────────────────────────────────────────────────
+    repo_path = config.get("repo_path", str(BASE_DIR))
+    git_branch = ""
+    git_status = ""
+    git_sha = ""
+    remotes: list[str] = []
+
+    def _git(*args: str) -> str:
+        try:
+            return subprocess.check_output(
+                ["git", *args], cwd=repo_path, stderr=subprocess.DEVNULL, text=True
+            ).strip()
+        except Exception:
+            return ""
+
+    git_branch = _git("branch", "--show-current")
+    git_status = _git("status", "--short")
+    git_sha = _git("rev-parse", "--short", "HEAD")
+    raw_remotes = _git("remote", "-v")
+    seen: set[str] = set()
+    for line in raw_remotes.splitlines():
+        parts = line.split()
+        if parts and parts[0] not in seen:
+            seen.add(parts[0])
+            url = parts[1] if len(parts) > 1 else ""
+            remotes.append(f"{parts[0]}: {url}")
+
+    return {
+        "config_exists": FRITZ_CONFIG_FILE.exists(),
+        "config_path": str(FRITZ_CONFIG_FILE),
+        "identity_mode": config.get("identity_mode", "bot"),
+        "git_name": config.get("git_name", "Fritz"),
+        "git_email": config.get("git_email", "fritz@tinker.local"),
+        "github_enabled": config.get("github_enabled", True),
+        "github_owner": config.get("github_owner", ""),
+        "github_repo": config.get("github_repo", ""),
+        "gitea_enabled": config.get("gitea_enabled", False),
+        "gitea_base_url": config.get("gitea_base_url", ""),
+        "gitea_owner": config.get("gitea_owner", ""),
+        "gitea_repo": config.get("gitea_repo", ""),
+        "push_policy": {
+            "allow_push_to_main": push_policy.get("allow_push_to_main", False),
+            "require_pr": push_policy.get("require_pr", True),
+            "require_ci_green": push_policy.get("require_ci_green", True),
+            "auto_merge_method": push_policy.get("auto_merge_method", "squash"),
+            "protected_branches": push_policy.get("protected_branches", []),
+            "ci_timeout_seconds": push_policy.get("ci_timeout_seconds", 600),
+        },
+        "git": {
+            "branch": git_branch,
+            "status": git_status,
+            "sha": git_sha,
+            "remotes": remotes,
+            "clean": git_status == "",
+        },
+    }
+
+
+async def fetch_fritz_status() -> dict:
+    return await asyncio.to_thread(fetch_fritz_status_sync)

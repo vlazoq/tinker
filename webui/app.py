@@ -34,9 +34,11 @@ from .core import (
     BACKUP_DIR,
     DLQ_DB,
     FLAGS_FILE,
+    FRITZ_CONFIG_FILE,
     TASKS_DB,
     db_execute,
     db_query,
+    fetch_fritz_status,
     fetch_grub_status,
     fetch_health,
     list_backups,
@@ -211,6 +213,122 @@ async def api_flags_toggle(flag_name: str, request: Request):
     }
 
 
+# ── Orchestrator control (pause / resume / confirm) ───────────────────────────
+# These endpoints let the Dashboard control the running orchestrator.
+# They read the shared state file written by the orchestrator process and
+# respond via a simple "pending_confirmations" list in that file.
+# The orchestrator process polls for responses when it is waiting in
+# ConfirmationGate._api_wait().
+
+@app.get("/api/confirmations")
+async def api_confirmations_list():
+    """Return all pending confirmation requests visible in the state file."""
+    state = load_state()
+    return {
+        "pending": state.get("pending_confirmations", []),
+        "count": len(state.get("pending_confirmations", [])),
+    }
+
+
+@app.post("/api/confirm/{request_id}")
+async def api_confirm(request_id: str, request: Request):
+    """
+    Approve or deny a pending confirmation request.
+
+    Body: {"approved": true|false}
+
+    The orchestrator's ConfirmationGate is waiting on an asyncio Event keyed
+    by request_id.  Writing the decision to the shared state file is not
+    enough — the orchestrator needs an in-process signal.
+
+    Since the webui and orchestrator typically run in separate processes, the
+    simplest approach is a small "response file" that the orchestrator polls.
+    The orchestrator checks for this file in its _api_wait loop.
+    """
+    import os, json, tempfile
+    from pathlib import Path
+
+    body = await request.json()
+    approved = bool(body.get("approved", False))
+
+    # Write a response file that the orchestrator's ConfirmationGate polls.
+    # The orchestrator deletes this file once it reads it.
+    response_dir = Path(os.getenv("TINKER_CONFIRM_DIR", "./tinker_confirmations"))
+    response_dir.mkdir(parents=True, exist_ok=True)
+    response_path = response_dir / f"{request_id}.json"
+
+    data = {"request_id": request_id, "approved": approved}
+    fd, tmp = tempfile.mkstemp(dir=str(response_dir), suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, str(response_path))
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    verdict = "approved" if approved else "denied"
+    return {"ok": True, "request_id": request_id, "verdict": verdict}
+
+
+@app.post("/api/pause")
+async def api_pause():
+    """
+    Request the orchestrator to pause between micro loops.
+
+    The orchestrator reads the state file and acts on the pause flag.
+    Since this endpoint runs in a separate webui process, it writes a
+    control file that the orchestrator watches.
+    """
+    import os, json, tempfile
+    from pathlib import Path
+
+    control_dir = Path(os.getenv("TINKER_CONTROL_DIR", "./tinker_control"))
+    control_dir.mkdir(parents=True, exist_ok=True)
+    ctrl_path = control_dir / "pause.json"
+
+    fd, tmp = tempfile.mkstemp(dir=str(control_dir), suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump({"action": "pause"}, f)
+        os.replace(tmp, str(ctrl_path))
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    return {"ok": True, "message": "Pause requested. Orchestrator will pause after current micro loop."}
+
+
+@app.post("/api/resume")
+async def api_resume():
+    """Remove the pause control file, signalling the orchestrator to resume."""
+    import os
+    from pathlib import Path
+
+    control_dir = Path(os.getenv("TINKER_CONTROL_DIR", "./tinker_control"))
+    ctrl_path = control_dir / "pause.json"
+    try:
+        ctrl_path.unlink(missing_ok=True)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    return {"ok": True, "message": "Resume requested."}
+
+
+# ── MCP status ────────────────────────────────────────────────────────────────
+@app.get("/api/mcp/status")
+async def api_mcp_status():
+    """
+    Return the status of the MCP server and any connected external MCP clients.
+
+    If MCP is not enabled, returns {"enabled": false}.
+    If enabled, returns server info and a list of imported external tools.
+    """
+    # The MCP bridge is attached to the app state when main.py starts the webui.
+    bridge = getattr(app.state, "mcp_bridge", None)
+    if bridge is None:
+        return {"enabled": False, "message": "MCP not enabled or bridge not wired"}
+    return bridge.status()
+
+
 # ── Task Queue ────────────────────────────────────────────────────────────────
 @app.get("/api/tasks")
 async def api_tasks():
@@ -377,6 +495,127 @@ async def api_audit(
         "page": page,
         "has_next": len(items) == limit,
     }
+
+
+# ── Fritz ─────────────────────────────────────────────────────────────────────
+@app.get("/api/fritz/status")
+async def api_fritz_status():
+    """Return Fritz config + live git state (branch, SHA, dirty files, remotes)."""
+    return await fetch_fritz_status()
+
+
+@app.post("/api/fritz/ship")
+async def api_fritz_ship(request: Request):
+    """
+    Run Fritz commit-and-ship pipeline.
+    Body: { message, task_id, task_description, auto_merge }
+    """
+    body = await request.json()
+    try:
+        from .core import BASE_DIR as _BASE_DIR
+        from fritz.config import FritzConfig
+        from fritz.agent import FritzAgent
+
+        config = (
+            FritzConfig.from_file(FRITZ_CONFIG_FILE)
+            if FRITZ_CONFIG_FILE.exists()
+            else FritzConfig()
+        )
+        agent = FritzAgent(config)
+        await agent.setup()
+        result = await agent.commit_and_ship(
+            message=body.get("message", "chore: automated commit by Fritz"),
+            task_id=body.get("task_id", "webui"),
+            task_description=body.get("task_description", ""),
+            auto_merge=bool(body.get("auto_merge", False)),
+        )
+        return {
+            "ok": result.ok,
+            "branch": result.branch,
+            "commit_sha": result.commit_sha,
+            "pr_url": result.pr_url,
+            "pr_number": result.pr_number,
+            "merged": result.merged,
+            "direct_push": result.direct_push,
+            "errors": result.errors,
+        }
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.post("/api/fritz/push")
+async def api_fritz_push(request: Request):
+    """
+    Push the current (or specified) branch.
+    Body: { branch }
+    """
+    body = await request.json()
+    try:
+        from fritz.config import FritzConfig
+        from fritz.agent import FritzAgent
+
+        config = (
+            FritzConfig.from_file(FRITZ_CONFIG_FILE)
+            if FRITZ_CONFIG_FILE.exists()
+            else FritzConfig()
+        )
+        agent = FritzAgent(config)
+        await agent.setup()
+        branch = body.get("branch") or await agent.git.current_branch()
+        result = await agent.push(branch=branch)
+        return {"ok": result.ok, "branch": branch, "error": result.stderr}
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.post("/api/fritz/pr")
+async def api_fritz_create_pr(request: Request):
+    """
+    Create a pull request on GitHub or Gitea.
+    Body: { title, body, head, base, platform }
+    """
+    body = await request.json()
+    try:
+        from fritz.config import FritzConfig
+        from fritz.agent import FritzAgent
+
+        config = (
+            FritzConfig.from_file(FRITZ_CONFIG_FILE)
+            if FRITZ_CONFIG_FILE.exists()
+            else FritzConfig()
+        )
+        agent = FritzAgent(config)
+        await agent.setup()
+        result = await agent.create_pr(
+            title=body.get("title", ""),
+            body=body.get("body", ""),
+            head=body.get("head", ""),
+            base=body.get("base"),
+            platform=body.get("platform", "auto"),
+        )
+        return {"ok": result.ok, "url": result.url, "error": result.error, "data": result.data}
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+
+@app.get("/api/fritz/verify")
+async def api_fritz_verify():
+    """Test GitHub and Gitea credentials. Returns {github: bool, gitea: bool}."""
+    try:
+        from fritz.config import FritzConfig
+        from fritz.agent import FritzAgent
+
+        config = (
+            FritzConfig.from_file(FRITZ_CONFIG_FILE)
+            if FRITZ_CONFIG_FILE.exists()
+            else FritzConfig()
+        )
+        agent = FritzAgent(config)
+        await agent.setup()
+        results = await agent.verify_connections()
+        return {"ok": True, "connections": results}
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
 
 # ── Log streaming (SSE) ───────────────────────────────────────────────────────

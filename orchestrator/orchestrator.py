@@ -171,6 +171,7 @@ class Orchestrator:
         stagnation_monitor: Any = None,
         metrics: Any = None,
         snapshot_callback: Optional[Any] = None,
+        checkpoint_manager: Optional[Any] = None,
     ) -> None:
         """
         Initialise the orchestrator with all of its components.
@@ -249,6 +250,9 @@ class Orchestrator:
         if metrics is not None:
             logger.info("Metrics wired — Prometheus counters active")
 
+        # Checkpoint manager for pause/resume support.
+        self.checkpoint_manager = checkpoint_manager
+
         # Create a fresh state object.  This is the single source of truth
         # for everything the orchestrator knows about itself.
         self.state = OrchestratorState()
@@ -257,6 +261,15 @@ class Orchestrator:
         # When we call _shutdown_event.set(), it becomes True and anything
         # waiting on it (``await _shutdown_event.wait()``) wakes up immediately.
         self._shutdown_event = asyncio.Event()
+
+        # Pause event — set when the orchestrator should pause between micro
+        # loops.  Cleared by resume().  Distinct from shutdown: the process
+        # stays alive while paused.
+        self._pause_event = asyncio.Event()
+
+        # Confirmation gate — wired after state is created.
+        from .confirmation import ConfirmationGate
+        self.confirmation_gate = ConfirmationGate(self.config, self.state)
 
     # ── Public API ───────────────────────────────────────────────────────────
 
@@ -314,6 +327,76 @@ class Orchestrator:
         # condition both notice immediately.
         self._shutdown_event.set()
 
+    def pause(self) -> None:
+        """
+        Pause the orchestrator between micro loops.
+
+        Unlike request_shutdown(), pause() does not exit the process.  The
+        orchestrator finishes the current micro loop, then waits at the top of
+        the main loop until resume() is called (or the process is stopped).
+
+        The current in-progress state is saved to the checkpoint file so that
+        even if the process is later killed while paused, the next run can
+        resume from the same point.
+
+        Safe to call from:
+          * The Dashboard (via POST /api/pause)
+          * Tests
+        """
+        logger.info("Pause requested")
+        self.state.paused = True
+        self._pause_event.set()
+
+        # Save checkpoint so the run can resume even if the process is killed
+        # while paused.
+        if self.checkpoint_manager:
+            self.checkpoint_manager.save(self._build_checkpoint_data())
+
+    def resume(self) -> None:
+        """
+        Resume the orchestrator after a pause.
+
+        Clears the pause event (so the main loop stops waiting) and deletes the
+        checkpoint file (since we're continuing the same process, not restarting).
+
+        Safe to call from:
+          * The Dashboard (via POST /api/resume)
+          * Tests
+        """
+        logger.info("Resume requested")
+        self.state.paused = False
+        self._pause_event.clear()
+
+        if self.checkpoint_manager:
+            self.checkpoint_manager.clear()
+
+    def _build_checkpoint_data(self) -> dict:
+        """
+        Build the dict that CheckpointManager saves to disk.
+
+        This captures just enough state to resume without repeating work:
+          - Which micro loop we were on.
+          - The current task (so we re-select the same one, not a random next one).
+          - Per-subsystem micro counts (for meso trigger logic).
+          - Recent micro history tail (for stagnation detection on resume).
+        """
+        return {
+            "micro_iteration": self.state.total_micro_loops,
+            "current_task_id": self.state.current_task_id,
+            "current_subsystem": self.state.current_subsystem,
+            "subsystem_counts": dict(self.state.subsystem_micro_counts),
+            "micro_history_tail": [
+                {
+                    "iteration": r.iteration,
+                    "task_id": r.task_id,
+                    "subsystem": r.subsystem,
+                    "status": r.status.value,
+                    "critic_score": r.critic_score,
+                }
+                for r in self.state.micro_history[-10:]
+            ],
+        }
+
     @property
     def is_running(self) -> bool:
         """
@@ -364,6 +447,20 @@ class Orchestrator:
         methods it calls.
         """
         while not self._shutdown_event.is_set():
+            # ── Pause check ───────────────────────────────────────────────────
+            # If pause() was called, wait here until resume() clears the event.
+            # _interruptible_sleep already handles shutdown-while-paused.
+            if self._pause_event.is_set():
+                self.state.current_level = LoopLevel.IDLE
+                self._try_write_snapshot()
+                logger.info("Orchestrator paused — waiting for resume()")
+                # Wait until either resume() clears _pause_event or shutdown fires.
+                while self._pause_event.is_set() and not self._shutdown_event.is_set():
+                    await self._interruptible_sleep(1.0)
+                if self._shutdown_event.is_set():
+                    break
+                logger.info("Orchestrator resuming")
+
             # ── Macro loop timer check ────────────────────────────────────────
             # The macro loop fires on a wall-clock timer, not after a fixed
             # number of micro loops.  Check elapsed time here.
