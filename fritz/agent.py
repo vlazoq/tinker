@@ -40,6 +40,7 @@ from .git_ops import FritzGitOps, FritzGitResult
 from .gitea_ops import FritzGitea
 from .github_ops import FritzGitHub, FritzRemoteResult
 from .identity import FritzIdentity, build_identity
+from .metrics import FritzMetrics, get_metrics
 from .platform import GitPlatform, detect_platform, extract_owner_repo
 from .push_policy import PolicyViolation, PushPolicy
 
@@ -84,7 +85,7 @@ class FritzAgent:
         3. Call any operation method (commit_and_ship, push, create_pr, etc.)
     """
 
-    def __init__(self, config: FritzConfig) -> None:
+    def __init__(self, config: FritzConfig, metrics: FritzMetrics | None = None) -> None:
         self.config = config
         self._creds: FritzCredentials | None = None
         self._identity: FritzIdentity | None = None
@@ -92,6 +93,7 @@ class FritzAgent:
         self._github: FritzGitHub | None = None
         self._gitea: FritzGitea | None = None
         self._policy: PushPolicy | None = None
+        self._metrics: FritzMetrics = metrics or get_metrics()
         self._ready = False
 
     @classmethod
@@ -132,10 +134,10 @@ class FritzAgent:
 
         # Remote drivers
         if self.config.github_enabled and creds.github_token:
-            self._github = FritzGitHub(self.config, creds.github_token)
+            self._github = FritzGitHub(self.config, creds.github_token, metrics=self._metrics)
 
         if self.config.gitea_enabled and creds.gitea_token:
-            self._gitea = FritzGitea(self.config, creds.gitea_token)
+            self._gitea = FritzGitea(self.config, creds.gitea_token, metrics=self._metrics)
 
         self._ready = True
         logger.info(
@@ -240,6 +242,7 @@ class FritzAgent:
     ) -> FritzShipResult:
         """Commit and push directly to a branch (main or feature)."""
         commit_result = await self.git.commit(message, files)
+        self._metrics.on_commit(commit_result.ok)
         if not commit_result.ok:
             return FritzShipResult(
                 ok=False, branch=branch, errors=[commit_result.stderr]
@@ -248,11 +251,11 @@ class FritzAgent:
         sha = await self.git.head_sha()
 
         push_results = await self.git.push_all_remotes(branch)
-        errors = [
-            f"{remote}: {r.stderr}"
-            for remote, r in push_results.items()
-            if not r.ok
-        ]
+        errors = []
+        for remote, r in push_results.items():
+            self._metrics.on_push(r.ok, remote=remote)
+            if not r.ok:
+                errors.append(f"{remote}: {r.stderr}")
 
         await self._audit(
             "FRITZ_DIRECT_PUSH",
@@ -296,6 +299,7 @@ class FritzAgent:
 
         # Commit
         commit_result = await self.git.commit(message, files)
+        self._metrics.on_commit(commit_result.ok)
         if not commit_result.ok:
             return FritzShipResult(
                 ok=False, branch=feature_branch, errors=[commit_result.stderr]
@@ -305,11 +309,11 @@ class FritzAgent:
 
         # Push to all remotes
         push_results = await self.git.push_all_remotes(feature_branch)
-        push_errors = [
-            f"{remote}: {r.stderr}"
-            for remote, r in push_results.items()
-            if not r.ok
-        ]
+        push_errors = []
+        for remote, r in push_results.items():
+            self._metrics.on_push(r.ok, remote=remote)
+            if not r.ok:
+                push_errors.append(f"{remote}: {r.stderr}")
         if push_errors:
             return FritzShipResult(
                 ok=False, branch=feature_branch, commit_sha=sha, errors=push_errors
@@ -327,6 +331,7 @@ class FritzAgent:
                 head=feature_branch,
                 base=base_branch,
             )
+            self._metrics.on_pr_created(pr_result.ok, platform="github")
             if pr_result.ok:
                 pr_url = pr_result.url
                 pr_number = (pr_result.data or {}).get("number")
@@ -342,6 +347,7 @@ class FritzAgent:
                 head=feature_branch,
                 base=base_branch,
             )
+            self._metrics.on_pr_created(gitea_pr.ok, platform="gitea")
             if not gitea_pr.ok:
                 pr_errors.append(f"Gitea PR: {gitea_pr.error}")
             elif not pr_url:
@@ -376,6 +382,7 @@ class FritzAgent:
                     pr_number, method=self.config.push_policy.auto_merge_method
                 )
                 merged = merge_result.ok
+                self._metrics.on_merge(merged, method=self.config.push_policy.auto_merge_method)
                 if not merged:
                     merge_errors.append(f"Auto-merge failed: {merge_result.error}")
             else:

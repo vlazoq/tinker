@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +25,8 @@ import httpx
 
 from .config import FritzConfig
 from .identity import build_auth_header
+from .metrics import FritzMetrics, get_metrics
+from .retry import RateLimitState, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +55,12 @@ class FritzGitHub:
     All methods are async.
     """
 
-    def __init__(self, config: FritzConfig, token: str) -> None:
+    def __init__(
+        self,
+        config: FritzConfig,
+        token: str,
+        metrics: FritzMetrics | None = None,
+    ) -> None:
         self._owner = config.github_owner
         self._repo = config.github_repo
         self._token = token
@@ -62,40 +70,68 @@ class FritzGitHub:
             "X-GitHub-Api-Version": "2022-11-28",
         }
         self._repo_path = config.repo_path
+        self._metrics = metrics or get_metrics()
+        self._rate = RateLimitState()
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
     def _api(self, path: str) -> str:
         return f"{_GH_API_BASE}{path}"
 
-    async def _get(self, path: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(headers=self._headers, timeout=30) as client:
-            resp = await client.get(self._api(path))
-            resp.raise_for_status()
-            return resp.json()
+    async def _request(
+        self, method: str, path: str, operation: str, **kwargs: Any
+    ) -> httpx.Response:
+        """Single entry point for all GitHub REST calls — adds retry + metrics."""
+        t0 = time.monotonic()
+        url = self._api(path)
 
-    async def _post(self, path: str, data: dict) -> dict[str, Any]:
-        async with httpx.AsyncClient(headers=self._headers, timeout=30) as client:
-            resp = await client.post(self._api(path), json=data)
-            resp.raise_for_status()
-            return resp.json()
+        async def _call() -> httpx.Response:
+            async with httpx.AsyncClient(headers=self._headers, timeout=30) as client:
+                return await client.request(method, url, **kwargs)
 
-    async def _patch(self, path: str, data: dict) -> dict[str, Any]:
-        async with httpx.AsyncClient(headers=self._headers, timeout=30) as client:
-            resp = await client.patch(self._api(path), json=data)
-            resp.raise_for_status()
-            return resp.json()
+        resp = await with_retry(_call, rate_state=self._rate, operation=f"github:{operation}")
+        elapsed = time.monotonic() - t0
 
-    async def _put(self, path: str, data: dict) -> dict[str, Any]:
-        async with httpx.AsyncClient(headers=self._headers, timeout=30) as client:
-            resp = await client.put(self._api(path), json=data)
-            resp.raise_for_status()
-            return resp.json()
+        # Push rate-limit gauge to metrics.
+        if self._rate.remaining != -1:
+            self._metrics.update_rate_limit("github", self._rate.remaining)
 
-    async def _delete(self, path: str) -> bool:
-        async with httpx.AsyncClient(headers=self._headers, timeout=30) as client:
-            resp = await client.delete(self._api(path))
-            return resp.status_code in (200, 204)
+        self._metrics.on_api_call(
+            platform="github",
+            operation=operation,
+            http_status=resp.status_code,
+            duration_seconds=elapsed,
+        )
+        return resp
+
+    async def _get(self, path: str, operation: str = "get") -> dict[str, Any]:
+        resp = await self._request("GET", path, operation)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def _post(self, path: str, data: dict, operation: str = "post") -> dict[str, Any]:
+        resp = await self._request("POST", path, operation, json=data)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def _patch(self, path: str, data: dict, operation: str = "patch") -> dict[str, Any]:
+        resp = await self._request("PATCH", path, operation, json=data)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def _put(self, path: str, data: dict, operation: str = "put") -> dict[str, Any]:
+        resp = await self._request("PUT", path, operation, json=data)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def _delete(self, path: str, operation: str = "delete") -> bool:
+        resp = await self._request("DELETE", path, operation)
+        return resp.status_code in (200, 204)
+
+    @property
+    def rate_limit(self) -> RateLimitState:
+        """Current rate-limit state (updated after every API call)."""
+        return self._rate
 
     def _gh(self, *args: str) -> FritzRemoteResult:
         """Run a gh CLI command synchronously (used for complex operations)."""

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+import time
 from typing import Any
 
 import httpx
@@ -28,6 +28,8 @@ import httpx
 from .config import FritzConfig
 from .github_ops import FritzRemoteResult  # reuse the same result type
 from .identity import build_auth_header
+from .metrics import FritzMetrics, get_metrics
+from .retry import RateLimitState, with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,12 @@ class FritzGitea:
     All methods are async.
     """
 
-    def __init__(self, config: FritzConfig, token: str) -> None:
+    def __init__(
+        self,
+        config: FritzConfig,
+        token: str,
+        metrics: FritzMetrics | None = None,
+    ) -> None:
         base = config.gitea_base_url.rstrip("/")
         self._api_base = f"{base}/api/v1"
         self._owner = config.gitea_owner
@@ -52,6 +59,8 @@ class FritzGitea:
             **build_auth_header(token),
             "Content-Type": "application/json",
         }
+        self._metrics = metrics or get_metrics()
+        self._rate = RateLimitState()
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
@@ -65,28 +74,55 @@ class FritzGitea:
     def _url(self, path: str) -> str:
         return f"{self._api_base}{path}"
 
-    async def _get(self, path: str) -> Any:
-        async with self._client() as client:
-            resp = await client.get(self._url(path))
-            resp.raise_for_status()
-            return resp.json()
+    async def _request(
+        self, method: str, path: str, operation: str, **kwargs: Any
+    ) -> httpx.Response:
+        """Single entry point for all Gitea REST calls — adds retry + metrics."""
+        t0 = time.monotonic()
+        url = self._url(path)
 
-    async def _post(self, path: str, data: dict) -> Any:
-        async with self._client() as client:
-            resp = await client.post(self._url(path), json=data)
-            resp.raise_for_status()
-            return resp.json()
+        async def _call() -> httpx.Response:
+            async with self._client() as client:
+                return await client.request(method, url, **kwargs)
 
-    async def _patch(self, path: str, data: dict) -> Any:
+        resp = await with_retry(_call, rate_state=self._rate, operation=f"gitea:{operation}")
+        elapsed = time.monotonic() - t0
+
+        if self._rate.remaining != -1:
+            self._metrics.update_rate_limit("gitea", self._rate.remaining)
+
+        self._metrics.on_api_call(
+            platform="gitea",
+            operation=operation,
+            http_status=resp.status_code,
+            duration_seconds=elapsed,
+        )
+        return resp
+
+    async def _get(self, path: str, operation: str = "get") -> Any:
+        resp = await self._request("GET", path, operation)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def _post(self, path: str, data: dict, operation: str = "post") -> Any:
+        resp = await self._request("POST", path, operation, json=data)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def _patch(self, path: str, data: dict, operation: str = "patch") -> Any:
         async with self._client() as client:
             resp = await client.patch(self._url(path), json=data)
             resp.raise_for_status()
             return resp.json()
 
-    async def _delete(self, path: str) -> bool:
-        async with self._client() as client:
-            resp = await client.delete(self._url(path))
-            return resp.status_code in (200, 204)
+    async def _delete(self, path: str, operation: str = "delete") -> bool:
+        resp = await self._request("DELETE", path, operation)
+        return resp.status_code in (200, 204)
+
+    @property
+    def rate_limit(self) -> RateLimitState:
+        """Current rate-limit state (updated after every API call)."""
+        return self._rate
 
     # ── Identity / connection ─────────────────────────────────────────────────
 
@@ -417,7 +453,8 @@ class FritzGitea:
         """
         try:
             data = await self._get(
-                f"/repos/{self._owner}/{self._repo}/commits/{commit_sha}/statuses"
+                f"/repos/{self._owner}/{self._repo}/commits/{commit_sha}/statuses",
+                operation="get_ci_status",
             )
             # Compute combined state from list of statuses
             statuses = data if isinstance(data, list) else []
@@ -458,6 +495,7 @@ class FritzGitea:
                     "context": context,
                     "target_url": target_url,
                 },
+                operation="set_commit_status",
             )
             return FritzRemoteResult(ok=True, operation="set_commit_status", data=data)
         except Exception as exc:
