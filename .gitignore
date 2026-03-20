@@ -17,6 +17,7 @@ env/
 tinker_session.duckdb
 tinker_tasks.sqlite
 tinker_tasks_engine.sqlite
+tinker_audit.sqlite
 chroma_db/
 tinker_artifacts/
 tinker_diagrams/
