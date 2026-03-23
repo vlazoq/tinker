@@ -248,6 +248,32 @@ class OllamaClient:
     # Core request
     # ------------------------------------------------------------------
 
+    async def warmup(self) -> bool:
+        """
+        Pre-load this client's model into Ollama's VRAM.
+
+        Sends a single-token completion with an empty prompt so Ollama loads
+        the model weights before the first real request arrives.  Call this
+        after creating a new client or after ``hot_reload()`` so agents never
+        wait for a cold model load during their actual work.
+
+        Returns True if the warmup succeeded, False if the server was
+        unreachable (non-fatal — the model will load lazily on the first
+        real request instead).
+        """
+        try:
+            from .types import Message as _Msg
+            dummy = [_Msg(role="user", content=" ")]
+            await self.chat(messages=dummy, max_tokens=1, temperature=0.0)
+            logger.info("Warmup complete for model=%s @ %s", self.config.model, self.config.base_url)
+            return True
+        except Exception as exc:
+            logger.warning(
+                "Warmup skipped for model=%s @ %s: %s",
+                self.config.model, self.config.base_url, exc,
+            )
+            return False
+
     async def chat(
         self,
         messages: list[Message],
@@ -286,7 +312,10 @@ class OllamaClient:
         max_tokens = max_tokens or self.config.max_output_tokens
         url = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
 
-        # Build the request body in the OpenAI chat-completions format
+        # Build the request body in the OpenAI chat-completions format.
+        # ``keep_alive`` tells Ollama how long to hold model weights in VRAM
+        # after this request completes.  Sending it on every request resets
+        # the idle timer, so active sessions never trigger an unload.
         payload: dict[str, Any] = {
             "model": model,
             "messages": [
@@ -295,6 +324,7 @@ class OllamaClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": stream,
+            "keep_alive": self.config.keep_alive,
         }
 
         # ── Circuit breaker fast-fail ────────────────────────────────────────
