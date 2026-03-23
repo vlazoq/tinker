@@ -923,7 +923,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
             _mcp_bridge = _MCPBridge(_mcp_config, components["tool_layer"])
             # Import the webui app and mount the MCP server on it.
             try:
-                from webui.app import app as _webui_app
+                from ui.web.app import app as _webui_app
                 _mcp_bridge.mount_server(_webui_app)
                 # Attach bridge to app.state so /api/mcp/status can read it.
                 _webui_app.state.mcp_bridge = _mcp_bridge

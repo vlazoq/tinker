@@ -1,4 +1,4 @@
-"""Entry point: python -m tinker.webui"""
+"""Entry point: python -m tinker.ui.web"""
 
 import os
 import uvicorn
@@ -6,7 +6,7 @@ import uvicorn
 if __name__ == "__main__":
     port = int(os.getenv("TINKER_WEBUI_PORT", "8082"))
     uvicorn.run(
-        "tinker.webui.app:app",
+        "tinker.ui.web.app:app",
         host="0.0.0.0",
         port=port,
         reload=False,

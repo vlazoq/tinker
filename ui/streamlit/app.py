@@ -1,7 +1,7 @@
 """
-streamlit_ui/app.py  —  Tinker Streamlit Control Panel
+ui/streamlit/app.py  —  Tinker Streamlit Control Panel
 ───────────────────────────────────────────────────────
-Run:  python -m tinker.streamlit_ui   (or: streamlit run tinker/streamlit_ui/app.py)
+Run:  python -m tinker.ui.streamlit   (or: streamlit run tinker/ui/streamlit/app.py)
 
 All tabs are in this single file using st.tabs(). Streamlit re-runs on every
 widget interaction, which is fine here because all reads are fast local ops.
@@ -14,11 +14,11 @@ from pathlib import Path
 
 import streamlit as st
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from webui.core import (  # noqa: E402
+from ui.core import (  # noqa: E402
     ORCH_CONFIG_SCHEMA,
     STAGNATION_CONFIG_SCHEMA,
     FLAG_DEFAULTS,
