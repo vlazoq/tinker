@@ -156,6 +156,58 @@ class ModelRouter:
         self._clients.clear()
         logger.info("ModelRouter shut down.")
 
+    async def hot_reload(self, main_model: str, main_url: str, judge_model: str, judge_url: str,
+                         main_ctx: int = 8192, judge_ctx: int = 4096) -> None:
+        """
+        Swap the SERVER and SECONDARY model configs at runtime without restart.
+
+        Called by the orchestrator when a new preset is activated from the
+        Dashboard.  Old HTTP client sessions are closed and new ones are opened
+        so the next ``complete()`` call uses the updated model and URL.
+
+        Parameters
+        ----------
+        main_model  : Ollama model tag for the Main / SERVER slot (e.g. ``"qwen2.5-coder:32b"``).
+        main_url    : Ollama base URL for the Main model.
+        judge_model : Ollama model tag for the Judge / SECONDARY slot.
+        judge_url   : Ollama base URL for the Judge model.
+        main_ctx    : Context window for the Main model (tokens).
+        judge_ctx   : Context window for the Judge model (tokens).
+        """
+        logger.info(
+            "ModelRouter hot-reload: Main=%s @ %s  Judge=%s @ %s",
+            main_model, main_url, judge_model, judge_url,
+        )
+        # Build new configs, keeping timeouts from the current configs
+        new_server = MachineConfig(
+            base_url=main_url,
+            model=main_model,
+            context_window=main_ctx,
+            max_output_tokens=self._server_cfg.max_output_tokens,
+            request_timeout=self._server_cfg.request_timeout,
+            connect_timeout=self._server_cfg.connect_timeout,
+        )
+        new_secondary = MachineConfig(
+            base_url=judge_url,
+            model=judge_model,
+            context_window=judge_ctx,
+            max_output_tokens=self._secondary_cfg.max_output_tokens,
+            request_timeout=self._secondary_cfg.request_timeout,
+            connect_timeout=self._secondary_cfg.connect_timeout,
+        )
+        # Close old clients if running
+        if self._clients:
+            for client in self._clients.values():
+                await client.close()
+            self._clients.clear()
+        # Store new configs and re-open clients
+        self._server_cfg = new_server
+        self._secondary_cfg = new_secondary
+        if True:  # re-open clients so next complete() works immediately
+            self._clients[Machine.SERVER] = OllamaClient(self._server_cfg, self._retry)
+            self._clients[Machine.SECONDARY] = OllamaClient(self._secondary_cfg, self._retry)
+        logger.info("ModelRouter hot-reload complete.")
+
     async def __aenter__(self) -> "ModelRouter":
         """Called at the start of an ``async with ModelRouter() as router:`` block."""
         await self.start()

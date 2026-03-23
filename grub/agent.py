@@ -212,6 +212,39 @@ class GrubAgent:
                 "Valid values: 'sequential', 'parallel', 'queue'"
             )
 
+    def apply_model_overrides(self, overrides: dict[str, str]) -> None:
+        """
+        Apply per-minion model overrides from an active model preset.
+
+        Called by the Orchestrator when the user switches to a preset that
+        specifies Grub-specific model assignments.  The overrides dict maps
+        minion names to Ollama model tags:
+
+            {"coder": "qwen2.5-coder:32b", "debugger": "qwen2.5-coder:32b"}
+
+        This updates ``self.config.models`` in-memory so the next task
+        dispatched to each minion uses the new model.  The on-disk
+        ``grub_config.json`` is NOT written — overrides are transient and
+        reset when GrubAgent restarts (they come from the preset system).
+
+        Parameters
+        ----------
+        overrides : Dict mapping minion name → Ollama model tag.
+        """
+        for minion_name, model_tag in overrides.items():
+            if minion_name in self.config.models:
+                old = self.config.models[minion_name]
+                self.config.models[minion_name] = model_tag
+                logger.info(
+                    "GrubAgent: minion '%s' model overridden %s → %s",
+                    minion_name, old, model_tag,
+                )
+            else:
+                logger.warning(
+                    "GrubAgent: preset override for unknown minion '%s' (ignored)",
+                    minion_name,
+                )
+
     def request_shutdown(self) -> None:
         """Signal the main loop to stop after the current batch."""
         logger.info("GrubAgent: shutdown requested")

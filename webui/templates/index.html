@@ -26,6 +26,14 @@ const api = {
     fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .catch(err => { console.warn(`POST ${url}:`, err.message); return { ok: false, error: err.message }; }),
+  put: (url, body) =>
+    fetch(url, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .catch(err => { console.warn(`PUT ${url}:`, err.message); return { ok: false, error: err.message }; }),
+  delete: (url) =>
+    fetch(url, { method:'DELETE' })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .catch(err => { console.warn(`DELETE ${url}:`, err.message); return { ok: false, error: err.message }; }),
 };
 
 // ── Shared components ─────────────────────────────────────────────────────────
@@ -1154,9 +1162,468 @@ const FritzPanel = () => {
   );
 };
 
+// ── Models Panel ──────────────────────────────────────────────────────────────
+// Four sub-tabs: Active, Presets, Library, Discover (Ollama)
+
+const CAPABILITY_COLORS = {
+  coding: '#4e9a8f', fast: '#7a6eaa', large: '#c0725a',
+  reasoning: '#5a8fc0', general: '#7a8c6e', review: '#c0a85a',
+  chat: '#8f7ab5', embedding: '#6eb5a8',
+};
+const CapBadge = ({cap}) => (
+  <span style={{
+    background: CAPABILITY_COLORS[cap] || '#555', color:'#fff',
+    borderRadius:4, padding:'1px 6px', fontSize:11, marginRight:3,
+  }}>{cap}</span>
+);
+
+// ── Models / Active sub-tab ───────────────────────────────────────────────────
+const ModelsActive = () => {
+  const [data, setData] = React.useState(null);
+  const [presets, setPresets] = React.useState([]);
+  const [switching, setSwitching] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+
+  const load = () => Promise.all([
+    api.get('/api/models/active').then(setData),
+    api.get('/api/models/presets').then(d => setPresets(d.presets || [])),
+  ]);
+  useEffect(() => { load(); const id = setInterval(load, 8000); return () => clearInterval(id); }, []);
+
+  const activate = async (name) => {
+    setSwitching(true); setMsg('');
+    const r = await api.post(`/api/models/presets/${name}/activate`, {});
+    setMsg(r.message || (r.ok ? 'Activated.' : r.error));
+    setSwitching(false); load();
+  };
+
+  if (!data) return <div className="card"><p>Loading…</p></div>;
+  const { preset, main, judge } = data;
+
+  return (
+    <div>
+      <div className="card" style={{marginBottom:12}}>
+        <h3 style={{marginTop:0}}>Active Preset</h3>
+        {preset ? (
+          <>
+            <div style={{display:'flex', gap:16, flexWrap:'wrap', marginBottom:8}}>
+              <div style={{flex:1, minWidth:200}}>
+                <div style={{fontSize:13, color:'#aaa', marginBottom:2}}>Preset</div>
+                <div style={{fontWeight:700, fontSize:18}}>{preset.display_name}</div>
+                <div style={{color:'#999', fontSize:12}}>{preset.description}</div>
+              </div>
+              <div style={{flex:1, minWidth:200}}>
+                <div style={{fontSize:13, color:'#aaa', marginBottom:2}}>Main (Architect / Researcher / Synthesizer)</div>
+                <div style={{fontWeight:600}}>{main ? main.display_name : <span style={{color:'#f66'}}>Not found</span>}</div>
+                {main && <div style={{fontSize:12, color:'#aaa'}}>{main.model_tag} @ {main.ollama_url}</div>}
+                {main && main.capabilities.map(c => <CapBadge key={c} cap={c}/>)}
+              </div>
+              <div style={{flex:1, minWidth:200}}>
+                <div style={{fontSize:13, color:'#aaa', marginBottom:2}}>Judge (Critic)</div>
+                <div style={{fontWeight:600}}>{judge ? judge.display_name : <span style={{color:'#f66'}}>Not found</span>}</div>
+                {judge && <div style={{fontSize:12, color:'#aaa'}}>{judge.model_tag} @ {judge.ollama_url}</div>}
+                {judge && judge.capabilities.map(c => <CapBadge key={c} cap={c}/>)}
+              </div>
+            </div>
+            {preset.grub_overrides && Object.keys(preset.grub_overrides).length > 0 && (
+              <div style={{fontSize:12, color:'#aaa', marginTop:4}}>
+                Grub overrides: {Object.entries(preset.grub_overrides).map(([k,v]) => `${k}→${v}`).join(', ')}
+              </div>
+            )}
+          </>
+        ) : <p style={{color:'#aaa'}}>No active preset set. Select one below.</p>}
+        {msg && <div style={{marginTop:8, color: msg.includes('error') || msg.includes('not found') ? '#f88' : '#8f8'}}>{msg}</div>}
+      </div>
+
+      <div className="card">
+        <h3 style={{marginTop:0}}>Quick-Switch Preset</h3>
+        <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
+          {presets.map(p => (
+            <button key={p.name}
+              onClick={() => activate(p.name)}
+              disabled={switching}
+              style={{
+                padding:'8px 16px', borderRadius:6, border:'none', cursor:'pointer',
+                background: p.is_active ? '#3a8f6a' : '#3a3a4a', color:'#fff',
+                fontWeight: p.is_active ? 700 : 400,
+              }}>
+              {p.display_name}{p.is_active ? ' ✓' : ''}
+            </button>
+          ))}
+        </div>
+        <p style={{color:'#888', fontSize:12, marginBottom:0}}>
+          Switching activates at the next orchestrator meso-loop boundary — no restart needed.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// ── Models / Presets sub-tab ──────────────────────────────────────────────────
+const ModelsPresets = () => {
+  const [presets, setPresets] = React.useState([]);
+  const [library, setLibrary] = React.useState([]);
+  const [editing, setEditing] = React.useState(null); // null | preset obj
+  const [form, setForm] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+
+  const load = () => Promise.all([
+    api.get('/api/models/presets').then(d => setPresets(d.presets || [])),
+    api.get('/api/models/library').then(d => setLibrary(d.models || [])),
+  ]);
+  useEffect(() => { load(); }, []);
+
+  const openNew = () => {
+    setForm({ name:'', display_name:'', description:'', main_model_id:'', judge_model_id:'', notes:'', grub_overrides:{} });
+    setEditing({});
+  };
+  const openEdit = (p) => {
+    setForm({ ...p, grub_overrides_text: JSON.stringify(p.grub_overrides || {}, null, 2) });
+    setEditing(p);
+  };
+  const save = async () => {
+    setBusy(true); setMsg('');
+    let grub = {};
+    try { grub = JSON.parse(form.grub_overrides_text || '{}'); } catch { setMsg('Grub overrides: invalid JSON'); setBusy(false); return; }
+    const body = { ...form, grub_overrides: grub };
+    const url = form.name ? `/api/models/presets/${form.name}` : '/api/models/presets';
+    const method = (editing && editing.name) ? 'put' : 'post';
+    const r = await api[method](url, body);
+    setMsg(r.ok ? 'Saved.' : (r.error || 'Error'));
+    if (r.ok) { setEditing(null); load(); }
+    setBusy(false);
+  };
+  const remove = async (name) => {
+    if (!confirm(`Delete preset "${name}"?`)) return;
+    const r = await api.delete(`/api/models/presets/${name}`);
+    setMsg(r.ok ? `Deleted ${name}.` : r.error);
+    load();
+  };
+  const activate = async (name) => {
+    const r = await api.post(`/api/models/presets/${name}/activate`, {});
+    setMsg(r.message || (r.ok ? 'Activated.' : r.error));
+    load();
+  };
+
+  return (
+    <div>
+      {editing !== null && (
+        <div className="card" style={{marginBottom:12}}>
+          <h3 style={{marginTop:0}}>{editing.name ? `Edit: ${editing.display_name}` : 'New Preset'}</h3>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+            <label>Slug (name) <br/>
+              <input style={{width:'100%'}} value={form.name || ''} disabled={!!(editing && editing.name)}
+                onChange={e => setForm(f => ({...f, name: e.target.value}))} placeholder="coding" />
+            </label>
+            <label>Display name <br/>
+              <input style={{width:'100%'}} value={form.display_name || ''}
+                onChange={e => setForm(f => ({...f, display_name: e.target.value}))} placeholder="Coding" />
+            </label>
+            <label style={{gridColumn:'1/-1'}}>Description <br/>
+              <input style={{width:'100%'}} value={form.description || ''}
+                onChange={e => setForm(f => ({...f, description: e.target.value}))} />
+            </label>
+            <label>Main model (Architect/Researcher/Synthesizer) <br/>
+              <select style={{width:'100%'}} value={form.main_model_id || ''}
+                onChange={e => setForm(f => ({...f, main_model_id: e.target.value}))}>
+                <option value="">— select —</option>
+                {library.map(m => <option key={m.id} value={m.id}>{m.display_name} ({m.model_tag})</option>)}
+              </select>
+            </label>
+            <label>Judge model (Critic) <br/>
+              <select style={{width:'100%'}} value={form.judge_model_id || ''}
+                onChange={e => setForm(f => ({...f, judge_model_id: e.target.value}))}>
+                <option value="">— select —</option>
+                {library.map(m => <option key={m.id} value={m.id}>{m.display_name} ({m.model_tag})</option>)}
+              </select>
+            </label>
+            <label style={{gridColumn:'1/-1'}}>Grub minion overrides (JSON, optional) <br/>
+              <textarea rows={3} style={{width:'100%', fontFamily:'monospace'}}
+                value={form.grub_overrides_text || '{}'}
+                onChange={e => setForm(f => ({...f, grub_overrides_text: e.target.value}))}
+                placeholder={'{"coder": "qwen2.5-coder:32b"}'} />
+            </label>
+            <label style={{gridColumn:'1/-1'}}>Notes <br/>
+              <input style={{width:'100%'}} value={form.notes || ''}
+                onChange={e => setForm(f => ({...f, notes: e.target.value}))} />
+            </label>
+          </div>
+          <div style={{marginTop:10, display:'flex', gap:8}}>
+            <button onClick={save} disabled={busy}>Save</button>
+            <button onClick={() => setEditing(null)} style={{background:'#555'}}>Cancel</button>
+          </div>
+          {msg && <div style={{marginTop:6, color: msg === 'Saved.' ? '#8f8' : '#f88'}}>{msg}</div>}
+        </div>
+      )}
+
+      <div className="card">
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
+          <h3 style={{margin:0}}>Presets</h3>
+          <button onClick={openNew}>+ New Preset</button>
+        </div>
+        {presets.length === 0 && <p style={{color:'#aaa'}}>No presets yet.</p>}
+        <div style={{display:'flex', flexDirection:'column', gap:8}}>
+          {presets.map(p => (
+            <div key={p.name} style={{
+              background: p.is_active ? '#1e3a2a' : '#2a2a3a',
+              borderRadius:8, padding:'10px 14px',
+              border: p.is_active ? '1px solid #3a8f6a' : '1px solid #3a3a4a',
+              display:'flex', alignItems:'center', gap:12,
+            }}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700}}>{p.display_name} {p.is_active && <span style={{color:'#3a8f6a', fontSize:12}}>(active)</span>}</div>
+                <div style={{fontSize:12, color:'#aaa'}}>{p.description}</div>
+                <div style={{fontSize:12, color:'#888', marginTop:2}}>
+                  Main: {p.main_model ? p.main_model.display_name : <span style={{color:'#f88'}}>{p.main_model_id || 'not set'}</span>}
+                  {' · '}
+                  Judge: {p.judge_model ? p.judge_model.display_name : <span style={{color:'#f88'}}>{p.judge_model_id || 'not set'}</span>}
+                  {Object.keys(p.grub_overrides||{}).length > 0 && ` · Grub: ${Object.keys(p.grub_overrides).length} override(s)`}
+                </div>
+              </div>
+              <div style={{display:'flex', gap:6}}>
+                {!p.is_active && <button onClick={() => activate(p.name)} style={{background:'#3a8f6a', padding:'4px 10px', fontSize:12}}>Activate</button>}
+                <button onClick={() => openEdit(p)} style={{background:'#4a5a7a', padding:'4px 10px', fontSize:12}}>Edit</button>
+                <button onClick={() => remove(p.name)} style={{background:'#7a3a3a', padding:'4px 10px', fontSize:12}}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {msg && editing === null && <div style={{marginTop:8, color: msg.includes('error') || msg.includes('not found') ? '#f88' : '#8f8'}}>{msg}</div>}
+      </div>
+    </div>
+  );
+};
+
+// ── Models / Library sub-tab ──────────────────────────────────────────────────
+const ModelsLibrary = () => {
+  const [models, setModels] = React.useState([]);
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [form, setForm] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+
+  const load = () => api.get('/api/models/library').then(d => setModels(d.models || []));
+  useEffect(() => { load(); }, []);
+
+  const add = async () => {
+    setBusy(true); setMsg('');
+    const caps = (form.capabilities || '').split(',').map(s=>s.trim()).filter(Boolean);
+    const r = await api.post('/api/models/library', {...form, capabilities: caps, context_window: parseInt(form.context_window)||8192});
+    setMsg(r.ok ? 'Added.' : (r.error || 'Error'));
+    if (r.ok) { setShowAdd(false); setForm({}); load(); }
+    setBusy(false);
+  };
+  const remove = async (id) => {
+    if (!confirm(`Remove "${id}" from library?`)) return;
+    const r = await api.delete(`/api/models/library/${id}`);
+    setMsg(r.ok ? `Removed ${id}.` : r.error);
+    load();
+  };
+
+  return (
+    <div>
+      {showAdd && (
+        <div className="card" style={{marginBottom:12}}>
+          <h3 style={{marginTop:0}}>Add Model to Library</h3>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
+            <label>ID (unique slug) <br/><input style={{width:'100%'}} value={form.id||''} onChange={e=>setForm(f=>({...f,id:e.target.value}))} placeholder="qwen3-7b-local"/></label>
+            <label>Ollama model tag <br/><input style={{width:'100%'}} value={form.model_tag||''} onChange={e=>setForm(f=>({...f,model_tag:e.target.value}))} placeholder="qwen3:7b"/></label>
+            <label>Display name <br/><input style={{width:'100%'}} value={form.display_name||''} onChange={e=>setForm(f=>({...f,display_name:e.target.value}))} placeholder="Qwen 3 7B"/></label>
+            <label>Ollama URL <br/><input style={{width:'100%'}} value={form.ollama_url||'http://localhost:11434'} onChange={e=>setForm(f=>({...f,ollama_url:e.target.value}))}/></label>
+            <label>Context window (tokens) <br/><input style={{width:'100%'}} type="number" value={form.context_window||8192} onChange={e=>setForm(f=>({...f,context_window:e.target.value}))}/></label>
+            <label>Capabilities (comma-separated) <br/><input style={{width:'100%'}} value={form.capabilities||''} onChange={e=>setForm(f=>({...f,capabilities:e.target.value}))} placeholder="coding, fast"/></label>
+            <label style={{gridColumn:'1/-1'}}>Notes <br/><input style={{width:'100%'}} value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></label>
+          </div>
+          <div style={{marginTop:10, display:'flex', gap:8}}>
+            <button onClick={add} disabled={busy}>Add</button>
+            <button onClick={() => {setShowAdd(false); setForm({});}} style={{background:'#555'}}>Cancel</button>
+          </div>
+          {msg && <div style={{marginTop:6, color: msg==='Added.' ? '#8f8' : '#f88'}}>{msg}</div>}
+        </div>
+      )}
+      <div className="card">
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
+          <h3 style={{margin:0}}>Model Library ({models.length})</h3>
+          <button onClick={() => setShowAdd(!showAdd)}>+ Add Model</button>
+        </div>
+        {models.length === 0 && <p style={{color:'#aaa'}}>Library is empty.</p>}
+        <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
+          <thead>
+            <tr style={{color:'#aaa', textAlign:'left'}}>
+              <th style={{padding:'4px 8px'}}>Name</th>
+              <th style={{padding:'4px 8px'}}>Tag</th>
+              <th style={{padding:'4px 8px'}}>URL</th>
+              <th style={{padding:'4px 8px'}}>Ctx</th>
+              <th style={{padding:'4px 8px'}}>Capabilities</th>
+              <th style={{padding:'4px 8px'}}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {models.map(m => (
+              <tr key={m.id} style={{borderTop:'1px solid #2a2a3a'}}>
+                <td style={{padding:'6px 8px'}}><div style={{fontWeight:600}}>{m.display_name}</div><div style={{fontSize:11,color:'#888'}}>{m.id}</div></td>
+                <td style={{padding:'6px 8px', fontFamily:'monospace', color:'#adf'}}>{m.model_tag}</td>
+                <td style={{padding:'6px 8px', fontSize:12, color:'#aaa'}}>{m.ollama_url}</td>
+                <td style={{padding:'6px 8px', fontSize:12}}>{(m.context_window/1024).toFixed(0)}k</td>
+                <td style={{padding:'6px 8px'}}>{(m.capabilities||[]).map(c=><CapBadge key={c} cap={c}/>)}</td>
+                <td style={{padding:'6px 8px'}}><button onClick={() => remove(m.id)} style={{background:'#7a3a3a', padding:'2px 8px', fontSize:11}}>Remove</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {msg && !showAdd && <div style={{marginTop:8, color: msg.includes('oved') ? '#8f8' : '#f88'}}>{msg}</div>}
+      </div>
+    </div>
+  );
+};
+
+// ── Models / Discover sub-tab (Ollama discovery) ──────────────────────────────
+const ModelsDiscover = () => {
+  const [urls, setUrls] = React.useState('http://localhost:11434');
+  const [models, setModels] = React.useState([]);
+  const [selected, setSelected] = React.useState(new Set());
+  const [loading, setLoading] = React.useState(false);
+  const [importing, setImporting] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+
+  const discover = async () => {
+    setLoading(true); setMsg(''); setModels([]); setSelected(new Set());
+    const r = await api.get(`/api/models/ollama/available?urls=${encodeURIComponent(urls)}`);
+    if (r.ok) { setModels(r.models || []); }
+    else { setMsg(r.error || 'Discovery failed.'); }
+    setLoading(false);
+  };
+
+  const toggle = (tag_url) => setSelected(s => {
+    const n = new Set(s);
+    n.has(tag_url) ? n.delete(tag_url) : n.add(tag_url);
+    return n;
+  });
+  const toggleAll = () => {
+    if (selected.size === models.filter(m=>!m.in_library).length) setSelected(new Set());
+    else setSelected(new Set(models.filter(m=>!m.in_library).map(m=>m.suggested_id)));
+  };
+
+  const importSelected = async () => {
+    const toImport = models.filter(m => selected.has(m.suggested_id));
+    if (toImport.length === 0) { setMsg('Select at least one model.'); return; }
+    setImporting(true); setMsg('');
+    const r = await api.post('/api/models/ollama/sync', { models: toImport });
+    if (r.ok) {
+      setMsg(`Imported ${r.added.length} model(s). ${r.skipped.length} already in library.`);
+      discover(); // refresh to show updated in_library flags
+    } else { setMsg(r.error || 'Import failed.'); }
+    setImporting(false);
+  };
+
+  return (
+    <div>
+      <div className="card" style={{marginBottom:12}}>
+        <h3 style={{marginTop:0}}>Discover Ollama Models</h3>
+        <p style={{color:'#aaa', fontSize:13, marginTop:0}}>
+          Query one or more Ollama servers (local or LAN) and add discovered models to the library.
+        </p>
+        <label>Ollama server URLs (comma-separated)<br/>
+          <input style={{width:'100%'}} value={urls} onChange={e=>setUrls(e.target.value)}
+            placeholder="http://localhost:11434, http://192.168.1.10:11434" />
+        </label>
+        <div style={{marginTop:10, display:'flex', gap:8, alignItems:'center'}}>
+          <button onClick={discover} disabled={loading}>{loading ? 'Scanning…' : '🔍 Scan'}</button>
+          {models.length > 0 && (
+            <>
+              <button onClick={toggleAll} style={{background:'#4a5a7a'}}>
+                {selected.size === models.filter(m=>!m.in_library).length ? 'Deselect All' : 'Select All New'}
+              </button>
+              <button onClick={importSelected} disabled={importing || selected.size===0} style={{background:'#3a8f6a'}}>
+                {importing ? 'Importing…' : `Import Selected (${selected.size})`}
+              </button>
+            </>
+          )}
+        </div>
+        {msg && <div style={{marginTop:8, color: msg.includes('fail') || msg.includes('error') ? '#f88' : '#8f8'}}>{msg}</div>}
+      </div>
+
+      {models.length > 0 && (
+        <div className="card">
+          <h3 style={{marginTop:0}}>Found {models.length} model(s)</h3>
+          <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
+            <thead>
+              <tr style={{color:'#aaa', textAlign:'left'}}>
+                <th style={{padding:'4px 8px'}}>Select</th>
+                <th style={{padding:'4px 8px'}}>Model</th>
+                <th style={{padding:'4px 8px'}}>Family</th>
+                <th style={{padding:'4px 8px'}}>Params</th>
+                <th style={{padding:'4px 8px'}}>Quant</th>
+                <th style={{padding:'4px 8px'}}>Size</th>
+                <th style={{padding:'4px 8px'}}>Server</th>
+                <th style={{padding:'4px 8px'}}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {models.map(m => (
+                <tr key={m.suggested_id} style={{borderTop:'1px solid #2a2a3a', opacity: m.in_library ? 0.5 : 1}}>
+                  <td style={{padding:'6px 8px', textAlign:'center'}}>
+                    {!m.in_library && (
+                      <input type="checkbox" checked={selected.has(m.suggested_id)}
+                        onChange={() => toggle(m.suggested_id)} />
+                    )}
+                  </td>
+                  <td style={{padding:'6px 8px', fontFamily:'monospace', color:'#adf'}}>{m.model_tag}</td>
+                  <td style={{padding:'6px 8px'}}>{m.family}</td>
+                  <td style={{padding:'6px 8px'}}>{m.parameter_size}</td>
+                  <td style={{padding:'6px 8px', fontSize:11, color:'#aaa'}}>{m.quantization}</td>
+                  <td style={{padding:'6px 8px', fontSize:12}}>{m.size_gb} GB</td>
+                  <td style={{padding:'6px 8px', fontSize:11, color:'#888'}}>{m.ollama_url}</td>
+                  <td style={{padding:'6px 8px'}}>
+                    {m.in_library
+                      ? <span style={{color:'#8f8', fontSize:11}}>✓ In library</span>
+                      : <span style={{color:'#aaa', fontSize:11}}>Not imported</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Models Panel (top-level tab) ──────────────────────────────────────────────
+const ModelsPanel = () => {
+  const [sub, setSub] = React.useState('active');
+  const subTabs = [
+    { id: 'active',   label: '⚡ Active Preset' },
+    { id: 'presets',  label: '📋 Presets' },
+    { id: 'library',  label: '📚 Library' },
+    { id: 'discover', label: '🔍 Discover (Ollama)' },
+  ];
+  const panels = { active: ModelsActive, presets: ModelsPresets, library: ModelsLibrary, discover: ModelsDiscover };
+  const SubPanel = panels[sub];
+  return (
+    <div>
+      <nav style={{display:'flex', gap:6, marginBottom:14, flexWrap:'wrap'}}>
+        {subTabs.map(t => (
+          <button key={t.id} onClick={() => setSub(t.id)}
+            style={{
+              padding:'6px 14px', borderRadius:6, border:'none', cursor:'pointer',
+              background: sub===t.id ? '#4a5a9a' : '#2a2a3a', color:'#fff',
+              fontWeight: sub===t.id ? 700 : 400,
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      <SubPanel />
+    </div>
+  );
+};
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'dashboard', label: '📊 Dashboard',     Component: Dashboard },
+  { id: 'models',    label: '🧠 Models',         Component: ModelsPanel },
   { id: 'grub',      label: '🐛 Grub',           Component: GrubStatus },
   { id: 'fritz',     label: '🔀 Fritz',           Component: FritzPanel },
   { id: 'config',    label: '⚙️ Config',         Component: Config },
