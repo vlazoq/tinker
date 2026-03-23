@@ -1,9 +1,13 @@
 """
-webui/core.py
-─────────────
-Shared data-access helpers used by the FastAPI web UI.
+ui/core.py
+──────────
+Shared data-access layer used by all three Tinker UI variants
+(ui/web, ui/streamlit, ui/gradio).
 Reads/writes SQLite databases, JSON config files, and feature flags.
 All database calls use asyncio.to_thread() to avoid blocking the event loop.
+
+To add a new config field, flag, or subsystem enum, edit this file once —
+all three UI variants pick it up automatically.
 """
 
 from __future__ import annotations

@@ -370,13 +370,13 @@ a few seconds (e.g., the current AI call is still in progress), pressing
 
 ```bash
 # FastAPI / React dashboard:
-python -m webui
+python -m tinker.ui.web
 
 # Gradio UI:
-python -m gradio_ui
+python -m tinker.ui.gradio
 
 # Streamlit UI:
-python -m streamlit_ui
+python -m tinker.ui.streamlit
 ```
 
 Open your browser at:

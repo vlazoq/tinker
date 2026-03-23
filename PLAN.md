@@ -25,7 +25,7 @@ and Dashboard mode (new API endpoint).
 - `tools/artifact_writer.py` — call gate before delete/overwrite operations
 - `orchestrator/orchestrator.py` — expose `confirmation_gate` attribute, wire
   into `__init__`
-- `webui/app.py` — add `POST /api/confirm/{request_id}` endpoint (approve/deny)
+- `ui/web/app.py` — add `POST /api/confirm/{request_id}` endpoint (approve/deny)
   and `GET /api/confirmations` (list pending)
 
 ### How it works
@@ -78,7 +78,7 @@ OrchestratorConfig(
   after Critic step
 - `main.py` — create `CheckpointManager`, check for existing checkpoint, pass
   to Orchestrator
-- `webui/app.py` — add `POST /api/pause`, `POST /api/resume` endpoints
+- `ui/web/app.py` — add `POST /api/pause`, `POST /api/resume` endpoints
 
 ### Checkpoint file format
 ```json
@@ -190,7 +190,7 @@ Drop: verbose explanations, repeated content, boilerplate.
 - `tools/registry.py` — add `register_from_mcp(bridge)` convenience method
 - `main.py` — if `TINKER_MCP_ENABLED=true`, create `MCPBridge`, call
   `bridge.start_server()` and `bridge.connect_clients()`, then register tools
-- `webui/app.py` — add `GET /api/mcp/status` (connected servers, available tools)
+- `ui/web/app.py` — add `GET /api/mcp/status` (connected servers, available tools)
 - `orchestrator/config.py` — no changes needed (MCP config is separate)
 
 ### Protocol notes
@@ -300,4 +300,4 @@ System prompt structure with TINKER.md:
 - `tools/registry.py` (item 4)
 - `prompts/builder.py` (item 5)
 - `main.py` (items 2, 3, 4, 5)
-- `webui/app.py` (items 1, 2, 4)
+- `ui/web/app.py` (items 1, 2, 4)
