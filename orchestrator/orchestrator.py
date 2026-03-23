@@ -446,7 +446,20 @@ class Orchestrator:
         This function never raises — all errors are caught inside the helper
         methods it calls.
         """
+        # Track the mtime of the active preset file so we can detect changes
+        # without reading the file on every iteration.
+        _preset_mtime: float = 0.0
+
         while not self._shutdown_event.is_set():
+            # ── Model preset hot-reload check ─────────────────────────────────
+            # If the user switched a preset from the Dashboard, the active preset
+            # file's mtime will have changed.  Apply the new models now, before
+            # the next micro loop, so the change takes effect within seconds.
+            try:
+                _preset_mtime = await self._check_model_preset(_preset_mtime)
+            except Exception as _preset_exc:
+                logger.warning("Preset check error (non-fatal): %s", _preset_exc)
+
             # ── Pause check ───────────────────────────────────────────────────
             # If pause() was called, wait here until resume() clears the event.
             # _interruptible_sleep already handles shutdown-while-paused.
@@ -784,6 +797,79 @@ class Orchestrator:
         """
         count = self.state.subsystem_micro_counts.get(subsystem, 0)
         return count >= self.config.meso_trigger_count
+
+    async def _check_model_preset(self, last_mtime: float) -> float:
+        """
+        Check whether the active model preset has changed since the last loop.
+
+        If ``tinker_active_preset.json`` has a newer mtime than ``last_mtime``,
+        load the preset, look up the model entries in the library, and call
+        ``router.hot_reload()`` to swap models without a process restart.
+
+        Parameters
+        ----------
+        last_mtime : mtime from the previous call (0.0 on first call).
+
+        Returns
+        -------
+        The current mtime of the preset file (updated or unchanged).
+        """
+        try:
+            from models.presets import PresetManager
+            from models.library import ModelLibrary
+        except ImportError:
+            return last_mtime  # models package not available — skip silently
+
+        # Lazy-init the PresetManager on first call; cache it on self.
+        if not hasattr(self, "_preset_manager"):
+            lib = ModelLibrary()
+            self._preset_manager = PresetManager(lib)
+
+        mgr: "PresetManager" = self._preset_manager  # type: ignore[name-defined]
+        current_mtime = mgr.active_file_mtime()
+
+        if current_mtime <= last_mtime:
+            return last_mtime  # nothing changed
+
+        # File changed — load the new preset
+        preset = mgr.active_preset()
+        if preset is None:
+            logger.warning("Active preset file changed but preset not found in presets.json")
+            return current_mtime
+
+        lib = mgr._library  # type: ignore[attr-defined]
+        main_entry = lib.get(preset.main_model_id)
+        judge_entry = lib.get(preset.judge_model_id)
+
+        if main_entry is None or judge_entry is None:
+            logger.warning(
+                "Preset '%s' references unknown model(s): main=%s judge=%s",
+                preset.name, preset.main_model_id, preset.judge_model_id,
+            )
+            return current_mtime
+
+        # Hot-reload the ModelRouter if it's wired to this orchestrator
+        router = getattr(self, "model_router", None)
+        if router is not None:
+            await router.hot_reload(
+                main_model=main_entry.model_tag,
+                main_url=main_entry.ollama_url,
+                judge_model=judge_entry.model_tag,
+                judge_url=judge_entry.ollama_url,
+                main_ctx=main_entry.context_window,
+                judge_ctx=judge_entry.context_window,
+            )
+
+        # Apply Grub overrides if a GrubAgent is wired to this orchestrator
+        grub = getattr(self, "grub_agent", None)
+        if grub is not None and preset.grub_overrides:
+            grub.apply_model_overrides(preset.grub_overrides)
+
+        logger.info(
+            "Model preset '%s' activated: Main=%s Judge=%s",
+            preset.name, main_entry.model_tag, judge_entry.model_tag,
+        )
+        return current_mtime
 
     async def _run_meso(self, subsystem: str) -> None:
         """
