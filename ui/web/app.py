@@ -1,11 +1,11 @@
 """
-webui/app.py
-────────────
+ui/web/app.py
+─────────────
 FastAPI backend for the Tinker Web UI.
 All API routes return JSON; the React SPA (index.html) consumes them.
 
-Run:  python -m tinker.webui          (default port 8082)
-      TINKER_WEBUI_PORT=9000 python -m tinker.webui
+Run:  python -m tinker.ui.web          (default port 8082)
+      TINKER_WEBUI_PORT=9000 python -m tinker.ui.web
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .core import (
+from ui.core import (
     ORCH_CONFIG_SCHEMA,
     STAGNATION_CONFIG_SCHEMA,
     FLAG_DEFAULTS,

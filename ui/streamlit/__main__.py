@@ -1,6 +1,6 @@
 """
-Entry point:  python -m tinker.streamlit_ui
-Internally runs:  streamlit run tinker/streamlit_ui/app.py
+Entry point:  python -m tinker.ui.streamlit
+Internally runs:  streamlit run tinker/ui/streamlit/app.py
 """
 
 import os

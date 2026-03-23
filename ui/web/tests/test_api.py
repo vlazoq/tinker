@@ -1,5 +1,5 @@
 """
-webui/tests/test_api.py
+ui/web/tests/test_api.py
 =======================
 Enterprise-grade HTTP integration tests for the Tinker FastAPI backend.
 
@@ -38,8 +38,8 @@ they are hermetic and never pollute the developer's working tree.
 
 Running
 -------
-    pytest webui/tests/test_api.py -v
-    pytest webui/tests/test_api.py -v --tb=short -q   # terse
+    pytest ui/web/tests/test_api.py -v
+    pytest ui/web/tests/test_api.py -v --tb=short -q   # terse
 """
 
 from __future__ import annotations
@@ -51,8 +51,8 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from webui.app import app
-from webui.core import FLAG_DEFAULTS, ORCH_CONFIG_SCHEMA
+from ui.web.app import app
+from ui.core import FLAG_DEFAULTS, ORCH_CONFIG_SCHEMA
 
 # ---------------------------------------------------------------------------
 # Module-level client (shared, no DB side effects from stateless GETs)
@@ -209,10 +209,10 @@ class TestConfigEndpoints:
         """A completely valid payload must return ok=True."""
         cfg_file = tmp_path / "config.json"
         with (
-            patch("webui.core.CONFIG_FILE", cfg_file),
-            patch("webui.app.load_config", lambda: {}),
+            patch("ui.core.CONFIG_FILE", cfg_file),
+            patch("ui.web.app.load_config", lambda: {}),
             patch(
-                "webui.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))
+                "ui.web.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))
             ),
         ):
             # Build a valid payload from the schema defaults
@@ -330,8 +330,8 @@ class TestFlagPersistence:
         flags_file.write_text(json.dumps(dict(FLAG_DEFAULTS)))
 
         with (
-            patch("webui.core.FLAGS_FILE", flags_file),
-            patch("webui.app.FLAGS_FILE", flags_file),
+            patch("ui.core.FLAGS_FILE", flags_file),
+            patch("ui.web.app.FLAGS_FILE", flags_file),
         ):
             yield TestClient(app, raise_server_exceptions=True)
 
@@ -388,13 +388,13 @@ class TestConfigPersistence:
     def isolated_client(self, tmp_path):
         cfg_file = tmp_path / "config.json"
         with (
-            patch("webui.core.CONFIG_FILE", cfg_file),
+            patch("ui.core.CONFIG_FILE", cfg_file),
             patch(
-                "webui.app.load_config",
+                "ui.web.app.load_config",
                 lambda: json.loads(cfg_file.read_text()) if cfg_file.exists() else {},
             ),
             patch(
-                "webui.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))
+                "ui.web.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))
             ),
         ):
             yield TestClient(app, raise_server_exceptions=True)
@@ -699,7 +699,7 @@ class TestSSEStream:
         """Route /api/logs/stream must be registered on the FastAPI app."""
         paths = [getattr(r, "path", "") for r in app.routes]
         assert "/api/logs/stream" in paths, (
-            "Route /api/logs/stream not found. Check webui/app.py."
+            "Route /api/logs/stream not found. Check ui/web/app.py."
         )
 
     def test_sse_route_accepts_get(self):
@@ -720,7 +720,7 @@ class TestSSEStream:
     def test_sse_level_param_in_signature(self):
         """The route handler must accept a ``level`` query parameter."""
         import inspect
-        from webui.app import api_logs_stream
+        from ui.web.app import api_logs_stream
 
         sig = inspect.signature(api_logs_stream)
         assert "level" in sig.parameters
@@ -734,7 +734,7 @@ class TestSSEStream:
         """
         from unittest.mock import AsyncMock, MagicMock, patch
         from starlette.responses import StreamingResponse
-        from webui.app import api_logs_stream
+        from ui.web.app import api_logs_stream
 
         mock_request = MagicMock()
         mock_request.is_disconnected = AsyncMock(
@@ -742,8 +742,8 @@ class TestSSEStream:
         )  # disconnect at once
 
         with (
-            patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)),
-            patch("webui.app.load_state", return_value={"totals": {}}),
+            patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("ui.web.app.load_state", return_value={"totals": {}}),
         ):
             response = await api_logs_stream(request=mock_request, level="INFO")
 
@@ -753,14 +753,14 @@ class TestSSEStream:
     @pytest.mark.asyncio
     async def test_sse_cache_control_header_is_no_cache(self):
         from unittest.mock import AsyncMock, MagicMock, patch
-        from webui.app import api_logs_stream
+        from ui.web.app import api_logs_stream
 
         mock_request = MagicMock()
         mock_request.is_disconnected = AsyncMock(return_value=True)
 
         with (
-            patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)),
-            patch("webui.app.load_state", return_value={"totals": {}}),
+            patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("ui.web.app.load_state", return_value={"totals": {}}),
         ):
             response = await api_logs_stream(request=mock_request)
 
@@ -780,7 +780,7 @@ class TestSSEStream:
         must emit a chunk starting with ``data: ``.
         """
         from unittest.mock import AsyncMock, MagicMock, patch
-        from webui.app import api_logs_stream
+        from ui.web.app import api_logs_stream
 
         call_count = 0
         mock_request = MagicMock()
@@ -800,8 +800,8 @@ class TestSSEStream:
 
         chunks = []
         with (
-            patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)),
-            patch("webui.app.load_state", side_effect=state_iter),
+            patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("ui.web.app.load_state", side_effect=state_iter),
         ):
             response = await api_logs_stream(request=mock_request)
             async for chunk in response.body_iterator:
@@ -817,7 +817,7 @@ class TestSSEStream:
     async def test_sse_event_payload_is_valid_json(self):
         """Each emitted SSE event payload must be deserializable as JSON."""
         from unittest.mock import AsyncMock, MagicMock, patch
-        from webui.app import api_logs_stream
+        from ui.web.app import api_logs_stream
 
         call_count = 0
         mock_request = MagicMock()
@@ -845,8 +845,8 @@ class TestSSEStream:
             },
         ]
         with (
-            patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)),
-            patch("webui.app.load_state", side_effect=iter(states)),
+            patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("ui.web.app.load_state", side_effect=iter(states)),
         ):
             response = await api_logs_stream(request=mock_request)
             async for chunk in response.body_iterator:
@@ -869,7 +869,7 @@ class TestSSEStream:
         Specifically: 3 iterations with micro=0 → only 1 event total, not 3.
         """
         from unittest.mock import AsyncMock, MagicMock, patch
-        from webui.app import api_logs_stream
+        from ui.web.app import api_logs_stream
 
         call_count = 0
         mock_request = MagicMock()
@@ -888,8 +888,8 @@ class TestSSEStream:
         }
         chunks = []
         with (
-            patch("webui.app.asyncio.sleep", new=AsyncMock(return_value=None)),
-            patch("webui.app.load_state", return_value=constant_state),
+            patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
+            patch("ui.web.app.load_state", return_value=constant_state),
         ):
             response = await api_logs_stream(request=mock_request)
             async for chunk in response.body_iterator:
@@ -1388,7 +1388,7 @@ class TestRateLimitingContract:
 
     Implementation plan (D3)
     ------------------------
-    Add a SlowAPI or custom token-bucket middleware to ``webui/app.py``:
+    Add a SlowAPI or custom token-bucket middleware to ``ui/web/app.py``:
 
         from slowapi import Limiter, _rate_limit_exceeded_handler
         from slowapi.util import get_remote_address
@@ -1406,7 +1406,7 @@ class TestRateLimitingContract:
     """
 
     @pytest.mark.xfail(
-        reason="HTTP rate limiting not yet implemented in webui/app.py (D3 gap)",
+        reason="HTTP rate limiting not yet implemented in ui/web/app.py (D3 gap)",
         strict=False,
     )
     def test_excessive_requests_return_429(self):
@@ -1424,7 +1424,7 @@ class TestRateLimitingContract:
         )
 
     @pytest.mark.xfail(
-        reason="HTTP rate limiting not yet implemented in webui/app.py (D3 gap)",
+        reason="HTTP rate limiting not yet implemented in ui/web/app.py (D3 gap)",
         strict=False,
     )
     def test_rate_limit_response_includes_retry_after_header(self):

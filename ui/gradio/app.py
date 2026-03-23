@@ -1,7 +1,7 @@
 """
-gradio_ui/app.py
+ui/gradio/app.py
 ────────────────
-Gradio UI for Tinker. Run with:  python -m tinker.gradio_ui
+Gradio UI for Tinker. Run with:  python -m tinker.ui.gradio
 
 Tabs: Dashboard · Config · Feature Flags · Task Queue · DLQ · Backups · Audit Log
 
@@ -15,13 +15,13 @@ import sys
 from pathlib import Path
 
 # Make tinker root importable
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import gradio as gr  # noqa: E402
 
-from webui.core import (  # noqa: E402
+from ui.core import (  # noqa: E402
     ORCH_CONFIG_SCHEMA,
     STAGNATION_CONFIG_SCHEMA,
     FLAG_DEFAULTS,

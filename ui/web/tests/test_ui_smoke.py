@@ -1,6 +1,6 @@
 """
-webui/tests/test_ui_smoke.py
-=============================
+ui/web/tests/test_ui_smoke.py
+==============================
 Smoke tests for the three UI layers (FastAPI, Streamlit, Gradio).
 
 These tests run with *no* optional dependencies installed (no streamlit,
@@ -10,16 +10,16 @@ parity using Python's standard ``ast`` module to inspect source files.
 What is checked
 ---------------
 1. **Syntax** — every UI source file parses as valid Python.
-2. **Shared constants** — ``webui/core.py`` exports all required names and
+2. **Shared constants** — ``ui/core.py`` exports all required names and
    those names are self-consistent (FLAG_DEFAULTS ↔ FLAG_DESCRIPTIONS ↔
    FLAG_GROUPS keys agree; every ORCH_CONFIG_SCHEMA field has a ``type``
    and ``default``).
 3. **Single-source-of-truth** — all three UI apps import constants from
-   ``webui.core`` (or the local ``core`` module), never re-define them.
+   ``ui.core`` (or the local ``core`` module), never re-define them.
 4. **Feature parity** — all three apps cover the same 8 feature areas:
    Dashboard / Health, Config, Feature Flags, Task Queue, DLQ, Backups,
    Grub, and Audit Log.
-5. **FastAPI route coverage** — ``webui/app.py`` registers API endpoints
+5. **FastAPI route coverage** — ``ui/web/app.py`` registers API endpoints
    for every feature area.
 """
 
@@ -32,16 +32,16 @@ from pathlib import Path
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-ROOT = Path(__file__).parent.parent.parent  # tinker/
-WEBUI_CORE = ROOT / "webui" / "core.py"
-WEBUI_APP = ROOT / "webui" / "app.py"
-STREAMLIT_APP = ROOT / "streamlit_ui" / "app.py"
-GRADIO_APP = ROOT / "gradio_ui" / "app.py"
+ROOT = Path(__file__).parent.parent.parent.parent  # tinker/
+WEBUI_CORE = ROOT / "ui" / "core.py"
+WEBUI_APP = ROOT / "ui" / "web" / "app.py"
+STREAMLIT_APP = ROOT / "ui" / "streamlit" / "app.py"
+GRADIO_APP = ROOT / "ui" / "gradio" / "app.py"
 
 _UI_FILES = {
-    "webui/app.py": WEBUI_APP,
-    "streamlit_ui/app.py": STREAMLIT_APP,
-    "gradio_ui/app.py": GRADIO_APP,
+    "ui/web/app.py": WEBUI_APP,
+    "ui/streamlit/app.py": STREAMLIT_APP,
+    "ui/gradio/app.py": GRADIO_APP,
 }
 
 
@@ -130,7 +130,7 @@ class TestSyntax:
 
 
 class TestCoreConstants:
-    """webui/core.py must export all required constants."""
+    """ui/core.py must export all required constants."""
 
     REQUIRED_NAMES = {
         "FLAG_DEFAULTS",
@@ -169,7 +169,7 @@ class TestCoreConstants:
         }
         defined_all = assigns | defined_fns
         missing = self.REQUIRED_NAMES - defined_all
-        assert not missing, f"webui/core.py is missing: {sorted(missing)}"
+        assert not missing, f"ui/core.py is missing: {sorted(missing)}"
 
     def test_flag_defaults_keys_all_have_descriptions(self):
         defaults = _dict_keys_from_assign(WEBUI_CORE, "FLAG_DEFAULTS")
@@ -217,7 +217,7 @@ class TestCoreConstants:
 
 
 class TestSingleSourceOfTruth:
-    """Every UI app must import its constants from webui.core, not re-define them."""
+    """Every UI app must import its constants from ui.core, not re-define them."""
 
     # Names that must NOT be re-defined as module-level assignments in the UIs
     SHARED_NAMES = {
@@ -232,14 +232,14 @@ class TestSingleSourceOfTruth:
         assigns = _module_assign_names(path)
         redefined = self.SHARED_NAMES & assigns
         assert not redefined, (
-            f"{path.name} re-defines shared constants (should import from webui.core): "
+            f"{path.name} re-defines shared constants (should import from ui.core): "
             f"{sorted(redefined)}"
         )
 
     def test_webui_app_imports_from_core(self):
         src = _src(WEBUI_APP)
-        assert "from .core import" in src or "from webui.core import" in src, (
-            "webui/app.py must import shared constants from .core"
+        assert "from ui.core import" in src or "from .core import" in src, (
+            "ui/web/app.py must import shared constants from ui.core"
         )
 
     def test_webui_app_does_not_redefine_shared_names(self):
@@ -248,10 +248,10 @@ class TestSingleSourceOfTruth:
     def test_streamlit_app_imports_from_core(self):
         src = _src(STREAMLIT_APP)
         assert (
-            "from webui.core import" in src
-            or "from webui import" in src
-            or "webui.core" in src
-        ), "streamlit_ui/app.py must import shared constants from webui.core"
+            "from ui.core import" in src
+            or "from ui import" in src
+            or "ui.core" in src
+        ), "ui/streamlit/app.py must import shared constants from ui.core"
 
     def test_streamlit_app_does_not_redefine_shared_names(self):
         self._check_no_redefinition(STREAMLIT_APP)
@@ -259,10 +259,10 @@ class TestSingleSourceOfTruth:
     def test_gradio_app_imports_from_core(self):
         src = _src(GRADIO_APP)
         assert (
-            "from webui.core import" in src
-            or "from webui import" in src
-            or "webui.core" in src
-        ), "gradio_ui/app.py must import shared constants from webui.core"
+            "from ui.core import" in src
+            or "from ui import" in src
+            or "ui.core" in src
+        ), "ui/gradio/app.py must import shared constants from ui.core"
 
     def test_gradio_app_does_not_redefine_shared_names(self):
         self._check_no_redefinition(GRADIO_APP)
@@ -303,13 +303,13 @@ class TestFeatureParity:
         assert not missing, f"{label} is missing coverage for: {missing}"
 
     def test_webui_app_covers_all_features(self):
-        self._check_app("webui/app.py", WEBUI_APP)
+        self._check_app("ui/web/app.py", WEBUI_APP)
 
     def test_streamlit_app_covers_all_features(self):
-        self._check_app("streamlit_ui/app.py", STREAMLIT_APP)
+        self._check_app("ui/streamlit/app.py", STREAMLIT_APP)
 
     def test_gradio_app_covers_all_features(self):
-        self._check_app("gradio_ui/app.py", GRADIO_APP)
+        self._check_app("ui/gradio/app.py", GRADIO_APP)
 
     def test_all_uis_cover_identical_features(self):
         """No UI is missing a feature that another UI has."""
@@ -356,7 +356,7 @@ class TestFastAPIRoutes:
         for prefix in self.EXPECTED_PREFIXES:
             if prefix not in src:
                 missing.append(prefix)
-        assert not missing, f"webui/app.py missing routes: {missing}"
+        assert not missing, f"ui/web/app.py missing routes: {missing}"
 
     def test_task_inject_route_exists(self):
         """Task injection endpoint must exist for manual task creation."""

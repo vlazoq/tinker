@@ -1,4 +1,4 @@
-"""Entry point: python -m tinker.gradio_ui"""
+"""Entry point: python -m tinker.ui.gradio"""
 
 import os
 from .app import build_app
