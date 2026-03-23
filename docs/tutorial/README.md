@@ -56,6 +56,8 @@ Build the chapters in order. Each one depends on the previous.
 | [15](./15-grub-overview.md) | Grub — The Implementation Agent | Phase 2 overview, Minions, Skills, execution modes A/B/C |
 | [16](./16-grub-minions.md) | Minions in Detail | Each Minion's role, contracts, retry loop, how to add new ones |
 | [17](./17-grub-integration.md) | Grub + Tinker Integration | Full loop: design → implement → review → redesign |
+| [18](./18-fritz.md) | Fritz — Git & Platform Integration | Commit, PR, CI gating, GitHub/Gitea, push policy, audit trail |
+| [19](./19-new-features.md) | **Claude Code-Inspired Features** | TINKER.md, confirmation gates, pause/resume, context summarization, MCP |
 
 ---
 
