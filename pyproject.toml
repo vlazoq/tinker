@@ -71,6 +71,7 @@ metrics = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",             # coverage reports (pytest --cov)
     "fakeredis[aioredis]>=2.23.0",  # in-process Redis mock for tests
     "textual-dev>=0.52.0",           # Textual live-reload devtools
     "prometheus-client>=0.20.0",
@@ -118,4 +119,48 @@ testpaths    = [
     "infra",
     "agents",
     "ui",
+    "services",
 ]
+addopts = "--tb=short --strict-markers"
+markers = [
+    "unit: fast unit tests with no external dependencies",
+    "integration: tests that require Docker Compose services (redis, ollama)",
+    "e2e: end-to-end tests using stub orchestrator",
+    "slow: tests that take more than 5 seconds",
+]
+
+# ---------------------------------------------------------------------------
+# Coverage — run with: pytest --cov
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+branch   = true
+source   = [
+    "core",
+    "runtime",
+    "infra",
+    "agents",
+    "tinker_platform",
+    "ui",
+    "services",
+    "bootstrap",
+]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "main.py",          # entry point — covered by integration tests
+]
+
+[tool.coverage.report]
+show_missing    = true
+skip_covered    = false
+fail_under      = 60    # minimum acceptable coverage percentage
+exclude_lines   = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",         # abstract method stubs
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
