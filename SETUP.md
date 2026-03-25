@@ -398,6 +398,9 @@ a live log stream.
 > **Windows note:** the TUI uses `textual`, which requires a terminal with
 > Unicode and colour support.  Use **Windows Terminal** (available from the
 > Microsoft Store) rather than the legacy `cmd.exe` for the best experience.
+> Older terminals (Windows 8, legacy ConHost) may have rendering issues —
+> the **web UI** (Step 8) is the recommended cross-platform interface for
+> those environments.
 
 ---
 
