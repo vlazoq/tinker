@@ -16,9 +16,9 @@ the same functionality.  Each one is suited for different users:
 
 | UI | Best for |
 |----|----------|
-| **FastAPI + React** (`webui/`) | Permanent deployment, shareable URLs |
-| **Gradio** (`gradio_ui/`) | Data scientists, quick interactive demo |
-| **Streamlit** (`streamlit_ui/`) | Analysts, easy Python-only dashboard |
+| **FastAPI + React** (`ui/web/`) | Permanent deployment, shareable URLs |
+| **Gradio** (`ui/gradio/`) | Data scientists, quick interactive demo |
+| **Streamlit** (`ui/streamlit/`) | Analysts, easy Python-only dashboard |
 
 All three UIs are *read-mostly*.  They read SQLite databases and JSON files
 that the orchestrator writes.  They never talk to the orchestrator directly —
@@ -28,25 +28,24 @@ they share files.
 
 ## The Architecture Decision
 
-### Shared data layer (`webui/core.py`)
+### Shared data layer (`ui/core.py`)
 
 Rather than duplicate database access code across three UIs, we put all
-shared logic into one file: `webui/core.py`.
+shared logic into one file: `ui/core.py`.
 
 ```
-webui/
+ui/
   core.py          ← shared DB helpers, file paths, config schemas
-  app.py           ← FastAPI routes
-  templates/
-    index.html     ← React SPA (vanilla JS, no build tools)
-  static/
-    tinker.css     ← styling
-
-gradio_ui/
-  app.py           ← imports from webui.core
-
-streamlit_ui/
-  app.py           ← imports from webui.core
+  web/
+    app.py         ← FastAPI routes
+    templates/
+      index.html   ← React SPA (vanilla JS, no build tools)
+    static/
+      tinker.css   ← styling
+  gradio/
+    app.py         ← imports from ui.core
+  streamlit/
+    app.py         ← imports from ui.core
 ```
 
 When Gradio or Streamlit need to read the task database, they call the same
@@ -65,10 +64,10 @@ This is a deliberate trade-off:
 
 ---
 
-## Step 1 — The Shared Core (`webui/core.py`)
+## Step 1 — The Shared Core (`ui/core.py`)
 
 ```python
-# webui/core.py
+# ui/core.py
 
 from __future__ import annotations
 
@@ -216,13 +215,13 @@ async def fetch_health() -> dict:
 
 ---
 
-## Step 2 — The FastAPI Backend (`webui/app.py`)
+## Step 2 — The FastAPI Backend (`ui/web/app.py`)
 
 FastAPI serves the React SPA and exposes a JSON API.  Every route is simple:
 read from a DB or file, return JSON.
 
 ```python
-# webui/app.py (simplified)
+# ui/web/app.py (simplified)
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -234,8 +233,8 @@ app = FastAPI(title="Tinker Web UI")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
-templates = Jinja2Templates(directory="webui/templates")
-app.mount("/static", StaticFiles(directory="webui/static"), name="static")
+templates = Jinja2Templates(directory="ui/web/templates")
+app.mount("/static", StaticFiles(directory="ui/web/static"), name="static")
 
 # Serve the React SPA for every non-API route
 @app.get("/", response_class=HTMLResponse)
@@ -363,7 +362,7 @@ never needs to send data back through the stream.
 ## Step 3 — Running the Web UI
 
 ```python
-# webui/__main__.py
+# ui/web/__main__.py
 
 import os
 import uvicorn
@@ -375,23 +374,23 @@ uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
 
 Start it:
 ```bash
-python -m webui
+python -m tinker.ui.web
 ```
 
 Open `http://localhost:8082` in your browser.
 
 ---
 
-## Step 4 — The Gradio UI (`gradio_ui/app.py`)
+## Step 4 — The Gradio UI (`ui/gradio/app.py`)
 
 Gradio builds UIs from Python functions.  Each tab is a `gr.Tab` block.
 The UI re-reads data files on each button click or timer refresh.
 
 ```python
-# gradio_ui/app.py (simplified)
+# ui/gradio/app.py (simplified)
 
 import gradio as gr
-from webui.core import load_state, db_query_sync as dbq, TASKS_DB
+from ui.core import load_state, db_query_sync as dbq, TASKS_DB
 
 def _health_md() -> str:
     """Render current orchestrator state as a Markdown table."""
@@ -438,7 +437,7 @@ The key difference from FastAPI: Gradio is **synchronous**.  Functions like
 
 All three UIs include a **Grub** tab that shows Grub's implementation pipeline
 alongside Tinker's design loops.  The data comes from `fetch_grub_status_sync()`
-in `webui/core.py`, which reads:
+in `ui/core.py`, which reads:
 
 - **Task queue** — `TASKS_DB` filtered to `type IN ('implementation','review')`
 - **Grub queue** — `GRUB_QUEUE_DB` (`grub_queue.sqlite`) task counts by status
@@ -448,12 +447,12 @@ in `webui/core.py`, which reads:
 
 | UI | Implementation tasks | Grub queue counts | Recent artifacts |
 |----|---------------------|------------------|-----------------|
-| webui (FastAPI + React) | ✓ table | ✓ metrics | ✓ list with preview |
-| gradio_ui | ✓ DataFrame | ✓ Markdown | ✓ Markdown list |
-| streamlit_ui | ✓ DataFrame | ✓ st.metric tiles | ✓ expandable list |
+| ui/web (FastAPI + React) | ✓ table | ✓ metrics | ✓ list with preview |
+| ui/gradio | ✓ DataFrame | ✓ Markdown | ✓ Markdown list |
+| ui/streamlit | ✓ DataFrame | ✓ st.metric tiles | ✓ expandable list |
 
 To add more Grub detail to any UI, extend `fetch_grub_status_sync()` in
-`webui/core.py` — the data shape automatically flows to all three frontends.
+`ui/core.py` — the data shape automatically flows to all three frontends.
 
 ---
 
@@ -461,20 +460,20 @@ To add more Grub detail to any UI, extend `fetch_grub_status_sync()` in
 
 ```bash
 # Terminal 1: Web UI (React)
-python -m webui
+python -m tinker.ui.web
 
 # Terminal 2: Gradio UI
-python -m gradio_ui
+python -m tinker.ui.gradio
 
 # Terminal 3: Streamlit UI
-python -m streamlit_ui
+python -m tinker.ui.streamlit
 ```
 
 | UI | Default port | Tech |
 |----|--------------|------|
-| webui | 8082 | FastAPI + vanilla React |
-| gradio_ui | 8083 | Gradio |
-| streamlit_ui | 8501 | Streamlit |
+| ui/web | 8082 | FastAPI + vanilla React |
+| ui/gradio | 8083 | Gradio |
+| ui/streamlit | 8501 | Streamlit |
 
 ---
 
@@ -482,7 +481,7 @@ python -m streamlit_ui
 
 | Concept | What it means |
 |---------|---------------|
-| Shared core module | One file (`core.py`) imports from three UIs — no duplication |
+| Shared core module | One file (`ui/core.py`) imported by all three UIs — no duplication |
 | Sync vs async wrappers | `db_query_sync` for Gradio/Streamlit; `db_query` (async) for FastAPI |
 | `asyncio.to_thread()` | Run blocking SQLite calls without blocking the FastAPI event loop |
 | SSE streaming | Keep HTTP connection open, push updates when state changes |
@@ -501,7 +500,7 @@ no shared process — just a file that both sides agree on.
 
 Tinker's web UI has two complementary test suites.
 
-### 1. Source-inspection smoke tests (`webui/tests/test_ui_smoke.py`)
+### 1. Source-inspection smoke tests (`ui/web/tests/test_ui_smoke.py`)
 
 Runs with **no optional dependencies** installed (no FastAPI, no httpx, no
 Streamlit).  Uses Python's `ast` module to verify structure without importing
@@ -510,12 +509,12 @@ any UI code:
 | Test class | What it checks |
 |------------|---------------|
 | `TestSyntax` | All four UI source files parse as valid Python |
-| `TestCoreConstants` | `webui/core.py` exports all 24 required names; FLAG_DEFAULTS ↔ FLAG_DESCRIPTIONS ↔ FLAG_GROUPS keys are self-consistent |
-| `TestSingleSourceOfTruth` | All three UI apps import constants from `webui.core`; none re-define them locally |
+| `TestCoreConstants` | `ui/core.py` exports all 24 required names; FLAG_DEFAULTS ↔ FLAG_DESCRIPTIONS ↔ FLAG_GROUPS keys are self-consistent |
+| `TestSingleSourceOfTruth` | All three UI apps import constants from `ui.core`; none re-define them locally |
 | `TestFeatureParity` | All three apps cover the same 8 feature areas (dashboard, config, flags, tasks, DLQ, backups, Grub, audit) |
-| `TestFastAPIRoutes` | `webui/app.py` registers every required API route |
+| `TestFastAPIRoutes` | `ui/web/app.py` registers every required API route |
 
-### 2. HTTP integration tests (`webui/tests/test_api.py`)
+### 2. HTTP integration tests (`ui/web/tests/test_api.py`)
 
 Makes **real HTTP requests** through FastAPI's `TestClient`.  Exercises every
 route at the HTTP level: status codes, response schemas, error handling, CORS
@@ -541,13 +540,13 @@ headers, input validation, and state persistence.
 
 ```bash
 # All UI tests (smoke + HTTP):
-pytest webui/tests/ -v
+pytest ui/web/tests/ -v
 
 # HTTP integration only:
-pytest webui/tests/test_api.py -v
+pytest ui/web/tests/test_api.py -v
 
 # Fast check (quiet, stop on first failure):
-pytest webui/tests/test_api.py -q -x
+pytest ui/web/tests/test_api.py -q -x
 ```
 
 No external services are required — routes degrade gracefully when the

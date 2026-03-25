@@ -156,29 +156,44 @@ class ModelRouter:
         self._clients.clear()
         logger.info("ModelRouter shut down.")
 
-    async def hot_reload(self, main_model: str, main_url: str, judge_model: str, judge_url: str,
-                         main_ctx: int = 8192, judge_ctx: int = 4096) -> None:
+    async def hot_reload(
+        self,
+        main_model: str,
+        main_url: str,
+        judge_model: str,
+        judge_url: str,
+        main_ctx: int = 8192,
+        judge_ctx: int = 4096,
+        keep_alive: str | None = None,
+    ) -> None:
         """
         Swap the SERVER and SECONDARY model configs at runtime without restart.
 
         Called by the orchestrator when a new preset is activated from the
         Dashboard.  Old HTTP client sessions are closed and new ones are opened
         so the next ``complete()`` call uses the updated model and URL.
+        Both new models are warmed up (pre-loaded into VRAM) immediately after
+        the swap so the first real request after a preset switch is fast.
 
         Parameters
         ----------
-        main_model  : Ollama model tag for the Main / SERVER slot (e.g. ``"qwen2.5-coder:32b"``).
+        main_model  : Ollama model tag for the Main / SERVER slot.
         main_url    : Ollama base URL for the Main model.
         judge_model : Ollama model tag for the Judge / SECONDARY slot.
         judge_url   : Ollama base URL for the Judge model.
         main_ctx    : Context window for the Main model (tokens).
         judge_ctx   : Context window for the Judge model (tokens).
+        keep_alive  : How long Ollama holds the model in VRAM after each
+                      request.  Inherits the current config value when None.
         """
         logger.info(
             "ModelRouter hot-reload: Main=%s @ %s  Judge=%s @ %s",
             main_model, main_url, judge_model, judge_url,
         )
-        # Build new configs, keeping timeouts from the current configs
+        # Build new configs, keeping timeouts from the current configs.
+        # keep_alive defaults to the existing config value so callers that
+        # don't specify it keep whatever was set at startup / env var.
+        _ka = keep_alive or self._server_cfg.keep_alive
         new_server = MachineConfig(
             base_url=main_url,
             model=main_model,
@@ -186,6 +201,7 @@ class ModelRouter:
             max_output_tokens=self._server_cfg.max_output_tokens,
             request_timeout=self._server_cfg.request_timeout,
             connect_timeout=self._server_cfg.connect_timeout,
+            keep_alive=_ka,
         )
         new_secondary = MachineConfig(
             base_url=judge_url,
@@ -194,6 +210,7 @@ class ModelRouter:
             max_output_tokens=self._secondary_cfg.max_output_tokens,
             request_timeout=self._secondary_cfg.request_timeout,
             connect_timeout=self._secondary_cfg.connect_timeout,
+            keep_alive=keep_alive or self._secondary_cfg.keep_alive,
         )
         # Close old clients if running
         if self._clients:
@@ -203,10 +220,41 @@ class ModelRouter:
         # Store new configs and re-open clients
         self._server_cfg = new_server
         self._secondary_cfg = new_secondary
-        if True:  # re-open clients so next complete() works immediately
-            self._clients[Machine.SERVER] = OllamaClient(self._server_cfg, self._retry)
-            self._clients[Machine.SECONDARY] = OllamaClient(self._secondary_cfg, self._retry)
+        self._clients[Machine.SERVER] = OllamaClient(self._server_cfg, self._retry)
+        self._clients[Machine.SECONDARY] = OllamaClient(self._secondary_cfg, self._retry)
         logger.info("ModelRouter hot-reload complete.")
+        # Pre-load both new models into VRAM in parallel so the next real
+        # request doesn't pay the cold-load penalty.
+        await self.warmup()
+
+    async def warmup(self) -> dict[Machine, bool]:
+        """
+        Pre-load both models into Ollama's VRAM in parallel.
+
+        Sends a 1-token dummy request to each machine simultaneously.
+        Call this after ``start()`` or ``hot_reload()`` to ensure both
+        models are resident before the first real architect/critic call.
+
+        Returns a dict mapping each Machine to True (warmed up) or False
+        (server unreachable — model will load lazily on the first real
+        request, non-fatal).
+
+        Example::
+
+            router = ModelRouter()
+            await router.start()
+            await router.warmup()   # optional, but cuts first-request latency
+        """
+        import asyncio as _asyncio
+        results = await _asyncio.gather(
+            self._clients[Machine.SERVER].warmup(),
+            self._clients[Machine.SECONDARY].warmup(),
+            return_exceptions=True,
+        )
+        return {
+            Machine.SERVER: results[0] is True,
+            Machine.SECONDARY: results[1] is True,
+        }
 
     async def __aenter__(self) -> "ModelRouter":
         """Called at the start of an ``async with ModelRouter() as router:`` block."""

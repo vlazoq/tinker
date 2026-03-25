@@ -137,6 +137,14 @@ class MachineConfig:
                         giving up.  Default: 120 seconds (2 minutes).
     connect_timeout   : How many seconds to wait just to establish the network
                         connection.  Default: 10 seconds.
+    keep_alive        : How long Ollama keeps the model loaded in VRAM after
+                        the last request.  Uses Ollama's duration format:
+                        ``"5m"`` (5 minutes, default), ``"30m"``, ``"1h"``,
+                        ``"-1"`` (keep forever), ``"0"`` (unload immediately).
+                        Longer values mean model switches are faster because
+                        the previous model is still resident if you switch back.
+                        Override via ``TINKER_SERVER_KEEP_ALIVE`` /
+                        ``TINKER_SECONDARY_KEEP_ALIVE``.
 
     The two class-methods (``server_defaults`` and ``secondary_defaults``)
     build a ready-to-use config from environment variables, with sensible
@@ -149,6 +157,7 @@ class MachineConfig:
     max_output_tokens: int = 2048  # max tokens the model will generate
     request_timeout: float = 120.0  # seconds before a slow reply is abandoned
     connect_timeout: float = 10.0  # seconds to wait for the TCP handshake
+    keep_alive: str = "10m"  # how long Ollama keeps the model in VRAM
 
     @classmethod
     def server_defaults(cls) -> "MachineConfig":
@@ -156,11 +165,12 @@ class MachineConfig:
         Build a MachineConfig for the main server using environment variables.
 
         Environment variables (with their defaults if not set):
-          TINKER_SERVER_URL     → http://localhost:11434
-          TINKER_SERVER_MODEL   → qwen3:7b
-          TINKER_SERVER_CTX     → 8192
-          TINKER_SERVER_MAX_OUT → 2048
-          TINKER_SERVER_TIMEOUT → 120
+          TINKER_SERVER_URL        → http://localhost:11434
+          TINKER_SERVER_MODEL      → qwen3:7b
+          TINKER_SERVER_CTX        → 8192
+          TINKER_SERVER_MAX_OUT    → 2048
+          TINKER_SERVER_TIMEOUT    → 120
+          TINKER_SERVER_KEEP_ALIVE → 10m
 
         Using environment variables means you can change the server address
         or model without editing code — just set the variable before running.
@@ -171,6 +181,7 @@ class MachineConfig:
             context_window=int(os.getenv("TINKER_SERVER_CTX", "8192")),
             max_output_tokens=int(os.getenv("TINKER_SERVER_MAX_OUT", "2048")),
             request_timeout=float(os.getenv("TINKER_SERVER_TIMEOUT", "120")),
+            keep_alive=os.getenv("TINKER_SERVER_KEEP_ALIVE", "10m"),
         )
 
     @classmethod
@@ -179,11 +190,12 @@ class MachineConfig:
         Build a MachineConfig for the secondary (lighter) machine.
 
         Environment variables (with their defaults if not set):
-          TINKER_SECONDARY_URL     → http://secondary:11434
-          TINKER_SECONDARY_MODEL   → phi3:mini
-          TINKER_SECONDARY_CTX     → 4096  (smaller model = smaller window)
-          TINKER_SECONDARY_MAX_OUT → 1024
-          TINKER_SECONDARY_TIMEOUT → 60
+          TINKER_SECONDARY_URL        → http://secondary:11434
+          TINKER_SECONDARY_MODEL      → phi3:mini
+          TINKER_SECONDARY_CTX        → 4096  (smaller model = smaller window)
+          TINKER_SECONDARY_MAX_OUT    → 1024
+          TINKER_SECONDARY_TIMEOUT    → 60
+          TINKER_SECONDARY_KEEP_ALIVE → 10m
         """
         return cls(
             base_url=os.getenv("TINKER_SECONDARY_URL", "http://secondary:11434"),
@@ -191,6 +203,7 @@ class MachineConfig:
             context_window=int(os.getenv("TINKER_SECONDARY_CTX", "4096")),
             max_output_tokens=int(os.getenv("TINKER_SECONDARY_MAX_OUT", "1024")),
             request_timeout=float(os.getenv("TINKER_SECONDARY_TIMEOUT", "60")),
+            keep_alive=os.getenv("TINKER_SECONDARY_KEEP_ALIVE", "10m"),
         )
 
 

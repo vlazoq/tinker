@@ -14,7 +14,7 @@ We have built many individual components across previous chapters:
 - `resilience/` — circuit breakers, rate limiter, DLQ, distributed lock
 - `stagnation/` — stagnation monitor
 - `observability/` — audit log, SLA tracker
-- `webui/` — FastAPI + React dashboard
+- `ui/web/` — FastAPI + React dashboard
 
 Each component works in isolation (we tested them one by one).  Now we need
 to *wire* them together into a running system.
@@ -336,7 +336,7 @@ You should see output like:
 In a separate terminal, start the web UI:
 
 ```bash
-python -m webui
+python -m tinker.ui.web
 # Open http://localhost:8082
 ```
 
