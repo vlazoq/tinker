@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import pytest
 
-from platform.features.flags import FeatureFlags
+from tinker_platform.features.flags import FeatureFlags
 
 
 @pytest.fixture

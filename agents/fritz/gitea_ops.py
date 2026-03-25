@@ -1,5 +1,5 @@
 """
-fritz/gitea_ops.py
+agents/fritz/gitea_ops.py
 ───────────────────
 Gitea operations driver — talks directly to the Gitea REST API via httpx.
 

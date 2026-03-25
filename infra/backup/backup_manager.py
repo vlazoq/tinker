@@ -1,5 +1,5 @@
 """
-backup/backup_manager.py
+infra/backup/backup_manager.py
 =========================
 
 Automated backup and restore for Tinker's durable data stores.

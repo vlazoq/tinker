@@ -135,7 +135,7 @@ class TestCheckFilePermissions:
         f = tmp_path / "secrets"
         f.write_text("KEY=val\n")
         f.chmod(0o644)  # world-readable
-        with caplog.at_level(logging.WARNING, logger="security.secrets"):
+        with caplog.at_level(logging.WARNING, logger="infra.security.secrets"):
             check_file_permissions(f)
         assert "insecure" in caplog.text.lower() or "SECURITY" in caplog.text
 
@@ -145,7 +145,7 @@ class TestCheckFilePermissions:
         f = tmp_path / "secrets"
         f.write_text("KEY=val\n")
         f.chmod(0o600)
-        with caplog.at_level(logging.WARNING, logger="security.secrets"):
+        with caplog.at_level(logging.WARNING, logger="infra.security.secrets"):
             check_file_permissions(f)
         assert "insecure" not in caplog.text.lower()
 

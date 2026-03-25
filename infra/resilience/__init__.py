@@ -1,5 +1,5 @@
 """
-resilience/ — Enterprise resilience primitives for Tinker.
+infra/resilience/ — Enterprise resilience primitives for Tinker.
 
 This package provides the fault-tolerance building blocks that make Tinker
 safe to run in production:

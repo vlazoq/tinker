@@ -1,5 +1,5 @@
 """
-grub/__main__.py
+agents/grub/__main__.py
 ================
 Entry point for running Grub from the command line.
 

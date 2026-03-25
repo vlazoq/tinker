@@ -1,5 +1,5 @@
 """
-memory/tests/test_semantic_search.py
+core/memory/tests/test_semantic_search.py
 ======================================
 Unit tests for MemoryManager.search() — the semantic search method
 that wraps ChromaDB query results and converts L2 distance to score.

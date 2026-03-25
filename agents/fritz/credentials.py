@@ -1,5 +1,5 @@
 """
-fritz/credentials.py
+agents/fritz/credentials.py
 ─────────────────────
 Loads Fritz credentials from Tinker's SecretManager.
 

@@ -1,5 +1,5 @@
 """
-fritz/retry.py
+agents/fritz/retry.py
 ───────────────
 Shared retry + rate-limit logic for GitHub and Gitea HTTP calls.
 

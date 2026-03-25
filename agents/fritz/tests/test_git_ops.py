@@ -1,5 +1,5 @@
 """
-fritz/tests/test_git_ops.py
+agents/fritz/tests/test_git_ops.py
 ────────────────────────────
 Tests for FritzGitOps. Subprocess calls are mocked so no real git repo is needed.
 """

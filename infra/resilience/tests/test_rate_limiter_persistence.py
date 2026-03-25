@@ -1,5 +1,5 @@
 """
-resilience/tests/test_rate_limiter_persistence.py
+infra/resilience/tests/test_rate_limiter_persistence.py
 ==================================================
 Tests for the Redis save_state / load_state methods on
 TokenBucketRateLimiter and RateLimiterRegistry.

@@ -1,5 +1,5 @@
 """
-tasks/registry_factory.py
+runtime/tasks/registry_factory.py
 ==========================
 Factory function for creating a task registry backend.
 

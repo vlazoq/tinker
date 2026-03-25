@@ -100,7 +100,7 @@ include = [
     # ── Runtime (orchestration, tasks, stagnation) ────────────────────────
     "runtime*",
     # ── Platform features ─────────────────────────────────────────────────
-    "platform*",
+    "tinker_platform*",
     # ── Infrastructure (resilience, security, health, observability, etc.) ─
     "infra*",
     # ── Agents (fritz, grub) ──────────────────────────────────────────────
@@ -114,7 +114,7 @@ asyncio_mode = "auto"
 testpaths    = [
     "core",
     "runtime",
-    "platform",
+    "tinker_platform",
     "infra",
     "agents",
     "ui",

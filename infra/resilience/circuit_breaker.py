@@ -1,5 +1,5 @@
 """
-resilience/circuit_breaker.py
+infra/resilience/circuit_breaker.py
 ==============================
 
 Circuit breaker implementation for Tinker's external service calls.

@@ -1,5 +1,5 @@
 """
-observability/structured_logging.py
+infra/observability/structured_logging.py
 =====================================
 
 Structured, JSON-formatted logging with trace ID propagation for Tinker.

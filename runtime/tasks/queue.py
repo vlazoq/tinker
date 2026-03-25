@@ -1,5 +1,5 @@
 """
-tasks/queue.py — Task selection and lifecycle management
+runtime/tasks/queue.py — Task selection and lifecycle management
 =========================================================
 
 What this file does

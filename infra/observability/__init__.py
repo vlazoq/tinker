@@ -1,5 +1,5 @@
 """
-observability/ — Enterprise observability stack for Tinker.
+infra/observability/ — Enterprise observability stack for Tinker.
 
 Provides structured logging, distributed tracing, alerting, SLA tracking,
 and audit logging — all the tools needed to understand Tinker's behaviour

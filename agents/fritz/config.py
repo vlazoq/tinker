@@ -1,5 +1,5 @@
 """
-fritz/config.py
+agents/fritz/config.py
 ───────────────
 FritzConfig dataclass — single source of truth for all Fritz settings.
 

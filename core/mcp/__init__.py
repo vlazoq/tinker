@@ -1,5 +1,5 @@
 """
-mcp/ — Model Context Protocol support for Tinker.
+core/mcp/ — Model Context Protocol support for Tinker.
 
 What is MCP?
 ------------

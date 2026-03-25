@@ -1,5 +1,5 @@
 """
-context/memory_adapter.py
+core/context/memory_adapter.py
 ==========================
 Adapter that bridges the real ``MemoryManager`` (memory/manager.py) to
 the ``_MemoryManagerProtocol`` interface that ``ContextAssembler`` expects.

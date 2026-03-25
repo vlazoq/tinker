@@ -1,5 +1,5 @@
 """
-backup/__main__.py — CLI for Tinker backup operations.
+infra/backup/__main__.py — CLI for Tinker backup operations.
 
 Usage:
     python -m backup --backup

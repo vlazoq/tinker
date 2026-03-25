@@ -1,5 +1,5 @@
 """
-experiments/offline_eval.py
+tinker_platform/experiments/offline_eval.py
 ============================
 Offline evaluation harness for Tinker prompt variants.
 

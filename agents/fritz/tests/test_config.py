@@ -1,5 +1,5 @@
 """
-fritz/tests/test_config.py
+agents/fritz/tests/test_config.py
 ──────────────────────────
 Tests for FritzConfig + PushPolicyConfig: loading, env overrides, validation,
 save/reload round-trip, and default creation.

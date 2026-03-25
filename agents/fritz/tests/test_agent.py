@@ -1,5 +1,5 @@
 """
-fritz/tests/test_agent.py
+agents/fritz/tests/test_agent.py
 ──────────────────────────
 Tests for FritzAgent. All heavy dependencies (credentials, git, GitHub, Gitea)
 are mocked so no real network or git repo is needed.

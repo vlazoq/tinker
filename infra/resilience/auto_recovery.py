@@ -1,5 +1,5 @@
 """
-resilience/auto_recovery.py
+infra/resilience/auto_recovery.py
 ============================
 
 Auto-recovery and self-healing for Tinker component failures.

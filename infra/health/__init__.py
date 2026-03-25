@@ -1,5 +1,5 @@
 """
-health/ — HTTP health check endpoints for Tinker.
+infra/health/ — HTTP health check endpoints for Tinker.
 
 Exposes liveness and readiness probes for Kubernetes, load balancers,
 and monitoring tools.

@@ -1,5 +1,5 @@
 """
-orchestrator/orchestrator.py
+runtime/orchestrator/orchestrator.py
 ============================
 
 The Orchestrator — Tinker's heartbeat and central controller.
@@ -121,7 +121,7 @@ except ImportError:
     _AUDIT_AVAILABLE = False
 
 try:
-    from platform.capacity.planner import CapacityPlanner
+    from tinker_platform.capacity.planner import CapacityPlanner
 
     _CAPACITY_AVAILABLE = True
 except ImportError:

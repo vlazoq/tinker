@@ -1,5 +1,5 @@
 """
-tasks/tests/test_postgres_registry.py
+runtime/tasks/tests/test_postgres_registry.py
 ======================================
 Unit tests for ``PostgresTaskRegistry``.
 
@@ -564,7 +564,7 @@ class TestConnectionRetry:
         mock_conn = MagicMock()
         registry, mock_pool = self._make_pool_registry([mock_conn])
 
-        with patch("tasks.postgres_registry.time.sleep") as mock_sleep:
+        with patch("runtime.tasks.postgres_registry.time.sleep") as mock_sleep:
             with registry._conn() as conn:
                 assert conn is mock_conn
             mock_sleep.assert_not_called()
@@ -574,7 +574,7 @@ class TestConnectionRetry:
         transient = Exception("could not connect to server: connection refused")
         registry, mock_pool = self._make_pool_registry([transient, mock_conn])
 
-        with patch("tasks.postgres_registry.time.sleep") as mock_sleep:
+        with patch("runtime.tasks.postgres_registry.time.sleep") as mock_sleep:
             with registry._conn() as conn:
                 assert conn is mock_conn
             # Should have slept once (after first failure)
@@ -610,7 +610,7 @@ class TestConnectionRetry:
         )
         registry._max_retries = 2
 
-        with patch("tasks.postgres_registry.time.sleep"):
+        with patch("runtime.tasks.postgres_registry.time.sleep"):
             with pytest.raises(Exception, match="could not connect"):
                 with registry._conn():
                     pass
@@ -622,7 +622,7 @@ class TestConnectionRetry:
         permanent = Exception('relation "tasks" does not exist')
         registry, mock_pool = self._make_pool_registry([permanent])
 
-        with patch("tasks.postgres_registry.time.sleep") as mock_sleep:
+        with patch("runtime.tasks.postgres_registry.time.sleep") as mock_sleep:
             with pytest.raises(Exception, match='relation "tasks"'):
                 with registry._conn():
                     pass
@@ -635,7 +635,7 @@ class TestConnectionRetry:
         mock_conn = MagicMock()
         registry, mock_pool = self._make_pool_registry([mock_conn])
 
-        with patch("tasks.postgres_registry.time.sleep"):
+        with patch("runtime.tasks.postgres_registry.time.sleep"):
             with registry._conn():
                 pass
 
@@ -645,7 +645,7 @@ class TestConnectionRetry:
         mock_conn = MagicMock()
         registry, mock_pool = self._make_pool_registry([mock_conn])
 
-        with patch("tasks.postgres_registry.time.sleep"):
+        with patch("runtime.tasks.postgres_registry.time.sleep"):
             with pytest.raises(RuntimeError):
                 with registry._conn() as _conn:
                     raise RuntimeError("query failed")
@@ -656,7 +656,7 @@ class TestConnectionRetry:
         mock_conn = MagicMock()
         registry, mock_pool = self._make_pool_registry([mock_conn])
 
-        with patch("tasks.postgres_registry.time.sleep"):
+        with patch("runtime.tasks.postgres_registry.time.sleep"):
             with pytest.raises(RuntimeError):
                 with registry._conn() as _conn:
                     raise RuntimeError("query failed")

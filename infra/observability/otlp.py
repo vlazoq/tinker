@@ -1,5 +1,5 @@
 """
-observability/otlp.py
+infra/observability/otlp.py
 =====================
 OpenTelemetry (OTLP) export bridge for Tinker's custom span tracer.
 

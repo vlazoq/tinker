@@ -1,5 +1,5 @@
 """
-grub/tools/shell.py
+agents/grub/tools/shell.py
 ===================
 Run shell commands and test suites safely.
 

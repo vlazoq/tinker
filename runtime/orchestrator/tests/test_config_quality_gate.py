@@ -1,5 +1,5 @@
 """
-orchestrator/tests/test_config_quality_gate.py
+runtime/orchestrator/tests/test_config_quality_gate.py
 ================================================
 Tests for quality gate fields in OrchestratorConfig.
 """

@@ -1,5 +1,5 @@
 """
-security/ — Secret management and security utilities for Tinker.
+infra/security/ — Secret management and security utilities for Tinker.
 
 Provides a unified interface to retrieve secrets from multiple backends:
   - Environment variables (default, always available)

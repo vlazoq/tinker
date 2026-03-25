@@ -1,5 +1,5 @@
 """
-resilience/tests/test_retry.py
+infra/resilience/tests/test_retry.py
 ================================
 Tests for ``resilience/retry.py``.
 

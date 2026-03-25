@@ -1,5 +1,5 @@
 """
-fritz/push_policy.py
+agents/fritz/push_policy.py
 ─────────────────────
 Enforces push/merge policies before Fritz takes any remote action.
 

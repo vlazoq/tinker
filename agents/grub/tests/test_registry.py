@@ -1,5 +1,5 @@
 """
-grub/tests/test_registry.py
+agents/grub/tests/test_registry.py
 ============================
 Tests for MinionRegistry — minion registration, skill loading, get_minion().
 """

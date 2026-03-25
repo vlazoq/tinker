@@ -1,5 +1,5 @@
 """
-experiments/tests/test_offline_eval_integration.py
+tinker_platform/experiments/tests/test_offline_eval_integration.py
 =====================================================
 Integration tests for OfflineEvaluator with a complete EvalSet.
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from platform.experiments.offline_eval import EvalCase, EvalSet, OfflineEvaluator
+from tinker_platform.experiments.offline_eval import EvalCase, EvalSet, OfflineEvaluator
 
 
 class TestOfflineEvalIntegration:

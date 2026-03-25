@@ -1,5 +1,5 @@
 """
-grub/tests/test_contracts.py
+agents/grub/tests/test_contracts.py
 ============================
 Tests for GrubTask and MinionResult data contracts.
 

@@ -1,5 +1,5 @@
 """
-grub/contracts/__init__.py
+agents/grub/contracts/__init__.py
 ==========================
 Public re-exports for the contracts package.
 

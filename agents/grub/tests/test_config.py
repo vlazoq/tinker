@@ -1,5 +1,5 @@
 """
-grub/tests/test_config.py
+agents/grub/tests/test_config.py
 =========================
 Tests for GrubConfig — loading, saving, validation, mode switching.
 """

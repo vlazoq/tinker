@@ -1,5 +1,5 @@
 """
-fritz/tests/test_credentials.py
+agents/fritz/tests/test_credentials.py
 ────────────────────────────────
 Tests for FritzCredentials. SecretManager is mocked so no vault / secrets file
 is needed.
@@ -52,7 +52,7 @@ class TestLoadGitHubOnly:
     @pytest.mark.asyncio
     async def test_loads_github_token(self):
         creds = _make_creds(github_enabled=True, gitea_enabled=False)
-        with patch("fritz.credentials.SecretManager", return_value=_mock_secrets("ghp_test")):
+        with patch("agents.fritz.credentials.SecretManager", return_value=_mock_secrets("ghp_test")):
             creds._secrets = _mock_secrets("ghp_test")
             await creds.load()
         assert creds.github_token == "ghp_test"
@@ -74,7 +74,7 @@ class TestLoadGitHubOnly:
         sm = MagicMock()
         sm.get = AsyncMock(return_value=None)
         creds._secrets = sm
-        with caplog.at_level(logging.WARNING, logger="fritz.credentials"):
+        with caplog.at_level(logging.WARNING, logger="agents.fritz.credentials"):
             await creds.load()
         assert creds.github_token is None
         assert any("GitHub" in m for m in caplog.messages)
@@ -102,7 +102,7 @@ class TestLoadGitea:
         sm = MagicMock()
         sm.get = AsyncMock(return_value=None)
         creds._secrets = sm
-        with caplog.at_level(logging.WARNING, logger="fritz.credentials"):
+        with caplog.at_level(logging.WARNING, logger="agents.fritz.credentials"):
             await creds.load()
         assert creds.gitea_token is None
         assert any("Gitea" in m for m in caplog.messages)

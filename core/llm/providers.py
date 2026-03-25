@@ -1,5 +1,5 @@
 """
-llm/providers.py
+core/llm/providers.py
 ================
 Vendor-agnostic LLM provider abstraction.
 

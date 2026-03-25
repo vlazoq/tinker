@@ -1,5 +1,5 @@
 """
-grub/__init__.py
+agents/grub/__init__.py
 ================
 Grub — the implementation agent for the Tinker system.
 

@@ -1,5 +1,5 @@
 """
-dashboard/panels.py
+ui/dashboard/panels.py
 ────────────────────
 Re-exports all Textual panel widgets and adds GrubPanel.
 

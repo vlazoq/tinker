@@ -1,5 +1,5 @@
 """
-grub/minions/__init__.py
+agents/grub/minions/__init__.py
 ========================
 Re-exports for the minions package.
 

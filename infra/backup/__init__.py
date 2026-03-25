@@ -1,5 +1,5 @@
 """
-backup/ — Automated backup and restore for Tinker data stores.
+infra/backup/ — Automated backup and restore for Tinker data stores.
 
 Provides scheduled and on-demand backup of all durable storage:
 

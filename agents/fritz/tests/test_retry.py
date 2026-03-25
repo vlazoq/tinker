@@ -1,5 +1,5 @@
 """
-fritz/tests/test_retry.py
+agents/fritz/tests/test_retry.py
 ──────────────────────────
 Tests for the retry + rate-limit logic.
 """

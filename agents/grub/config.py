@@ -1,5 +1,5 @@
 """
-grub/config.py
+agents/grub/config.py
 ==============
 All configuration for the Grub system in one place.
 

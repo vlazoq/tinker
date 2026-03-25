@@ -1,5 +1,5 @@
 """
-grub/agent.py
+agents/grub/agent.py
 =============
 GrubAgent — the main orchestrator for the implementation system.
 

@@ -1,5 +1,5 @@
 """
-grub/tests/test_grub_tinker_integration.py
+agents/grub/tests/test_grub_tinker_integration.py
 ===========================================
 End-to-end integration tests for the Grub ↔ Tinker feedback loop.
 

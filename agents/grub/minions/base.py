@@ -1,5 +1,5 @@
 """
-grub/minions/base.py
+agents/grub/minions/base.py
 ====================
 BaseMinion — the abstract base class every Minion inherits from.
 

@@ -1,5 +1,5 @@
 """
-mcp/server.py
+core/mcp/server.py
 =============
 MCP server — exposes Tinker's ToolRegistry as an MCP server over HTTP/SSE.
 

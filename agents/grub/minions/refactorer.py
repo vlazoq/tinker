@@ -1,5 +1,5 @@
 """
-grub/minions/refactorer.py
+agents/grub/minions/refactorer.py
 ==========================
 RefactorerMinion — cleans up working code without changing its behaviour.
 

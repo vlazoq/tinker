@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from platform.experiments.offline_eval import (
+from tinker_platform.experiments.offline_eval import (
     EvalCase,
     EvalSet,
     EvalReport,

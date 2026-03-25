@@ -1,5 +1,5 @@
 """
-fritz/identity.py
+agents/fritz/identity.py
 ──────────────────
 Fritz identity management — controls how Fritz authenticates and how its
 commits appear in git history.

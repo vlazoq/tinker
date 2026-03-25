@@ -243,7 +243,7 @@ class TestWebScraperTool(unittest.TestCase):
             mock_client_cls.return_value = mock_client
 
             # Force httpx path by patching Playwright as unavailable
-            with patch("tools.web_scraper._PLAYWRIGHT_AVAILABLE", False):
+            with patch("core.tools.web_scraper._PLAYWRIGHT_AVAILABLE", False):
                 result = run(tool.execute(url="https://example.com/article"))
 
         self.assertTrue(result.success, result.error)
@@ -266,7 +266,7 @@ class TestWebScraperTool(unittest.TestCase):
             mock_client.get = AsyncMock(return_value=mock_response)
             mock_client_cls.return_value = mock_client
 
-            with patch("tools.web_scraper._PLAYWRIGHT_AVAILABLE", False):
+            with patch("core.tools.web_scraper._PLAYWRIGHT_AVAILABLE", False):
                 result = run(tool.execute(url="example.com"))
 
         self.assertTrue(result.success, result.error)
