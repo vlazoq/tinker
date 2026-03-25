@@ -458,7 +458,7 @@ def validate_url(raw: Any, field: str = "url") -> str:
     try:
         parsed = urlparse(url)
     except Exception as exc:
-        raise ValidationError(field, url, f"URL parse failed: {exc}")
+        raise ValidationError(field, url, f"URL parse failed: {exc}") from exc
 
     if parsed.scheme.lower() not in ALLOWED_URL_SCHEMES:
         raise ValidationError(
@@ -614,7 +614,7 @@ def validate_config_value(
     except (TypeError, ValueError) as exc:
         raise ValidationError(
             name, value, f"Cannot cast to {value_type.__name__}: {exc}"
-        )
+        ) from exc
 
     if min_val is not None and cast < min_val:
         raise ValidationError(name, cast, f"Value {cast} is below minimum {min_val}")
