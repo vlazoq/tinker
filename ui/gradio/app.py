@@ -308,8 +308,8 @@ def _fritz_md() -> str:
 
 async def _fritz_ship_async(message: str, task_id: str, auto_merge: bool) -> str:
     """Async helper for commit-and-ship; returns a status string."""
-    from fritz.config import FritzConfig
-    from fritz.agent import FritzAgent
+    from agents.fritz.config import FritzConfig
+    from agents.fritz.agent import FritzAgent
 
     config = (
         FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -336,8 +336,8 @@ async def _fritz_ship_async(message: str, task_id: str, auto_merge: bool) -> str
 
 
 async def _fritz_push_async(branch: str) -> str:
-    from fritz.config import FritzConfig
-    from fritz.agent import FritzAgent
+    from agents.fritz.config import FritzConfig
+    from agents.fritz.agent import FritzAgent
 
     config = (
         FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -351,8 +351,8 @@ async def _fritz_push_async(branch: str) -> str:
 
 
 async def _fritz_pr_async(title: str, body: str, head: str, base: str) -> str:
-    from fritz.config import FritzConfig
-    from fritz.agent import FritzAgent
+    from agents.fritz.config import FritzConfig
+    from agents.fritz.agent import FritzAgent
 
     config = (
         FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -366,8 +366,8 @@ async def _fritz_pr_async(title: str, body: str, head: str, base: str) -> str:
 
 
 async def _fritz_verify_async() -> str:
-    from fritz.config import FritzConfig
-    from fritz.agent import FritzAgent
+    from agents.fritz.config import FritzConfig
+    from agents.fritz.agent import FritzAgent
 
     config = (
         FritzConfig.from_file(FRITZ_CONFIG_FILE)

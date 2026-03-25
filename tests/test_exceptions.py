@@ -372,22 +372,22 @@ class TestBackwardsCompatAliases:
     """Old import paths from llm/client.py must resolve to the canonical classes."""
 
     def test_connection_error_alias(self):
-        from llm.client import ConnectionError as LLMConnectionError
+        from core.llm.client import ConnectionError as LLMConnectionError
 
         assert LLMConnectionError is ModelConnectionError
 
     def test_timeout_error_alias(self):
-        from llm.client import TimeoutError as LLMTimeoutError
+        from core.llm.client import TimeoutError as LLMTimeoutError
 
         assert LLMTimeoutError is ModelTimeoutError
 
     def test_rate_limit_alias(self):
-        from llm.client import RateLimitError
+        from core.llm.client import RateLimitError
 
         assert RateLimitError is ModelRateLimitError
 
     def test_server_error_alias(self):
-        from llm.client import ServerError
+        from core.llm.client import ServerError
 
         assert ServerError is ModelServerError
 
@@ -399,21 +399,21 @@ class TestBackwardsCompatAliases:
 
 class TestSubmoduleReexports:
     def test_circuit_breaker_module_exports_open_error(self):
-        from resilience.circuit_breaker import CircuitBreakerOpenError as CBE
+        from infra.resilience.circuit_breaker import CircuitBreakerOpenError as CBE
 
         assert CBE is CircuitBreakerOpenError
 
     def test_prompt_builder_module_exports_error(self):
-        from prompts.builder import PromptBuilderError as PBE
+        from core.prompts.builder import PromptBuilderError as PBE
 
         assert PBE is PromptBuilderError
 
     def test_tasks_resolver_exports_cycle_error(self):
-        from tasks.resolver import DependencyCycleError as DCE
+        from runtime.tasks.resolver import DependencyCycleError as DCE
 
         assert DCE is DependencyCycleError
 
     def test_validation_module_exports_error(self):
-        from validation.input_validator import ValidationError as VE
+        from core.validation.input_validator import ValidationError as VE
 
         assert VE is ValidationError

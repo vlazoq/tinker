@@ -115,7 +115,7 @@ _current_trace_id: ContextVar[str] = ContextVar("trace_id", default="")
 def _get_prompt_builder_cls():
     """Return the PromptBuilder class, or None if not available."""
     try:
-        from prompts.builder import PromptBuilder
+        from core.prompts.builder import PromptBuilder
 
         return PromptBuilder
     except Exception as exc:
@@ -128,7 +128,7 @@ def _get_prompt_builder_cls():
 def _get_retry_async():
     """Return (retry_async, CONSERVATIVE) or (None, None) if unavailable."""
     try:
-        from resilience.retry import retry_async, CONSERVATIVE
+        from infra.resilience.retry import retry_async, CONSERVATIVE
 
         return retry_async, CONSERVATIVE
     except Exception as exc:
@@ -152,7 +152,7 @@ def _get_rate_limiter_registry():
         return _rate_limiter_registry
     _rate_limiter_registry_initialized = True
     try:
-        from resilience.rate_limiter import build_default_rate_limiters
+        from infra.resilience.rate_limiter import build_default_rate_limiters
 
         _rate_limiter_registry = build_default_rate_limiters()
     except Exception as exc:
@@ -646,7 +646,7 @@ class ArchitectAgent:
             'candidate_tasks' — list of dicts: follow-up tasks to create
             'trace_id'        — correlation ID for this agent call
         """
-        from llm.types import AgentRole, Message, ModelRequest
+        from core.llm.types import AgentRole, Message, ModelRequest
 
         # Assign a trace ID for this call.  If the task carries a trace_id
         # (e.g. from an upstream HTTP request) propagate it; otherwise
@@ -875,7 +875,7 @@ class CriticAgent:
             'flags'       — list of specific issues to fix
             'trace_id'    — correlation ID for this agent call
         """
-        from llm.types import AgentRole, Message, ModelRequest
+        from core.llm.types import AgentRole, Message, ModelRequest
 
         # Propagate trace_id from the Architect's result so all three agents
         # in a single micro loop share the same correlation ID.
@@ -1025,7 +1025,7 @@ class SynthesizerAgent:
             'tokens_used' — token consumption
             'level'       — echoes back the level ("meso" or "macro")
         """
-        from llm.types import AgentRole, Message, ModelRequest
+        from core.llm.types import AgentRole, Message, ModelRequest
 
         trace_id = kwargs.pop("trace_id", None) or str(uuid.uuid4())
         _current_trace_id.set(trace_id)

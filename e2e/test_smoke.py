@@ -113,9 +113,9 @@ async def test_quality_gate_fires_on_low_score():
     alerter, then shuts down.  It asserts that the alerter was called at
     least once with a quality gate breach.
     """
-    from orchestrator.config import OrchestratorConfig
-    from orchestrator.orchestrator import Orchestrator
-    from orchestrator.stubs import build_stub_components
+    from runtime.orchestrator.config import OrchestratorConfig
+    from runtime.orchestrator.orchestrator import Orchestrator
+    from runtime.orchestrator.stubs import build_stub_components
 
     # ── Build components with a low-scoring critic ────────────────────────────
     components = build_stub_components()
