@@ -1,5 +1,5 @@
 """
-tasks/resolver.py — Dependency tracking and cycle detection
+runtime/tasks/resolver.py — Dependency tracking and cycle detection
 ============================================================
 
 What this file does

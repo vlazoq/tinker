@@ -1,5 +1,5 @@
 """
-models/ollama_sync.py
+core/models/ollama_sync.py
 =====================
 OllamaSync — discover and import models from one or more Ollama instances.
 

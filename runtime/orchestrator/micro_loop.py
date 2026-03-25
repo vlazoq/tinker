@@ -1,5 +1,5 @@
 """
-orchestrator/micro_loop.py
+runtime/orchestrator/micro_loop.py
 ==========================
 
 The micro loop — Tinker's smallest, fastest, most frequent unit of work.
@@ -98,7 +98,7 @@ except ImportError:
     _TRACING_AVAILABLE = False
 
 try:
-    from platform.lineage.tracker import LineageTracker  # noqa: F401
+    from tinker_platform.lineage.tracker import LineageTracker  # noqa: F401
 
     _LINEAGE_AVAILABLE = True
 except ImportError:

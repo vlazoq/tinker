@@ -1,5 +1,5 @@
 """
-fritz/github_ops.py
+agents/fritz/github_ops.py
 ────────────────────
 GitHub operations — wraps the `gh` CLI and GitHub REST API via httpx.
 

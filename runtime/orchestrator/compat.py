@@ -1,5 +1,5 @@
 """
-orchestrator/compat.py
+runtime/orchestrator/compat.py
 ======================
 
 Async/sync compatibility helpers for the orchestrator loops.

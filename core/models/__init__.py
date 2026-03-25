@@ -1,5 +1,5 @@
 """
-models/
+core/models/
 =======
 Model Library, Preset Manager, and Ollama Discovery for Tinker.
 
@@ -12,10 +12,10 @@ The two active slots
 Tinker always uses exactly two model slots at runtime:
 
   Main  → the heavy-lifting model used by Architect, Researcher, Synthesizer.
-           Mapped to the ``SERVER`` MachineConfig in llm/router.py.
+           Mapped to the ``SERVER`` MachineConfig in core/llm/router.py.
 
   Judge → the fast review/critique model used by Critic.
-           Mapped to the ``SECONDARY`` MachineConfig in llm/router.py.
+           Mapped to the ``SECONDARY`` MachineConfig in core/llm/router.py.
 
 Why presets?
 ------------

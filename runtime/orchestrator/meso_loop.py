@@ -1,5 +1,5 @@
 """
-orchestrator/meso_loop.py
+runtime/orchestrator/meso_loop.py
 =========================
 
 The meso loop — subsystem-level synthesis and summarisation.

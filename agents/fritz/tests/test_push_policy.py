@@ -1,5 +1,5 @@
 """
-fritz/tests/test_push_policy.py
+agents/fritz/tests/test_push_policy.py
 ────────────────────────────────
 Tests for PushPolicy: evaluate_push, evaluate_merge, suggest_branch_name,
 validate_config, and the PolicyViolation exception.

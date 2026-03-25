@@ -1,5 +1,5 @@
 """
-grub/contracts/task.py
+agents/grub/contracts/task.py
 ======================
 GrubTask — the unit of work Grub hands to a Minion.
 

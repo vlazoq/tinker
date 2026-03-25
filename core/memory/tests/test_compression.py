@@ -1,5 +1,5 @@
 """
-memory/tests/test_compression.py
+core/memory/tests/test_compression.py
 ==================================
 Unit tests for memory/compression.py.
 
@@ -225,7 +225,7 @@ class TestSimilarityLogging:
 
         artifacts = [{"id": "x1", "content": "original", "artifact_type": "raw", "created_at": "now"}]
 
-        with caplog.at_level(logging.WARNING, logger="memory.compression"):
+        with caplog.at_level(logging.WARNING, logger="core.memory.compression"):
             await compressor._compress_chunk("ses-1", artifacts, "threshold-based")
 
         warning_messages = [
@@ -253,7 +253,7 @@ class TestSimilarityLogging:
 
         artifacts = [{"id": "y1", "content": "content", "artifact_type": "raw", "created_at": "now"}]
 
-        with caplog.at_level(logging.DEBUG, logger="memory.compression"):
+        with caplog.at_level(logging.DEBUG, logger="core.memory.compression"):
             await compressor._compress_chunk("ses-2", artifacts, "age-based")
 
         # Must have no WARNING-level log about quality

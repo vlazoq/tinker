@@ -1,5 +1,5 @@
 """
-resilience/migrations.py
+infra/resilience/migrations.py
 ========================
 Lightweight schema migration runner for SQLite databases.
 

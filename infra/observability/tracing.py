@@ -1,5 +1,5 @@
 """
-observability/tracing.py
+infra/observability/tracing.py
 =========================
 
 Lightweight span-based tracing for Tinker loop performance analysis.

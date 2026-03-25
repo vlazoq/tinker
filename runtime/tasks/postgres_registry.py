@@ -1,5 +1,5 @@
 """
-tasks/postgres_registry.py
+runtime/tasks/postgres_registry.py
 ===========================
 PostgreSQL-backed task registry — a drop-in replacement for
 ``SQLiteTaskRegistry`` intended for multi-process and multi-machine

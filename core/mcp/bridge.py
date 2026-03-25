@@ -1,5 +1,5 @@
 """
-mcp/bridge.py
+core/mcp/bridge.py
 =============
 MCPBridge — the entry point for all MCP functionality.
 

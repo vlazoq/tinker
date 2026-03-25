@@ -1,5 +1,5 @@
 """
-orchestrator/tests/test_quality_gate.py
+runtime/orchestrator/tests/test_quality_gate.py
 =========================================
 Tests for _maybe_fire_quality_gate in orchestrator/micro_loop.py.
 

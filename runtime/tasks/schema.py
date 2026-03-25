@@ -1,5 +1,5 @@
 """
-tasks/schema.py — Core data shapes for the Task Engine
+runtime/tasks/schema.py — Core data shapes for the Task Engine
 =======================================================
 
 What this file does

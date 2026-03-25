@@ -1,5 +1,5 @@
 """
-orchestrator/macro_loop.py
+runtime/orchestrator/macro_loop.py
 ==========================
 
 The macro loop — a full architectural snapshot committed to version control.

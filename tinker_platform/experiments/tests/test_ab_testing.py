@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from platform.experiments.ab_testing import ABTestingFramework
+from tinker_platform.experiments.ab_testing import ABTestingFramework
 from exceptions import ExperimentError
 
 

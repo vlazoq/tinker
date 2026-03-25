@@ -1,5 +1,5 @@
 """
-fritz/tests/test_platform.py
+agents/fritz/tests/test_platform.py
 ─────────────────────────────
 Tests for platform detection and owner/repo parsing.
 """

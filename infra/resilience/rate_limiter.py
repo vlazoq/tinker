@@ -1,5 +1,5 @@
 """
-resilience/rate_limiter.py
+infra/resilience/rate_limiter.py
 ===========================
 
 Token-bucket rate limiter for Tinker's AI and tool calls.

@@ -1,5 +1,5 @@
 """
-validation/ — Input validation and sanitization for Tinker.
+core/validation/ — Input validation and sanitization for Tinker.
 
 Validates all data at system boundaries to prevent:
   - Prompt injection attacks (malicious content in problem statements)

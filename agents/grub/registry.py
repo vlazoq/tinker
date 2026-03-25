@@ -1,5 +1,5 @@
 """
-grub/registry.py
+agents/grub/registry.py
 ================
 The Minion Registry — a central lookup table for all Minions and Skills.
 

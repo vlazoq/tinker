@@ -1,5 +1,5 @@
 """
-resilience/idempotency.py
+infra/resilience/idempotency.py
 ==========================
 
 Idempotency key cache for Tinker loop operations.

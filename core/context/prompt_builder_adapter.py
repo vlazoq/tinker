@@ -1,7 +1,7 @@
 """
-context/prompt_builder_adapter.py
+core/context/prompt_builder_adapter.py
 ===================================
-Adapter that connects the real ``PromptBuilder`` (prompts/builder.py) to
+Adapter that connects the real ``PromptBuilder`` (core/prompts/builder.py) to
 the ``_PromptBuilderProtocol`` interface that ``ContextAssembler`` expects.
 
 Architecture gap

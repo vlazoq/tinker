@@ -1,5 +1,5 @@
 """
-grub/minions/tester.py
+agents/grub/minions/tester.py
 ======================
 TesterMinion — writes tests for implemented code and runs them.
 

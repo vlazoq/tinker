@@ -1,5 +1,5 @@
 """
-grub/tests/test_minion_base.py
+agents/grub/tests/test_minion_base.py
 ==============================
 Tests for BaseMinion helpers — code block extraction, score parsing,
 system prompt building.  No LLM calls needed.

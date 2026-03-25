@@ -1,5 +1,5 @@
 """
-grub/tests/test_tools.py
+agents/grub/tests/test_tools.py
 ========================
 Tests for grub/tools/* — file I/O, shell commands, code analysis.
 

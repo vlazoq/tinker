@@ -1,5 +1,5 @@
 """
-fritz/platform.py
+agents/fritz/platform.py
 ──────────────────
 Platform detection — figures out whether a remote URL points to GitHub,
 Gitea, GitLab, or an unknown self-hosted instance.

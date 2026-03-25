@@ -1,5 +1,5 @@
 """
-models/library.py
+core/models/library.py
 =================
 ModelEntry dataclass and ModelLibrary — the local registry of available models.
 

@@ -1,5 +1,5 @@
 """
-grub/minions/reviewer.py
+agents/grub/minions/reviewer.py
 ========================
 ReviewerMinion — reviews code against the design document and coding standards.
 

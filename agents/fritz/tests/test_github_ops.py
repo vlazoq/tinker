@@ -1,5 +1,5 @@
 """
-fritz/tests/test_github_ops.py
+agents/fritz/tests/test_github_ops.py
 ───────────────────────────────
 Tests for FritzGitHub. HTTP calls are mocked at the _request level so no real
 network is needed.

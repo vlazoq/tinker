@@ -1,5 +1,5 @@
 """
-capacity/planner.py
+tinker_platform/capacity/planner.py
 ====================
 
 Capacity planning and resource usage tracking for Tinker.

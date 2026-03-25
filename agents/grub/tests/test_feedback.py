@@ -1,5 +1,5 @@
 """
-grub/tests/test_feedback.py
+agents/grub/tests/test_feedback.py
 ============================
 Tests for TinkerBridge — SQLite integration between Tinker and Grub.
 """

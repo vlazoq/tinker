@@ -1,5 +1,5 @@
 """
-memory/schemas.py — The data blueprints for everything Tinker stores.
+core/memory/schemas.py — The data blueprints for everything Tinker stores.
 
 What this file does
 -------------------

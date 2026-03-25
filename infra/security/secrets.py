@@ -1,5 +1,5 @@
 """
-security/secrets.py
+infra/security/secrets.py
 ====================
 
 Unified secret management for Tinker.

@@ -1,5 +1,5 @@
 """
-fritz/agent.py
+agents/fritz/agent.py
 ───────────────
 FritzAgent — top-level orchestrator for all Fritz git/GitHub/Gitea operations.
 

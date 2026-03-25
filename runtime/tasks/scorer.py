@@ -1,5 +1,5 @@
 """
-tasks/scorer.py — Priority scoring for the task queue
+runtime/tasks/scorer.py — Priority scoring for the task queue
 ======================================================
 
 What this file does

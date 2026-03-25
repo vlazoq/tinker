@@ -1,5 +1,5 @@
 """
-fritz/git_ops.py
+agents/fritz/git_ops.py
 ─────────────────
 Local git operations — wraps the git CLI via subprocess.
 

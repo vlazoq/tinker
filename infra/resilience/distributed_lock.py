@@ -1,5 +1,5 @@
 """
-resilience/distributed_lock.py
+infra/resilience/distributed_lock.py
 ================================
 
 Redis-backed distributed locking for Tinker.

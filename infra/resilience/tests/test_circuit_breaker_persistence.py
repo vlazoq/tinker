@@ -1,5 +1,5 @@
 """
-resilience/tests/test_circuit_breaker_persistence.py
+infra/resilience/tests/test_circuit_breaker_persistence.py
 =====================================================
 Tests for the Redis save_state / load_state methods on
 CircuitBreaker and CircuitBreakerRegistry.

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from platform.lineage.tracker import LineageTracker
+from tinker_platform.lineage.tracker import LineageTracker
 
 
 @pytest.fixture

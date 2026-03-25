@@ -1,5 +1,5 @@
 """
-features/flags.py
+tinker_platform/features/flags.py
 ==================
 
 Feature flag system for Tinker.

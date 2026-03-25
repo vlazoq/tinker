@@ -1,5 +1,5 @@
 """
-resilience/dead_letter_queue.py
+infra/resilience/dead_letter_queue.py
 ================================
 
 Dead Letter Queue (DLQ) for Tinker — captures permanently failed operations.

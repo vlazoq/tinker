@@ -1,5 +1,5 @@
 """
-fritz/
+agents/fritz/
 ──────
 Fritz is Tinker's Git/GitHub/Gitea integration layer.
 

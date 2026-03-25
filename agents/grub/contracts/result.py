@@ -1,5 +1,5 @@
 """
-grub/contracts/result.py
+agents/grub/contracts/result.py
 ========================
 MinionResult — what every Minion returns to Grub after running.
 

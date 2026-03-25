@@ -1,5 +1,5 @@
 """
-fritz/tests/test_identity.py
+agents/fritz/tests/test_identity.py
 ──────────────────────────────
 Tests for FritzIdentity, IdentityMode, build_identity, apply_git_identity,
 build_auth_header, and build_clone_url_with_token.

@@ -1,5 +1,5 @@
 """
-tasks/abstract_registry.py
+runtime/tasks/abstract_registry.py
 ===========================
 Abstract base class that defines the full interface every task-registry
 backend must implement.

@@ -1,5 +1,5 @@
 """
-grub/tools/code_analysis.py
+agents/grub/tools/code_analysis.py
 ============================
 Simple static analysis helpers.
 

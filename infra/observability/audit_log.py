@@ -1,5 +1,5 @@
 """
-observability/audit_log.py
+infra/observability/audit_log.py
 ===========================
 
 Immutable append-only audit log for Tinker.

@@ -1,5 +1,5 @@
 """
-resilience/null_objects.py — Null Object implementations for optional enterprise components.
+infra/resilience/null_objects.py — Null Object implementations for optional enterprise components.
 
 Why Null Objects?
 -----------------

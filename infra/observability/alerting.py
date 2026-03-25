@@ -1,5 +1,5 @@
 """
-observability/alerting.py
+infra/observability/alerting.py
 ==========================
 
 Webhook and Slack alerting for Tinker failures and stagnation events.

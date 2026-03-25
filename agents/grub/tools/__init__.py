@@ -1,5 +1,5 @@
 """
-grub/tools/__init__.py
+agents/grub/tools/__init__.py
 ======================
 Shared tools available to all Minions.
 

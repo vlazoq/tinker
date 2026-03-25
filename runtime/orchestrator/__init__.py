@@ -1,5 +1,5 @@
 """
-orchestrator/__init__.py
+runtime/orchestrator/__init__.py
 ========================
 
 This file is the "front door" of the orchestrator package.
@@ -10,8 +10,6 @@ When Python sees a folder that contains a file called ``__init__.py``, it
 treats the whole folder as a single importable unit — a *package*.  This
 ``__init__.py`` runs automatically the moment someone writes:
 
-    import orchestrator
-    # or
     from runtime.orchestrator import Orchestrator
 
 What does this file do?

@@ -1,5 +1,5 @@
 """
-fritz/metrics.py
+agents/fritz/metrics.py
 ─────────────────
 Optional Prometheus metrics for Fritz git/GitHub/Gitea operations.
 

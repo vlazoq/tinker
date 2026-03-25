@@ -1,5 +1,5 @@
 """
-grub/minions/debugger.py
+agents/grub/minions/debugger.py
 ========================
 DebuggerMinion — given a failing test output, finds and fixes the bug.
 

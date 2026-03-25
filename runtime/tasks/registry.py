@@ -1,5 +1,5 @@
 """
-tasks/registry.py — SQLite-backed task registry
+runtime/tasks/registry.py — SQLite-backed task registry
 ================================================
 
 What this file does

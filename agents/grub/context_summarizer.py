@@ -1,5 +1,5 @@
 """
-grub/context_summarizer.py
+agents/grub/context_summarizer.py
 ==========================
 MinionContextSummarizer — compresses large context blocks using an LLM call
 instead of hard-truncating them.

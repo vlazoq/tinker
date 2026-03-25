@@ -1,5 +1,5 @@
 """
-grub/minions/coder.py
+agents/grub/minions/coder.py
 =====================
 CoderMinion — reads a design artifact and writes implementation code.
 

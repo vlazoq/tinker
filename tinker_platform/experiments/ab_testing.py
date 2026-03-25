@@ -1,5 +1,5 @@
 """
-experiments/ab_testing.py
+tinker_platform/experiments/ab_testing.py
 ==========================
 
 A/B testing framework for Tinker prompt variants and configuration experiments.

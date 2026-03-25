@@ -206,7 +206,7 @@ def _build_enterprise_stack() -> dict:
       auto_recovery      : AutoRecoveryManager
       health_server      : HealthServer (None until start() called)
     """
-    from platform.features.flags import default_flags as flags
+    from tinker_platform.features.flags import default_flags as flags
 
     # ── Alerting (set up early so circuit breakers can reference it) ──────────
     from infra.observability.alerting import AlertManager, NullAlertManager
@@ -311,19 +311,19 @@ def _build_enterprise_stack() -> dict:
     )
 
     # ── Data lineage ──────────────────────────────────────────────────────────
-    from platform.lineage.tracker import LineageTracker
+    from tinker_platform.lineage.tracker import LineageTracker
 
     lineage_tracker = LineageTracker(
         db_path=os.getenv("TINKER_LINEAGE_PATH", "tinker_lineage.sqlite")
     )
 
     # ── A/B testing ───────────────────────────────────────────────────────────
-    from platform.experiments.ab_testing import ABTestingFramework
+    from tinker_platform.experiments.ab_testing import ABTestingFramework
 
     ab_testing = ABTestingFramework()
 
     # ── Capacity planning ─────────────────────────────────────────────────────
-    from platform.capacity.planner import CapacityPlanner
+    from tinker_platform.capacity.planner import CapacityPlanner
 
     capacity_planner = CapacityPlanner(
         workspace_path=os.getenv("TINKER_WORKSPACE", "./tinker_workspace"),

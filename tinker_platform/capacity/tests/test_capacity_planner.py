@@ -10,7 +10,7 @@ and report generation.
 from __future__ import annotations
 
 
-from platform.capacity.planner import CapacityPlanner, CapacitySnapshot
+from tinker_platform.capacity.planner import CapacityPlanner, CapacitySnapshot
 
 
 class TestCapacitySnapshot:

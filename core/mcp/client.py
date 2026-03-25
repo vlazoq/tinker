@@ -1,5 +1,5 @@
 """
-mcp/client.py
+core/mcp/client.py
 =============
 MCP client — connects to external MCP servers and imports their tools.
 

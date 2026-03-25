@@ -1,5 +1,5 @@
 """
-resilience/tests/test_migrations.py
+infra/resilience/tests/test_migrations.py
 =====================================
 Tests for SQLiteMigrationRunner in resilience/migrations.py.
 

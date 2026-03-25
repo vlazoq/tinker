@@ -1,5 +1,5 @@
 """
-orchestrator/tests/test_signal_handlers.py
+runtime/orchestrator/tests/test_signal_handlers.py
 ==========================================
 Unit tests for Orchestrator._install_signal_handlers.
 

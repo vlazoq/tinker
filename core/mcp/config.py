@@ -1,5 +1,5 @@
 """
-mcp/config.py
+core/mcp/config.py
 =============
 Configuration for Tinker's MCP server and client.
 

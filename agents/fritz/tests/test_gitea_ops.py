@@ -1,5 +1,5 @@
 """
-fritz/tests/test_gitea_ops.py
+agents/fritz/tests/test_gitea_ops.py
 ──────────────────────────────
 Tests for FritzGitea. HTTP calls are mocked at the _request level so no real
 Gitea instance is needed.
