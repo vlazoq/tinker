@@ -76,8 +76,8 @@ from exceptions import ToolNotFoundError
 
 
 def run(coro):
-    """Run a coroutine in the test's event loop."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run a coroutine in a fresh event loop."""
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------

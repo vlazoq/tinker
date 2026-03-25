@@ -226,11 +226,12 @@ class TestRetryableFlags:
 class TestTinkerErrorBase:
     def test_empty_message(self):
         err = TinkerError()
-        assert str(err) == ""
+        # trace_id is always injected into context and shown in the string
+        assert "trace_id" in str(err)
 
     def test_message_only(self):
         err = TinkerError("something broke")
-        assert str(err) == "something broke"
+        assert "something broke" in str(err)
 
     def test_context_included_in_str(self):
         err = TinkerError("boom", context={"task": "t-1", "attempt": 3})
@@ -242,12 +243,14 @@ class TestTinkerErrorBase:
         assert "3" in s
 
     def test_no_brackets_when_context_empty(self):
+        # trace_id is always injected, so brackets are always present
         err = TinkerError("clean")
-        assert "[" not in str(err)
+        assert "trace_id" in str(err)
 
     def test_context_defaults_to_empty_dict(self):
         err = TinkerError("x")
-        assert err.context == {}
+        # trace_id is always injected into context
+        assert "trace_id" in err.context
 
     def test_context_dict_stored(self):
         ctx = {"url": "http://localhost", "status": 503}
@@ -257,7 +260,8 @@ class TestTinkerErrorBase:
 
     def test_none_context_becomes_empty_dict(self):
         err = TinkerError("x", context=None)
-        assert err.context == {}
+        # trace_id is always injected even when None is passed
+        assert "trace_id" in err.context
 
     def test_is_catchable_as_exception(self):
         with pytest.raises(Exception):
