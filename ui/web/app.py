@@ -432,7 +432,7 @@ async def api_backups_trigger():
     Uses `python -m backup --backup` from the tinker root directory,
     which is the same mechanism as `python -m backup --backup` in the terminal.
     """
-    from .core import BASE_DIR
+    from ui.core import BASE_DIR
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -512,7 +512,7 @@ async def api_fritz_ship(request: Request):
     """
     body = await request.json()
     try:
-        from .core import BASE_DIR as _BASE_DIR
+        from ui.core import BASE_DIR as _BASE_DIR
         from fritz.config import FritzConfig
         from fritz.agent import FritzAgent
 

@@ -98,6 +98,7 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements/dev.txt
           pip install -e . --no-deps
+          pip install pytest-cov>=5.0.0
 
       - name: Run tests with coverage
         # --cov-fail-under enforces a minimum line coverage threshold.
@@ -145,6 +146,53 @@ jobs:
 
       - name: Format check (ruff format --check)
         run: ruff format --check .
+
+  # ---------------------------------------------------------------------------
+  # Type checking — mypy --strict
+  # ---------------------------------------------------------------------------
+  mypy:
+    name: "Type check (mypy --strict)"
+    runs-on: ubuntu-latest
+    # Advisory: surfaces Any-leaking and missing Optional annotations.
+    # Does NOT block merge today — graduate to blocking once all ~10-20
+    # edge cases are fixed (see issue: enforce mypy --strict).
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install mypy and stubs
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements/dev.txt
+          pip install -e . --no-deps
+          pip install "mypy>=1.10.0" types-redis
+
+      - name: Run mypy --strict
+        # --ignore-missing-imports: skip third-party libs that lack py.typed /
+        #   stubs (chromadb, textual, etc.) — these are external and not our bug.
+        # --exclude: generated files and vendored code that we don't own.
+        run: |
+          mypy --strict \
+            --ignore-missing-imports \
+            --exclude 'grub_artifacts|__pycache__|\.venv' \
+            . \
+            || true   # non-blocking until edge cases are resolved
+        continue-on-error: true
+
+      - name: Summarise mypy findings
+        if: always()
+        run: |
+          echo "mypy --strict run complete (advisory — does not block merge)."
+          echo "Fix reported issues progressively; remove continue-on-error"
+          echo "from this job once the error count reaches zero."
 
   # ---------------------------------------------------------------------------
   # SAST — Bandit static analysis security scanner

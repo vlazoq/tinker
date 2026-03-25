@@ -318,6 +318,11 @@ class Task:
     # external logic can use this to give up after N attempts.
     attempt_count: int = 0
 
+    # ── Completion metrics ─────────────────────────────────────────────────────
+    # Recorded by mark_complete() to track resource usage.
+    tokens_used: int = 0        # LLM tokens consumed while completing this task
+    duration_seconds: float = 0.0  # Wall-clock time taken to complete this task
+
     # =========================================================================
     # State-transition helpers
     # =========================================================================

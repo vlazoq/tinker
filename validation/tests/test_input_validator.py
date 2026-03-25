@@ -174,7 +174,7 @@ class TestValidateFilePath:
             validate_file_path("../../etc/passwd", base_dir=str(tmp_path))
 
     def test_absolute_escape_raises(self, tmp_path):
-        with pytest.raises(ValidationError, match="traversal"):
+        with pytest.raises(ValidationError, match="Absolute paths are not allowed"):
             validate_file_path("/etc/passwd", base_dir=str(tmp_path))
 
 

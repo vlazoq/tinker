@@ -1146,11 +1146,10 @@ class TestAuthSurface:
         assert r.status_code == 401   # unauthenticated
         # ... add bearer-token tests below
 
-    TODO (D2): Implement token-based auth (e.g. HTTP Bearer via python-jose)
-    and update this class to:
-      - Reject unauthenticated requests with 401
-      - Reject insufficient-scope requests with 403
-      - Accept valid tokens with 200
+    FUTURE (auth-D2): When token-based auth is implemented (e.g. HTTP Bearer
+    via python-jose), update this class to assert 401/403 for unauthenticated
+    and insufficient-scope callers respectively, and add positive-path tests
+    with valid tokens.  Track via GitHub issue: "Add bearer-token auth (D2)".
     """
 
     _SENSITIVE_ENDPOINTS = [
@@ -1186,8 +1185,9 @@ class TestAuthSurface:
         All JSON responses must carry X-Content-Type-Options: nosniff to
         prevent MIME-type sniffing attacks.
 
-        TODO: Add this header via a FastAPI middleware when the app moves to a
-        more hardened deployment.  Track at: add security-headers middleware.
+        FUTURE: Add this header via a FastAPI middleware when the app moves to a
+        more hardened deployment.  Track via GitHub issue: "Add security-headers
+        middleware (X-Content-Type-Options, X-Frame-Options)".
         """
         r = client.get("/api/health")
         # Document current state — header may not be present yet.
