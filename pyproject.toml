@@ -90,55 +90,32 @@ enterprise = [
 
 [project.scripts]
 tinker      = "main:main"
-tinker-dash = "dashboard.__main__:main"
+tinker-dash = "ui.dashboard.__main__:main"
 
 [tool.setuptools.packages.find]
 where   = ["."]
 include = [
-    "llm*",
-    "memory*",
-    "tools*",
-    "prompts*",
-    "tasks*",
-    "context*",
-    "orchestrator*",
-    "architecture*",
-    "stagnation*",
-    "dashboard*",
-    # ── Enterprise packages (all four phases) ─────────────────────────────
-    "resilience*",       # circuit breakers, distributed lock, DLQ, rate limiting
-    "backup*",           # snapshot backup/restore
-    "validation*",       # input sanitisation and prompt injection detection
-    "observability*",    # structured logging, tracing, alerting, SLA, audit log
-    "health*",           # HTTP health endpoint server
-    "security*",         # secret manager (env/Vault/AWS)
-    "features*",         # feature flags
-    "lineage*",          # data lineage tracker
-    "experiments*",      # A/B testing framework
-    "capacity*",         # capacity planning and resource monitoring
+    # ── Core AI/LLM layer ─────────────────────────────────────────────────
+    "core*",
+    # ── Runtime (orchestration, tasks, stagnation) ────────────────────────
+    "runtime*",
+    # ── Platform features ─────────────────────────────────────────────────
+    "platform*",
+    # ── Infrastructure (resilience, security, health, observability, etc.) ─
+    "infra*",
+    # ── Agents (fritz, grub) ──────────────────────────────────────────────
+    "agents*",
+    # ── UI (dashboard, gradio, streamlit, web) ────────────────────────────
+    "ui*",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths    = [
-    "llm",
-    "memory",
-    "tools",
-    "tasks",
-    "context",
-    "orchestrator",
-    "architecture",
-    "stagnation",
-    "dashboard",
-    # ── Enterprise test paths ──────────────────────────────────────────────
-    "resilience",
-    "backup",
-    "validation",
-    "observability",
-    "health",
-    "security",
-    "features",
-    "lineage",
-    "experiments",
-    "capacity",
+    "core",
+    "runtime",
+    "platform",
+    "infra",
+    "agents",
+    "ui",
 ]

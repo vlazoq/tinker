@@ -694,16 +694,16 @@ class TestContextRoleUnification:
     """Verify that context.assembler.AgentRole is the same class as llm.types.AgentRole."""
 
     def test_same_class(self):
-        from context.assembler import AgentRole as assembler_role
-        from llm.types import AgentRole as llm_role
+        from core.context.assembler import AgentRole as assembler_role
+        from core.llm.types import AgentRole as llm_role
 
         assert assembler_role is llm_role, (
-            "context.assembler.AgentRole must be imported from llm.types, "
+            "context.assembler.AgentRole must be imported from core.llm.types, "
             "not a separate definition."
         )
 
     def test_enum_values_match(self):
-        from context.assembler import AgentRole
+        from core.context.assembler import AgentRole
 
         assert AgentRole.ARCHITECT.value == "architect"
         assert AgentRole.CRITIC.value == "critic"
@@ -711,8 +711,8 @@ class TestContextRoleUnification:
         assert AgentRole.SYNTHESIZER.value == "synthesizer"
 
     def test_agents_use_llm_types_agent_role(self):
-        """ArchitectAgent should import AgentRole from llm.types (not context.assembler)."""
-        from llm.types import AgentRole
+        """ArchitectAgent should import AgentRole from core.llm.types (not context.assembler)."""
+        from core.llm.types import AgentRole
 
         # This is a structural check: verify the enum values work for routing
         # (router.complete uses AgentRole.ARCHITECT to route to the right machine)
@@ -729,7 +729,7 @@ class TestMemoryAdaptorSemanticSearch:
 
     @pytest.mark.asyncio
     async def test_recency_fallback_on_non_uuid_query(self):
-        from context.memory_adapter import MemoryAdaptor
+        from core.context.memory_adapter import MemoryAdaptor
 
         mock_artifact = MagicMock()
         mock_artifact.id = "art-001"
@@ -750,7 +750,7 @@ class TestMemoryAdaptorSemanticSearch:
 
     @pytest.mark.asyncio
     async def test_uuid_query_uses_task_lookup(self):
-        from context.memory_adapter import MemoryAdaptor
+        from core.context.memory_adapter import MemoryAdaptor
 
         mock_artifact = MagicMock()
         mock_artifact.id = "art-uuid"
@@ -769,7 +769,7 @@ class TestMemoryAdaptorSemanticSearch:
 
     @pytest.mark.asyncio
     async def test_falls_back_to_recency_when_uuid_lookup_returns_empty(self):
-        from context.memory_adapter import MemoryAdaptor
+        from core.context.memory_adapter import MemoryAdaptor
 
         mock_artifact = MagicMock()
         mock_artifact.id = "art-fallback"
@@ -789,7 +789,7 @@ class TestMemoryAdaptorSemanticSearch:
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_on_exception(self):
-        from context.memory_adapter import MemoryAdaptor
+        from core.context.memory_adapter import MemoryAdaptor
 
         mock_mm = MagicMock()
         mock_mm.get_recent_artifacts = AsyncMock(side_effect=RuntimeError("DB down"))

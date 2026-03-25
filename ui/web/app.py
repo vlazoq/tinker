@@ -513,8 +513,8 @@ async def api_fritz_ship(request: Request):
     body = await request.json()
     try:
         from ui.core import BASE_DIR as _BASE_DIR
-        from fritz.config import FritzConfig
-        from fritz.agent import FritzAgent
+        from agents.fritz.config import FritzConfig
+        from agents.fritz.agent import FritzAgent
 
         config = (
             FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -551,8 +551,8 @@ async def api_fritz_push(request: Request):
     """
     body = await request.json()
     try:
-        from fritz.config import FritzConfig
-        from fritz.agent import FritzAgent
+        from agents.fritz.config import FritzConfig
+        from agents.fritz.agent import FritzAgent
 
         config = (
             FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -576,8 +576,8 @@ async def api_fritz_create_pr(request: Request):
     """
     body = await request.json()
     try:
-        from fritz.config import FritzConfig
-        from fritz.agent import FritzAgent
+        from agents.fritz.config import FritzConfig
+        from agents.fritz.agent import FritzAgent
 
         config = (
             FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -602,8 +602,8 @@ async def api_fritz_create_pr(request: Request):
 async def api_fritz_verify():
     """Test GitHub and Gitea credentials. Returns {github: bool, gitea: bool}."""
     try:
-        from fritz.config import FritzConfig
-        from fritz.agent import FritzAgent
+        from agents.fritz.config import FritzConfig
+        from agents.fritz.agent import FritzAgent
 
         config = (
             FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -625,13 +625,13 @@ async def api_fritz_verify():
 
 
 def _get_library():
-    from models.library import ModelLibrary
+    from core.models.library import ModelLibrary
     return ModelLibrary()
 
 
 def _get_preset_manager():
-    from models.library import ModelLibrary
-    from models.presets import PresetManager
+    from core.models.library import ModelLibrary
+    from core.models.presets import PresetManager
     lib = ModelLibrary()
     return PresetManager(lib), lib
 
@@ -650,7 +650,7 @@ async def api_models_library_add(request: Request):
 
     Body fields: id, model_tag, display_name, ollama_url, context_window, notes, capabilities
     """
-    from models.library import ModelEntry
+    from core.models.library import ModelEntry
     body = await request.json()
     if not body.get("id") or not body.get("model_tag"):
         return JSONResponse({"ok": False, "error": "id and model_tag are required"}, status_code=422)
@@ -703,7 +703,7 @@ async def api_models_presets_create(request: Request):
     Body fields: name, display_name, description, main_model_id, judge_model_id,
                  grub_overrides (dict), notes
     """
-    from models.presets import ModelPreset
+    from core.models.presets import ModelPreset
     body = await request.json()
     if not body.get("name"):
         return JSONResponse({"ok": False, "error": "name is required"}, status_code=422)
@@ -724,7 +724,7 @@ async def api_models_presets_create(request: Request):
 @app.put("/api/models/presets/{name}")
 async def api_models_presets_update(name: str, request: Request):
     """Update an existing preset (same as POST but requires it to exist)."""
-    from models.presets import ModelPreset
+    from core.models.presets import ModelPreset
     body = await request.json()
     mgr, _ = _get_preset_manager()
     if mgr.get(name) is None:
@@ -795,7 +795,7 @@ async def api_models_ollama_available(urls: str = ""):
     Returns discovered models with metadata (size, family, quantization).
     Also marks which models are already in the library (``in_library`` field).
     """
-    from models.ollama_sync import OllamaSync
+    from core.models.ollama_sync import OllamaSync
     lib = _get_library()
     known_tags = {m.model_tag for m in lib.all()}
     server_urls = [u.strip() for u in urls.split(",") if u.strip()] or ["http://localhost:11434"]
@@ -820,8 +820,8 @@ async def api_models_ollama_sync(request: Request):
     Each entry in ``models`` is used to create a ModelEntry.  If a model with
     the same ``suggested_id`` already exists in the library, it is skipped.
     """
-    from models.library import ModelEntry
-    from models.ollama_sync import OllamaSync
+    from core.models.library import ModelEntry
+    from core.models.ollama_sync import OllamaSync
     body = await request.json()
     lib = _get_library()
     to_import = body.get("models", [])
@@ -835,7 +835,7 @@ async def api_models_ollama_sync(request: Request):
             skipped.append(suggested_id)
             continue
         caps = OllamaSync._infer_capabilities(m.get("family", ""), m.get("model_tag", ""))
-        from models.ollama_sync import _infer_context_window
+        from core.models.ollama_sync import _infer_context_window
         ctx = _infer_context_window(m.get("model_tag", ""), m.get("parameter_size", ""))
         entry = ModelEntry(
             id=suggested_id,

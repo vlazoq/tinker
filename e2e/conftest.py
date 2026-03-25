@@ -49,7 +49,7 @@ def tinker_config():
                                        during tests (prod default: 4 hours)
       - architect_timeout / critic_timeout : set to 5 s to fail fast
     """
-    from orchestrator.config import OrchestratorConfig
+    from runtime.orchestrator.config import OrchestratorConfig
 
     return OrchestratorConfig(
         meso_trigger_count=2,
@@ -89,8 +89,8 @@ def stub_orchestrator(tinker_config):
     all tests in the session.  Tests that need isolated state should create
     their own orchestrator via ``_make_stub_orchestrator(config)``.
     """
-    from orchestrator.orchestrator import Orchestrator
-    from orchestrator.stubs import build_stub_components
+    from runtime.orchestrator.orchestrator import Orchestrator
+    from runtime.orchestrator.stubs import build_stub_components
 
     components = build_stub_components()
     orch = Orchestrator(
@@ -123,9 +123,9 @@ def make_stub_orchestrator(config=None):
     if none is provided.  Tests that need full isolation use this rather than
     the session-scoped ``stub_orchestrator`` fixture.
     """
-    from orchestrator.config import OrchestratorConfig
-    from orchestrator.orchestrator import Orchestrator
-    from orchestrator.stubs import build_stub_components
+    from runtime.orchestrator.config import OrchestratorConfig
+    from runtime.orchestrator.orchestrator import Orchestrator
+    from runtime.orchestrator.stubs import build_stub_components
 
     if config is None:
         config = OrchestratorConfig(

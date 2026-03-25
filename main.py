@@ -206,10 +206,10 @@ def _build_enterprise_stack() -> dict:
       auto_recovery      : AutoRecoveryManager
       health_server      : HealthServer (None until start() called)
     """
-    from features.flags import default_flags as flags
+    from platform.features.flags import default_flags as flags
 
     # ── Alerting (set up early so circuit breakers can reference it) ──────────
-    from observability.alerting import AlertManager, NullAlertManager
+    from infra.observability.alerting import AlertManager, NullAlertManager
 
     slack_url = os.getenv("TINKER_SLACK_WEBHOOK")
     webhook_url = os.getenv("TINKER_ALERT_WEBHOOK")
@@ -222,7 +222,7 @@ def _build_enterprise_stack() -> dict:
     # ── Circuit breakers ──────────────────────────────────────────────────────
     # Wire circuit breaker state changes to the alerter so operators are
     # notified when services go down.
-    from resilience.circuit_breaker import build_default_registry
+    from infra.resilience.circuit_breaker import build_default_registry
 
     circuit_registry = build_default_registry(
         on_state_change=alerter.on_circuit_state_change
@@ -233,21 +233,21 @@ def _build_enterprise_stack() -> dict:
     # ── Distributed lock ──────────────────────────────────────────────────────
     redis_url = os.getenv("TINKER_REDIS_URL", "redis://localhost:6379")
     if flags.is_enabled("distributed_locking"):
-        from resilience.distributed_lock import DistributedLock
+        from infra.resilience.distributed_lock import DistributedLock
 
         dist_lock = DistributedLock(redis_url=redis_url)
     else:
-        from resilience.distributed_lock import NullDistributedLock
+        from infra.resilience.distributed_lock import NullDistributedLock
 
         dist_lock = NullDistributedLock()
 
     # ── Dead letter queue ─────────────────────────────────────────────────────
-    from resilience.dead_letter_queue import DeadLetterQueue
+    from infra.resilience.dead_letter_queue import DeadLetterQueue
 
     dlq = DeadLetterQueue(db_path=os.getenv("TINKER_DLQ_PATH", "tinker_dlq.sqlite"))
 
     # ── Idempotency cache ─────────────────────────────────────────────────────
-    from resilience.idempotency import IdempotencyCache
+    from infra.resilience.idempotency import IdempotencyCache
 
     idempotency_cache = IdempotencyCache(
         redis_url=redis_url,
@@ -255,12 +255,12 @@ def _build_enterprise_stack() -> dict:
     )
 
     # ── Rate limiters ─────────────────────────────────────────────────────────
-    from resilience.rate_limiter import build_default_rate_limiters
+    from infra.resilience.rate_limiter import build_default_rate_limiters
 
     rate_registry = build_default_rate_limiters()
 
     # ── Backpressure ──────────────────────────────────────────────────────────
-    from resilience.backpressure import BackpressureController
+    from infra.resilience.backpressure import BackpressureController
 
     backpressure = BackpressureController(
         queue_warn_depth=int(os.getenv("TINKER_BP_WARN_DEPTH", "50")),
@@ -268,8 +268,8 @@ def _build_enterprise_stack() -> dict:
     )
 
     # ── SLA tracker ───────────────────────────────────────────────────────────
-    from observability.sla_tracker import build_default_sla_tracker
-    from observability.alerting import AlertType as _AlertType
+    from infra.observability.sla_tracker import build_default_sla_tracker
+    from infra.observability.alerting import AlertType as _AlertType
 
     _sla_alert_logger = logging.getLogger("tinker.sla_tracker")
 
@@ -296,14 +296,14 @@ def _build_enterprise_stack() -> dict:
     sla_tracker = build_default_sla_tracker(alert_on_breach=_sla_breach_callback)
 
     # ── Audit log ─────────────────────────────────────────────────────────────
-    from observability.audit_log import AuditLog
+    from infra.observability.audit_log import AuditLog
 
     audit_log = AuditLog(
         db_path=os.getenv("TINKER_AUDIT_LOG_PATH", "tinker_audit.sqlite")
     )
 
     # ── Tracing ───────────────────────────────────────────────────────────────
-    from observability.tracing import Tracer
+    from infra.observability.tracing import Tracer
 
     tracer = Tracer(
         max_traces=int(os.getenv("TINKER_TRACER_WINDOW", "100")),
@@ -311,19 +311,19 @@ def _build_enterprise_stack() -> dict:
     )
 
     # ── Data lineage ──────────────────────────────────────────────────────────
-    from lineage.tracker import LineageTracker
+    from platform.lineage.tracker import LineageTracker
 
     lineage_tracker = LineageTracker(
         db_path=os.getenv("TINKER_LINEAGE_PATH", "tinker_lineage.sqlite")
     )
 
     # ── A/B testing ───────────────────────────────────────────────────────────
-    from experiments.ab_testing import ABTestingFramework
+    from platform.experiments.ab_testing import ABTestingFramework
 
     ab_testing = ABTestingFramework()
 
     # ── Capacity planning ─────────────────────────────────────────────────────
-    from capacity.planner import CapacityPlanner
+    from platform.capacity.planner import CapacityPlanner
 
     capacity_planner = CapacityPlanner(
         workspace_path=os.getenv("TINKER_WORKSPACE", "./tinker_workspace"),
@@ -331,7 +331,7 @@ def _build_enterprise_stack() -> dict:
     )
 
     # ── Backup manager ────────────────────────────────────────────────────────
-    from backup.backup_manager import BackupManager
+    from infra.backup.backup_manager import BackupManager
 
     backup_manager = BackupManager(
         backup_dir=os.getenv("TINKER_BACKUP_DIR", "./tinker_backups"),
@@ -404,8 +404,8 @@ def _build_real_components(problem: str) -> dict:
     # MachineConfig.server_defaults() and secondary_defaults() read the
     # TINKER_SERVER_URL / TINKER_SECONDARY_URL env vars, falling back to
     # localhost if not set.
-    from llm.router import ModelRouter
-    from llm.types import MachineConfig
+    from core.llm.router import ModelRouter
+    from core.llm.types import MachineConfig
 
     router = ModelRouter(
         server_config=MachineConfig.server_defaults(),
@@ -419,8 +419,8 @@ def _build_real_components(problem: str) -> dict:
     # - ChromaDB: vector database for semantic search over research notes
     # - SQLite: reliable task registry (survives restarts)
     # All paths and URLs come from environment variables, with sensible defaults.
-    from memory.manager import MemoryManager
-    from memory.schemas import MemoryConfig
+    from core.memory.manager import MemoryManager
+    from core.memory.schemas import MemoryConfig
 
     mem_config = MemoryConfig(
         redis_url=os.getenv("TINKER_REDIS_URL", "redis://localhost:6379"),
@@ -435,7 +435,7 @@ def _build_real_components(problem: str) -> dict:
     # web_search, web_scraper, memory_query, artifact_writer, diagram_generator.
     # build_default_registry() creates one pre-wired with all default tools.
     # We pass memory_manager so the memory_query tool can search Tinker's archive.
-    from tools.registry import build_default_registry
+    from core.tools.registry import build_default_registry
 
     tool_layer = build_default_registry(
         searxng_url=os.getenv("TINKER_SEARXNG_URL", "http://localhost:8080"),
@@ -449,7 +449,7 @@ def _build_real_components(problem: str) -> dict:
     # It wraps TaskRegistry (SQLite), TaskQueue (priority queue), and
     # TaskGenerator (parses Architect output to create follow-up tasks).
     # If the database is empty, it seeds an initial task from the problem statement.
-    from tasks.engine import TaskEngine
+    from runtime.tasks.engine import TaskEngine
 
     task_engine = TaskEngine(
         problem_statement=problem,
@@ -467,9 +467,9 @@ def _build_real_components(problem: str) -> dict:
     #
     # Both live in context/ so they are testable and reusable; nothing is
     # defined inline in this function any more.
-    from context.assembler import ContextAssembler
-    from context.memory_adapter import MemoryAdaptor
-    from context.prompt_builder_adapter import PromptBuilderAdapter
+    from core.context.assembler import ContextAssembler
+    from core.context.memory_adapter import MemoryAdaptor
+    from core.context.prompt_builder_adapter import PromptBuilderAdapter
 
     # Create the ContextAssembler with production adapters
     context_assembler = ContextAssembler(
@@ -492,7 +492,7 @@ def _build_real_components(problem: str) -> dict:
     # Tracks the evolving architecture as a series of versioned JSON snapshots.
     # Stores them in the workspace directory (default: ./tinker_workspace/).
     # If auto_git is True, commits each snapshot to a local git repository.
-    from architecture.manager import ArchitectureStateManager
+    from infra.architecture.manager import ArchitectureStateManager
 
     arch_state_manager = ArchitectureStateManager(
         workspace=os.getenv("TINKER_WORKSPACE", "./tinker_workspace"),
@@ -512,8 +512,8 @@ def _build_real_components(problem: str) -> dict:
     # intervention (force early meso, spawn exploration task, etc.).
     #
     # The monitor is optional: pass stagnation_monitor=None to disable it.
-    from stagnation.monitor import StagnationMonitor
-    from stagnation.config import StagnationMonitorConfig
+    from runtime.stagnation.monitor import StagnationMonitor
+    from runtime.stagnation.config import StagnationMonitorConfig
 
     stagnation_monitor = StagnationMonitor(config=StagnationMonitorConfig())
 
@@ -548,7 +548,7 @@ def _build_stub_components(problem: str) -> dict:
     - Running automated tests in CI/CD environments
     - Quickly checking that a code change doesn't break the orchestration logic
     """
-    from orchestrator.stubs import build_stub_components
+    from runtime.orchestrator.stubs import build_stub_components
 
     return build_stub_components()
 
@@ -748,8 +748,8 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
 
     # Import here (inside the async function) so these are only loaded
     # after sys.path is set up and env vars are loaded.
-    from orchestrator.orchestrator import Orchestrator
-    from orchestrator.config import OrchestratorConfig
+    from runtime.orchestrator.orchestrator import Orchestrator
+    from runtime.orchestrator.config import OrchestratorConfig
 
     # OrchestratorConfig holds all the tunable settings.
     # Each one reads from an env var with a sensible default.
@@ -764,7 +764,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     # Load the project instruction file and inject it into every Architect
     # prompt via PromptBuilder's class-level default.
     # This is analogous to CLAUDE.md in Claude Code.
-    from prompts.builder import PromptBuilder as _PromptBuilder
+    from core.prompts.builder import PromptBuilder as _PromptBuilder
     _instructions_path = Path(config.project_instructions_path)
     if _instructions_path.exists():
         try:
@@ -788,7 +788,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     # Enables pause/resume and crash recovery.  CheckpointManager saves
     # in-progress micro loop state to disk so the next run can resume without
     # repeating the Architect/Critic calls.
-    from orchestrator.checkpoint import CheckpointManager
+    from runtime.orchestrator.checkpoint import CheckpointManager
     checkpoint_manager = CheckpointManager(
         path=config.checkpoint_path,
         enabled=config.checkpoint_enabled,
@@ -824,7 +824,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     await enterprise["lineage_tracker"].connect()
 
     # Log system start to the audit trail
-    from observability.audit_log import AuditEventType
+    from infra.observability.audit_log import AuditEventType
 
     await enterprise["audit_log"].log(
         event_type=AuditEventType.SYSTEM_START,
@@ -840,7 +840,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
 
     # Validate the problem statement at the input boundary
     if not use_stubs:
-        from validation.input_validator import validate_problem_statement
+        from core.validation.input_validator import validate_problem_statement
 
         problem = validate_problem_statement(problem)
 
@@ -883,7 +883,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     # ── Wire auto-recovery to circuit breakers ────────────────────────────────
     # When a circuit breaker opens, the auto-recovery manager will attempt to
     # reconnect the underlying service automatically.
-    from resilience.auto_recovery import AutoRecoveryManager
+    from infra.resilience.auto_recovery import AutoRecoveryManager
 
     auto_recovery = AutoRecoveryManager(
         memory_manager=components.get("memory_manager"),
@@ -901,7 +901,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     # so the readiness probe correctly reflects component health.
     health_port = int(os.getenv("TINKER_HEALTH_PORT", "8080"))
     if os.getenv("TINKER_HEALTH_ENABLED", "true").lower() != "false":
-        from health.http_server import HealthServer
+        from infra.health.http_server import HealthServer
 
         health_server = HealthServer(
             orchestrator=None,  # Set after Orchestrator is created
@@ -924,7 +924,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     # We do this via the Orchestrator's snapshot_callback parameter — a clean
     # zero-argument callable that the Orchestrator calls after each successful
     # write, with no monkey-patching required.
-    from dashboard.subscriber import publish_state as _publish_state
+    from ui.dashboard.subscriber import publish_state as _publish_state
 
     def _dashboard_snapshot_cb() -> None:
         # Translate OrchestratorState → dashboard patch format and publish.
@@ -954,8 +954,8 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     # If MCP is enabled, mount the server on the webui FastAPI app and connect
     # to any configured external MCP servers.
     try:
-        from mcp.config import MCPConfig as _MCPConfig
-        from mcp.bridge import MCPBridge as _MCPBridge
+        from core.mcp.config import MCPConfig as _MCPConfig
+        from core.mcp.bridge import MCPBridge as _MCPBridge
 
         _mcp_config = _MCPConfig.from_env()
         if _mcp_config.enabled:
@@ -1020,7 +1020,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
 
             # 2. Audit system stop
             try:
-                from observability.audit_log import AuditEventType
+                from infra.observability.audit_log import AuditEventType
 
                 await enterprise["audit_log"].log(
                     event_type=AuditEventType.SYSTEM_STOP,
@@ -1060,8 +1060,8 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         # The dashboard runs in the "foreground" (we await it).
         # When the user quits the dashboard (presses 'q'), we tell the orchestrator
         # to shut down gracefully, then wait up to 5 seconds for it to finish.
-        from dashboard.app import TinkerDashboard
-        from dashboard.subscriber import QueueSubscriber
+        from ui.dashboard.app import TinkerDashboard
+        from ui.dashboard.subscriber import QueueSubscriber
 
         # QueueSubscriber reads from the shared asyncio.Queue that publish_state() writes to.
         sub = QueueSubscriber()

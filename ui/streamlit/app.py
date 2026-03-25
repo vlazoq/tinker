@@ -537,8 +537,8 @@ with tabs[7]:
 
         if st.button("⚡ Commit & Ship", key="fritz_ship_btn", disabled=not ship_msg.strip()):
             try:
-                from fritz.config import FritzConfig
-                from fritz.agent import FritzAgent
+                from agents.fritz.config import FritzConfig
+                from agents.fritz.agent import FritzAgent
 
                 config = (
                     FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -568,8 +568,8 @@ with tabs[7]:
         )
         if st.button("⬆ Push", key="fritz_push_btn"):
             try:
-                from fritz.config import FritzConfig
-                from fritz.agent import FritzAgent
+                from agents.fritz.config import FritzConfig
+                from agents.fritz.agent import FritzAgent
 
                 config = (
                     FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -596,8 +596,8 @@ with tabs[7]:
             pr_body   = st.text_area("Description", placeholder="Describe what this PR does…", key="fritz_pr_body", height=80)
         if st.button("🔀 Create PR", key="fritz_pr_btn", disabled=not (pr_title.strip() and pr_head.strip())):
             try:
-                from fritz.config import FritzConfig
-                from fritz.agent import FritzAgent
+                from agents.fritz.config import FritzConfig
+                from agents.fritz.agent import FritzAgent
 
                 config = (
                     FritzConfig.from_file(FRITZ_CONFIG_FILE)
