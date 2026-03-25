@@ -178,7 +178,8 @@ def summarise_file(path: Union[str, Path]) -> dict:
         classes = [
             node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
         ]
-    except Exception:
+    except Exception as exc:
+        logger.warning("analyze_file: could not parse classes in %s: %s", path, exc)
         classes = []
 
     return {

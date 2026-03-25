@@ -49,9 +49,12 @@ To point a minion at a different machine's Ollama instance:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 # ── Default configuration values ─────────────────────────────────────────────
@@ -230,8 +233,8 @@ class GrubConfig:
         try:
             p.write_text(json.dumps(cfg.to_dict(), indent=2))
             print(f"[GrubConfig] Created default config at {p.resolve()}")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("GrubConfig: could not write default config to %s: %s", p, exc)
         return cfg
 
     def save(self, path: str | Path = "grub_config.json") -> None:

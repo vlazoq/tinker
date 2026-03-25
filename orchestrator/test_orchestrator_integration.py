@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -64,7 +65,7 @@ def _make_orchestrator(
         "critic_timeout": 5.0,
         "synthesizer_timeout": 5.0,
         "tool_timeout": 5.0,
-        "state_snapshot_path": "/tmp/tinker_test_state.json",
+        "state_snapshot_path": str(Path(tempfile.gettempdir()) / "tinker_test_state.json"),
     }
     overrides.update(config_overrides)  # caller wins on conflicts
     cfg = OrchestratorConfig(**overrides)
@@ -171,7 +172,7 @@ async def test_meso_escalation():
         synthesizer_timeout=5.0,
         tool_timeout=5.0,
         meso_min_artifacts=1,  # ensure meso doesn't skip for low artifact count
-        state_snapshot_path="/tmp/tinker_test_meso_state.json",
+        state_snapshot_path=str(Path(tempfile.gettempdir()) / "tinker_test_meso_state.json"),
     )
 
     orch = Orchestrator(config=cfg, **components)
@@ -231,7 +232,7 @@ async def test_graceful_shutdown():
     logger.info("TEST 3: Graceful shutdown")
     logger.info("=" * 60)
 
-    snapshot_path = "/tmp/tinker_test_shutdown_state.json"
+    snapshot_path = str(Path(tempfile.gettempdir()) / "tinker_test_shutdown_state.json")
     orch, _ = _make_orchestrator(
         target_micro_loops=3,
         state_snapshot_path=snapshot_path,
@@ -293,7 +294,7 @@ async def test_failure_recovery():
         critic_timeout=5.0,
         synthesizer_timeout=5.0,
         tool_timeout=5.0,
-        state_snapshot_path="/tmp/tinker_test_recovery_state.json",
+        state_snapshot_path=str(Path(tempfile.gettempdir()) / "tinker_test_recovery_state.json"),
     )
 
     orch = Orchestrator(config=cfg, **components)
