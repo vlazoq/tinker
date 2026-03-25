@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "qwen3-7b-local",
+      "model_tag": "qwen3:7b",
+      "display_name": "Qwen 3 7B (Local)",
+      "ollama_url": "http://localhost:11434",
+      "context_window": 32768,
+      "notes": "Good all-rounder. Default Tinker server model.",
+      "capabilities": [
+        "reasoning",
+        "general"
+      ]
+    },
+    {
+      "id": "phi3-mini-local",
+      "model_tag": "phi3:mini",
+      "display_name": "Phi-3 Mini (Local)",
+      "ollama_url": "http://localhost:11434",
+      "context_window": 4096,
+      "notes": "Fast and lightweight. Default Judge/Critic model.",
+      "capabilities": [
+        "fast",
+        "review"
+      ]
+    },
+    {
+      "id": "qwen25-coder-7b-local",
+      "model_tag": "qwen2.5-coder:7b",
+      "display_name": "Qwen 2.5 Coder 7B (Local)",
+      "ollama_url": "http://localhost:11434",
+      "context_window": 32768,
+      "notes": "Code-specialised 7B. Good Main for coding tasks.",
+      "capabilities": [
+        "coding",
+        "fast"
+      ]
+    },
+    {
+      "id": "qwen25-coder-32b-local",
+      "model_tag": "qwen2.5-coder:32b",
+      "display_name": "Qwen 2.5 Coder 32B (Local)",
+      "ollama_url": "http://localhost:11434",
+      "context_window": 32768,
+      "notes": "Heavy code model. Requires high-VRAM GPU.",
+      "capabilities": [
+        "coding",
+        "large"
+      ]
+    }
+  ]
+}

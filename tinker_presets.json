@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "name": "balanced",
+      "display_name": "Balanced",
+      "description": "General-purpose: mid-size Main, fast Judge. Good default.",
+      "main_model_id": "qwen3-7b-local",
+      "judge_model_id": "phi3-mini-local",
+      "grub_overrides": {},
+      "notes": "Default active preset."
+    },
+    {
+      "name": "coding",
+      "display_name": "Coding",
+      "description": "Code-specialised Main for implementation tasks.",
+      "main_model_id": "qwen25-coder-32b-local",
+      "judge_model_id": "phi3-mini-local",
+      "grub_overrides": {
+        "coder": "qwen2.5-coder:32b",
+        "debugger": "qwen2.5-coder:32b"
+      },
+      "notes": "Switch to this for coding/implementation micro loops."
+    },
+    {
+      "name": "architecting",
+      "display_name": "Architecting",
+      "description": "Larger reasoning model for architecture and design tasks.",
+      "main_model_id": "qwen3-7b-local",
+      "judge_model_id": "qwen25-coder-7b-local",
+      "grub_overrides": {},
+      "notes": "Use when the task is high-level design or planning."
+    },
+    {
+      "name": "lightweight",
+      "display_name": "Lightweight",
+      "description": "Both slots use fast small models. Good for slow hardware.",
+      "main_model_id": "qwen25-coder-7b-local",
+      "judge_model_id": "phi3-mini-local",
+      "grub_overrides": {},
+      "notes": "Useful when the GPU is busy or on lower-end hardware."
+    }
+  ]
+}
