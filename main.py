@@ -693,6 +693,39 @@ async def _health_check() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _asyncio_exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    """
+    Catch-all handler for exceptions that escape asyncio background Tasks.
+
+    asyncio silently discards exceptions raised inside Tasks that are never
+    awaited or whose result is never retrieved.  Without this handler, a
+    crash inside a fire-and-forget task (e.g. health server, metrics thread)
+    would produce no log output and no traceback — the process would just
+    keep running in a broken state.
+
+    This handler logs every such exception at ERROR level so it appears in
+    the log stream and can be correlated via the trace_id if one is present.
+
+    The ``context`` dict always has a ``message`` key; it optionally carries
+    ``exception`` (the actual exception object) and ``future`` / ``task``.
+    """
+    exc = context.get("exception")
+    msg = context.get("message", "Unknown asyncio error")
+    task = context.get("task") or context.get("future")
+    task_name = getattr(task, "get_name", lambda: repr(task))()
+
+    if exc is not None:
+        logger.exception(
+            "Unhandled exception in asyncio task %r: %s",
+            task_name,
+            msg,
+            exc_info=exc,
+        )
+    else:
+        # No exception object — log as plain error (e.g. handle-closed warnings).
+        logger.error("asyncio error in task %r: %s", task_name, msg)
+
+
 async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     """
     The async entry point — everything from here runs inside asyncio's event loop.
@@ -707,6 +740,12 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         use_stubs  — if True, use fake components (no real AI/Redis needed)
         dashboard  — if True, launch the TUI dashboard in this same process
     """
+    # Install the catch-all handler for background Task exceptions before
+    # any tasks are created.  This ensures that fire-and-forget tasks
+    # (health server, metrics daemon, etc.) surface errors instead of
+    # silently discarding them.
+    asyncio.get_event_loop().set_exception_handler(_asyncio_exception_handler)
+
     # Import here (inside the async function) so these are only loaded
     # after sys.path is set up and env vars are loaded.
     from orchestrator.orchestrator import Orchestrator
@@ -1113,15 +1152,22 @@ Press Ctrl-C to stop.  Run the dashboard in a separate terminal:
     # Configure loguru (or fall back to stdlib basicConfig if loguru is absent).
     _setup_logging(args.log_level)
 
+    debug_mode = args.log_level == "DEBUG"
+
     try:
         # asyncio.run() creates a new event loop, runs _async_main until it returns,
         # then closes the loop. KeyboardInterrupt (Ctrl-C) propagates out of run().
+        #
+        # debug=True (activated by --log-level DEBUG) enables asyncio's built-in
+        # diagnostics: unawaited-coroutine warnings, slow-callback detection
+        # (>100 ms callbacks logged), and ResourceWarning for unclosed handles.
         asyncio.run(
             _async_main(
                 problem=args.problem,
                 use_stubs=args.stubs,
                 dashboard=args.dashboard,
-            )
+            ),
+            debug=debug_mode,
         )
     except KeyboardInterrupt:
         # This is the expected way to stop Tinker: press Ctrl-C.
