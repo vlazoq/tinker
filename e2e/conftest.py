@@ -21,6 +21,7 @@ pytest.ini_options addition (do NOT add to pyproject.toml here — shown for ref
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -63,7 +64,7 @@ def tinker_config():
         # enable it by wiring their own alerter into orch.enterprise).
         quality_gate_threshold=0.0,
         # Write snapshots to /tmp so tests don't pollute the working dir.
-        state_snapshot_path="/tmp/tinker_test_state.json",
+        state_snapshot_path=str(Path(tempfile.gettempdir()) / "tinker_test_state.json"),
     )
 
 
@@ -136,7 +137,7 @@ def make_stub_orchestrator(config=None):
             tool_timeout=5.0,
             micro_loop_idle_seconds=0.0,
             quality_gate_threshold=0.0,
-            state_snapshot_path="/tmp/tinker_test_state.json",
+            state_snapshot_path=str(Path(tempfile.gettempdir()) / "tinker_test_state.json"),
         )
 
     components = build_stub_components()

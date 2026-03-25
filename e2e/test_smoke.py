@@ -9,6 +9,8 @@ Mark: @pytest.mark.e2e
 from __future__ import annotations
 
 import asyncio
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -140,7 +142,7 @@ async def test_quality_gate_fires_on_low_score():
         tool_timeout=5.0,
         micro_loop_idle_seconds=0.0,
         quality_gate_threshold=0.4,     # alert when score < 0.4
-        state_snapshot_path="/tmp/tinker_test_qg_state.json",
+        state_snapshot_path=str(Path(tempfile.gettempdir()) / "tinker_test_qg_state.json"),
     )
 
     # ── Wire a mock alerter ────────────────────────────────────────────────────

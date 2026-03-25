@@ -109,8 +109,8 @@ class TinkerBridge:
             meta = {}
             try:
                 meta = json.loads(row["metadata"] or "{}")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("TinkerBridge: malformed metadata for row %s: %s", row["id"] if "id" in row.keys() else "?", exc)
 
             artifact_path = meta.get("artifact_path", "")
             if not artifact_path:
