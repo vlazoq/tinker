@@ -40,11 +40,23 @@ Tinker runs three nested loops, like a clock with three hands:
 tinker/
 │
 ├── main.py              ← Start here. Wires everything together and runs Tinker.
-├── agents.py            ← The three AI agent wrappers (Architect, Critic, Synthesizer).
 ├── pyproject.toml       ← Python package config and dependency list.
 ├── .env.example         ← Template for your environment variables (copy → .env).
 ├── Overview.md          ← This file.
 ├── INSTRUCTIONS.md      ← How to install and run everything.
+├── CLAUDE.md            ← Quick-start for Claude Code users contributing to Tinker.
+│
+├── agents/              ← The AI agent roles (one file per responsibility)
+│   ├── __init__.py      ← Thin re-export shim — existing imports work unchanged.
+│   ├── architect.py     ← ArchitectAgent: generates design proposals (7B model).
+│   ├── critic.py        ← CriticAgent: scores and flags issues (2-3B model).
+│   ├── synthesizer.py   ← SynthesizerAgent: writes meso/macro summary docs.
+│   ├── _shared.py       ← Shared helpers: trace ID, prompt builders, rate limiter hooks.
+│   ├── protocols.py     ← ArchitectStrategy, CriticStrategy, SynthesizerStrategy.
+│   ├── agent_factory.py ← AgentFactory: maps AgentRole → class, supports swapping.
+│   └── fritz/           ← Git/GitHub/Gitea integration agent (like Claude Code for git).
+│       ├── agent.py     ← FritzAgent: commit, push, create PRs.
+│       └── protocol.py  ← VCSAgentProtocol: the interface Fritz satisfies.
 │
 ├── llm/                 ← Talks to the AI models (Ollama)
 │   ├── client.py        ← Low-level HTTP client for one Ollama server
@@ -213,3 +225,14 @@ python -m dashboard
 **Fault-tolerant loops.** If a micro loop fails (model timeout, network error), it logs the error and tries the next task. The system never crashes — it backs off briefly and continues.
 
 **State snapshots for the dashboard.** The orchestrator writes its state to a JSON file after every loop. The dashboard reads this file. They don't need to be in the same process.
+
+**Protocols, not concrete classes.** Every agent role (`ArchitectStrategy`, `CriticStrategy`, `SynthesizerStrategy`, `VCSAgentProtocol`) is a `@runtime_checkable` Protocol. The orchestrator never imports the concrete classes — only the bootstrap layer does. This makes swapping an agent for a test double or a different model as simple as passing a different object.
+
+**Agent factory for runtime substitution.** `agents/agent_factory.py` maps `AgentRole` enums to classes. You can replace any agent without changing the orchestrator:
+
+```python
+from agents.agent_factory import register_agent
+from core.llm.types import AgentRole
+
+register_agent(AgentRole.CRITIC, MyFasterCritic)
+```
