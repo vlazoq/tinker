@@ -163,10 +163,20 @@ main.py
 │   ├── stubs.py            ← in-process test doubles
 │   └── compat.py           ← coroutine_if_needed() helper
 │
-├── agents.py               ← ArchitectAgent · CriticAgent · SynthesizerAgent
-│   ├── prompts/builder.py
-│   ├── llm/router.py
-│   └── resilience/retry.py
+├── agents/                 ← AI agent roles (one file per role)
+│   ├── __init__.py         ← thin re-export shim — all existing imports still work
+│   ├── architect.py        ← ArchitectAgent (satisfies ArchitectStrategy)
+│   ├── critic.py           ← CriticAgent (satisfies CriticStrategy)
+│   ├── synthesizer.py      ← SynthesizerAgent (satisfies SynthesizerStrategy)
+│   ├── _shared.py          ← shared helpers: trace ID · prompt builders · rate limiter hooks
+│   ├── protocols.py        ← ArchitectStrategy · CriticStrategy · SynthesizerStrategy
+│   ├── agent_factory.py    ← AgentFactory.get() / register_agent() — runtime substitution
+│   └── fritz/              ← Git / GitHub / Gitea VCS integration agent
+│       ├── agent.py        ← FritzAgent (satisfies VCSAgentProtocol)
+│       ├── protocol.py     ← VCSAgentProtocol (@runtime_checkable Protocol)
+│       ├── git_ops.py      ← bare git operations
+│       ├── github_ops.py   ← GitHub PR / push helpers
+│       └── gitea_ops.py    ← Gitea PR / push helpers
 │
 ├── llm/
 │   ├── router.py           ← ModelRouter (ARCHITECT→7B, CRITIC→2-3B)
@@ -351,7 +361,8 @@ After every micro loop, StagnationMonitor.check() runs 5 detectors in parallel:
          │
          ▼
   ┌─────────────────────────────────────────────────┐
-  │              RateLimiter.acquire()              │  token-bucket throttling
+  │  RateLimiter.acquire() / try_acquire()          │  token-bucket throttling
+  │  try_acquire() → (ok, retry_after_s) non-block  │  used by web API middleware
   └─────────────────────────┬───────────────────────┘
                             │
   ┌─────────────────────────▼───────────────────────┐
@@ -476,6 +487,41 @@ user problem statement
         ▼
   tinker_workspace/architecture_state.json  (versioned, committed to git)
 ```
+
+---
+
+## Agent Protocols & Substitutability
+
+Every agent role is defined by a `@runtime_checkable` Protocol, not a concrete class.
+UI code and the orchestrator depend on the protocol; only the bootstrap layer touches the
+concrete class.
+
+```
+agents/protocols.py
+  ArchitectStrategy   async def call(task, context) -> dict
+  CriticStrategy      async def call(task, architect_result) -> dict
+  SynthesizerStrategy async def call(level, **kwargs) -> dict
+
+agents/fritz/protocol.py
+  VCSAgentProtocol    async def setup() -> None
+                      async def commit_and_ship(message, ...) -> Any
+                      async def push(branch, force) -> Any
+                      async def create_pr(title, ...) -> Any
+                      async def verify_connections() -> dict[str, bool]
+```
+
+The `AgentFactory` (`agents/agent_factory.py`) maps `AgentRole` → class and supports
+runtime substitution:
+
+```python
+from agents.agent_factory import register_agent
+from core.llm.types import AgentRole
+
+register_agent(AgentRole.ARCHITECT, MyTestArchitect)
+```
+
+This lets tests pass lightweight stubs, and lets the application swap implementations
+(e.g., a remote agent over HTTP) without touching the orchestrator.
 
 ---
 

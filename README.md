@@ -46,6 +46,38 @@ Triggered by the Orchestrator at macro loop intervals, the Synthesizer receives 
 
 ---
 
+### Agent Architecture (Code Layout)
+
+Each agent role lives in its own file under `agents/`.  They share utilities via
+`agents/_shared.py` and are wired together at startup by `agents/agent_factory.py`.
+
+```
+agents/
+├── __init__.py         ← thin re-export shim (existing imports unchanged)
+├── architect.py        ← ArchitectAgent
+├── critic.py           ← CriticAgent
+├── synthesizer.py      ← SynthesizerAgent
+├── _shared.py          ← trace ID, prompt builders, rate-limiter hooks
+├── protocols.py        ← ArchitectStrategy · CriticStrategy · SynthesizerStrategy
+├── agent_factory.py    ← AgentFactory.get() / register_agent()
+└── fritz/              ← VCS integration (git + GitHub + Gitea)
+    ├── agent.py        ← FritzAgent
+    └── protocol.py     ← VCSAgentProtocol
+```
+
+Every role is defined by a `@runtime_checkable` Protocol — the orchestrator never
+imports the concrete class.  To swap an agent for a test double or custom
+implementation:
+
+```python
+from agents.agent_factory import register_agent
+from core.llm.types import AgentRole
+
+register_agent(AgentRole.CRITIC, MyFasterCritic)
+```
+
+---
+
 ### 3. Reasoning Loops
 
 The three loops are nested and operate on different timescales.
@@ -204,12 +236,16 @@ All components described in this document are fully built and wired:
 | Component | Status | Notes |
 |-----------|--------|-------|
 | Orchestrator (micro / meso / macro loops) | ✅ Done | Signal-safe (Linux/macOS/Windows), atomic state snapshots |
-| Agent roles (Architect, Critic, Synthesizer) | ✅ Done | Structured JSON output with fallback parsing |
+| Agent roles (Architect, Critic, Synthesizer) | ✅ Done | One file each: `agents/architect.py`, `critic.py`, `synthesizer.py` |
+| Agent protocols (ArchitectStrategy, CriticStrategy, etc.) | ✅ Done | `@runtime_checkable` Protocols in `agents/protocols.py` + `fritz/protocol.py` |
+| Agent factory (runtime substitution) | ✅ Done | `agents/agent_factory.py` — swap any agent without touching the orchestrator |
+| Fritz VCS agent (git / GitHub / Gitea) | ✅ Done | `agents/fritz/` — commit, push, PR creation |
 | Memory stack (Redis, DuckDB, ChromaDB, SQLite) | ✅ Done | Redis optional (graceful no-op on Windows without Docker) |
 | Tool layer (web search, scraper, artifact writer, diagram gen) | ✅ Done | httpx-based async tools |
 | Architecture State Manager | ✅ Done | Git-versioned JSON snapshots |
 | Anti-stagnation monitor | ✅ Done | Five detectors, wired into micro loop |
 | TUI Dashboard | ✅ Done | Textual live dashboard |
+| Web UI (FastAPI + rate limiting) | ✅ Done | Per-IP token-bucket rate limiter on all `/api/*` routes |
 | Prometheus metrics | ✅ Done | Optional; install `prometheus-client` |
 | Context Assembler | ✅ Done | Token-budgeted, role-specific prompts |
 | Task engine | ✅ Done | Priority scoring, dependency resolution |
