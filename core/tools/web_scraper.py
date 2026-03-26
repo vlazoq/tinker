@@ -226,6 +226,18 @@ class WebScraperTool(BaseTool):
         Returns:
             A dict with keys: url, title, text, word_count, links.
         """
+        # Guard: raise a clear error if trafilatura wasn't installed rather than
+        # letting Python produce a confusing "AttributeError: 'NoneType' object
+        # has no attribute 'extract'" message deep in the call stack.
+        if _trafilatura is None:
+            raise ImportError(
+                "trafilatura is required for web page text extraction but is not "
+                "installed.  Install it with:\n\n"
+                "    pip install trafilatura\n\n"
+                "Or install all Tinker dependencies with:\n\n"
+                "    pip install -r requirements/base.txt"
+            )
+
         # Run trafilatura extraction.
         # favor_precision=True tells trafilatura to err on the side of
         # extracting less content rather than including boilerplate.

@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
+import time
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -21,6 +23,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from infra.resilience.rate_limiter import TokenBucketRateLimiter
 
 from ui.core import (
     ORCH_CONFIG_SCHEMA,
@@ -51,6 +56,91 @@ from ui.core import (
     save_flags,
 )
 
+# ── Per-IP HTTP rate limiting ─────────────────────────────────────────────────
+# Read limits from environment so operators can tune without code changes.
+# Defaults are generous for local / homelab use: 2 req/s steady, burst of 30.
+# Lower these if the UI is exposed to an untrusted network.
+_WEBUI_RATE_PER_SEC: float = float(os.getenv("TINKER_WEBUI_RATE_PER_SEC", "2.0"))
+_WEBUI_RATE_BURST: float = float(os.getenv("TINKER_WEBUI_RATE_BURST", "30.0"))
+
+# Registry of per-IP token-bucket rate limiters.
+# Lazily created on first request from each IP; lives for the process lifetime.
+# For a homelab deployment the number of distinct IPs is tiny, so unbounded
+# growth is not a concern.
+_ip_limiters: dict[str, TokenBucketRateLimiter] = {}
+_ip_limiters_lock = asyncio.Lock()
+
+
+async def _limiter_for_ip(ip: str) -> TokenBucketRateLimiter:
+    """Return (lazily creating) the token-bucket rate limiter for *ip*."""
+    async with _ip_limiters_lock:
+        if ip not in _ip_limiters:
+            _ip_limiters[ip] = TokenBucketRateLimiter(
+                name=f"webui_ip:{ip}",
+                rate=_WEBUI_RATE_PER_SEC,
+                burst=_WEBUI_RATE_BURST,
+            )
+        return _ip_limiters[ip]
+
+
+class _APIRateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Token-bucket per-IP rate limiting for ``/api/*`` endpoints.
+
+    Why only /api/?
+    ---------------
+    Static assets and the SPA shell are served from disk and are not a
+    meaningful attack surface.  Applying rate limiting there would break
+    normal browser refreshes.  Only programmatic API consumers (scripts,
+    dashboards, other services) are throttled.
+
+    Response headers on 429
+    -----------------------
+    ``Retry-After``       : seconds until the bucket will have tokens again.
+    ``X-RateLimit-Limit`` : burst capacity (maximum tokens).
+    ``X-RateLimit-Reset`` : Unix timestamp when the client may retry.
+
+    These headers allow any well-behaved HTTP client or browser to back off
+    gracefully without hard-coding retry logic.
+
+    Configuration
+    -------------
+    TINKER_WEBUI_RATE_PER_SEC  — steady-state requests/second per IP (default 2)
+    TINKER_WEBUI_RATE_BURST    — burst capacity in requests (default 30)
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for non-API paths (static files, SPA shell, etc.)
+        if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+
+        ip = request.client.host if request.client else "127.0.0.1"
+        limiter = await _limiter_for_ip(ip)
+        acquired, retry_after = await limiter.try_acquire()
+
+        if not acquired:
+            # Round up so clients never retry too soon.
+            retry_secs = max(1, int(retry_after) + 1)
+            reset_at = int(time.time()) + retry_secs
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": "Too Many Requests",
+                    "detail": (
+                        f"API rate limit exceeded. "
+                        f"Try again in {retry_secs}s."
+                    ),
+                },
+                headers={
+                    "Retry-After": str(retry_secs),
+                    "X-RateLimit-Limit": str(int(_WEBUI_RATE_BURST)),
+                    "X-RateLimit-Reset": str(reset_at),
+                },
+            )
+
+        return await call_next(request)
+
+
 # ── App setup ─────────────────────────────────────────────────────────────────
 app = FastAPI(title="Tinker Web UI", docs_url="/api/docs", redoc_url=None)
 
@@ -60,6 +150,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Rate limiting runs outside CORS so browsers still receive CORS headers even
+# on 429 responses.  Starlette applies middleware in reverse registration order
+# (last-added = outermost), so we add rate limiting after CORS.
+app.add_middleware(_APIRateLimitMiddleware)
 
 _HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_HERE / "templates"))

@@ -1376,45 +1376,27 @@ class TestRateLimitingContract:
     """
     Contract tests for HTTP-level rate limiting.
 
-    Current state
-    -------------
-    The Tinker web UI does not yet implement HTTP-level rate limiting.  These
-    tests document the EXPECTED behavior when rate limiting is added and serve
-    as a failing regression suite until the feature is implemented.
+    Implementation
+    --------------
+    Rate limiting is implemented via ``_APIRateLimitMiddleware`` in
+    ``ui/web/app.py``.  It uses the existing ``TokenBucketRateLimiter`` from
+    ``infra/resilience/rate_limiter.py`` — no third-party dependency needed.
 
-    The ``xfail`` marker means the tests are expected to fail now but will
-    start passing once rate limiting is wired into the FastAPI app.  CI will
-    not block on xfail tests, but will surface them as known gaps.
+    Each client IP gets its own token bucket (2 req/s steady, burst 30 by
+    default).  The burst of 30 is intentionally below the 120-request probe
+    used by these tests, so the tests are guaranteed to trigger 429s.
 
-    Implementation plan (D3)
-    ------------------------
-    Add a SlowAPI or custom token-bucket middleware to ``ui/web/app.py``:
-
-        from slowapi import Limiter, _rate_limit_exceeded_handler
-        from slowapi.util import get_remote_address
-        from slowapi.errors import RateLimitExceeded
-
-        limiter = Limiter(key_func=get_remote_address)
-        app.state.limiter = limiter
-        app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-        @app.get("/api/tasks")
-        @limiter.limit("60/minute")
-        async def api_tasks(request: Request): ...
-
-    Once wired, remove the @pytest.mark.xfail decorators from the tests below.
+    Limits are tunable via environment variables:
+      TINKER_WEBUI_RATE_PER_SEC  (default 2.0)
+      TINKER_WEBUI_RATE_BURST    (default 30.0)
     """
 
-    @pytest.mark.xfail(
-        reason="HTTP rate limiting not yet implemented in ui/web/app.py (D3 gap)",
-        strict=False,
-    )
     def test_excessive_requests_return_429(self):
         """
         After N rapid requests to a rate-limited endpoint, the server must
         respond with 429 Too Many Requests.
 
-        This test is marked xfail until rate limiting middleware is added.
+        120 requests >> burst of 30, so at least some must be rejected.
         """
         responses = [client.get("/api/health") for _ in range(120)]
         status_codes = {r.status_code for r in responses}
@@ -1423,10 +1405,6 @@ class TestRateLimitingContract:
             "rate limiting does not appear to be enforced."
         )
 
-    @pytest.mark.xfail(
-        reason="HTTP rate limiting not yet implemented in ui/web/app.py (D3 gap)",
-        strict=False,
-    )
     def test_rate_limit_response_includes_retry_after_header(self):
         """
         A 429 response must include a Retry-After header so clients know

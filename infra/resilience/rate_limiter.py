@@ -200,6 +200,58 @@ class TokenBucketRateLimiter:
         self._total_tokens_used = 0
         self._calls_throttled = 0
 
+    async def try_acquire(self, cost: Optional[float] = None) -> tuple[bool, float]:
+        """
+        Non-blocking attempt to acquire a token.
+
+        Unlike ``acquire()``, this method **never sleeps**.  If the bucket
+        does not have enough tokens it returns immediately with
+        ``(False, wait_seconds)`` so the caller can return an HTTP 429 (or
+        any other rejection) without stalling.
+
+        Use this in HTTP middleware or any context where you want to shed
+        load rather than queue it.
+
+        Parameters
+        ----------
+        cost : Tokens to consume (default: self._cost).
+
+        Returns
+        -------
+        (acquired, retry_after_seconds)
+            acquired          : True  → tokens were consumed, call may proceed.
+            retry_after_seconds : 0.0 if acquired; otherwise the number of
+                                  seconds the caller should wait before retrying.
+
+        Example
+        -------
+        ::
+
+            acquired, retry_after = await limiter.try_acquire()
+            if not acquired:
+                raise TooManyRequestsError(retry_after=retry_after)
+        """
+        effective_cost = cost if cost is not None else self._cost
+        async with self._lock:
+            self._refill()
+            if self._tokens >= effective_cost:
+                self._tokens -= effective_cost
+                self._total_calls += 1
+                return True, 0.0
+            # Bucket empty — compute how long until it would have enough tokens.
+            deficit = effective_cost - self._tokens
+            wait_time = deficit / self._rate
+            self._calls_throttled += 1
+            logger.debug(
+                "RateLimiter '%s': try_acquire denied "
+                "(tokens=%.2f, need=%.2f, retry_after=%.2fs)",
+                self.name,
+                self._tokens,
+                effective_cost,
+                wait_time,
+            )
+            return False, wait_time
+
     async def __aenter__(self):
         await self.acquire()
         return self
