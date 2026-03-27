@@ -417,6 +417,12 @@ def build_app() -> gr.Blocks:
                 dash_md = gr.Markdown(_health_md())
                 dash_btn = gr.Button("↻ Refresh", variant="secondary", size="sm")
                 dash_btn.click(fn=_health_md, outputs=dash_md)
+                # Auto-refresh: Gradio 4.x supports `every` on event handlers
+                # to poll the dashboard status periodically.
+                try:
+                    dash_md.change(fn=_health_md, outputs=dash_md, every=10)
+                except TypeError:
+                    pass  # Older Gradio versions don't support `every`
 
             # ── Config ───────────────────────────────────────────────────────
             with gr.Tab("⚙️ Config"):

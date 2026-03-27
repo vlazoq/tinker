@@ -178,11 +178,15 @@ class PromptBuilderAdapter(_PromptBuilderProtocol):
         """
         parts = template_name.split(".", 1)
         if len(parts) != 2:
+            logger.debug(
+                "render_template: invalid template_name %r (expected 'role.level')", template_name
+            )
             return f"[{template_name}] {kwargs}"
 
         role_str, level_str = parts
         pb = self._prompt_builder()
         if pb is None:
+            logger.debug("render_template: PromptBuilder not available for %r", template_name)
             return f"[{template_name}] {kwargs}"
 
         try:

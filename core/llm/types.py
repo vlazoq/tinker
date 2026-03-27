@@ -250,6 +250,20 @@ class MachineConfig:
     keep_alive: str = "10m"  # how long Ollama keeps the model in VRAM
     fallback_model: str = ""  # Tried if the primary model is not found in Ollama
 
+    def __post_init__(self) -> None:
+        if not self.base_url:
+            raise ValueError("base_url must not be empty")
+        if not self.model:
+            raise ValueError("model must not be empty")
+        if self.context_window < 1:
+            raise ValueError(f"context_window must be >= 1, got {self.context_window}")
+        if self.max_output_tokens < 1:
+            raise ValueError(f"max_output_tokens must be >= 1, got {self.max_output_tokens}")
+        if self.request_timeout <= 0:
+            raise ValueError(f"request_timeout must be > 0, got {self.request_timeout}")
+        if self.connect_timeout <= 0:
+            raise ValueError(f"connect_timeout must be > 0, got {self.connect_timeout}")
+
     @classmethod
     def server_defaults(cls) -> "MachineConfig":
         """
@@ -500,3 +514,15 @@ class RetryConfig:
         # 429 = rate limit; 500/502/503/504 = server-side errors worth retrying
         default_factory=lambda: {429, 500, 502, 503, 504}
     )
+
+    def __post_init__(self) -> None:
+        if self.max_attempts < 1:
+            raise ValueError(f"max_attempts must be >= 1, got {self.max_attempts}")
+        if self.base_delay < 0:
+            raise ValueError(f"base_delay must be >= 0, got {self.base_delay}")
+        if self.max_delay < self.base_delay:
+            raise ValueError(
+                f"max_delay ({self.max_delay}) must be >= base_delay ({self.base_delay})"
+            )
+        if self.backoff_factor < 1:
+            raise ValueError(f"backoff_factor must be >= 1, got {self.backoff_factor}")

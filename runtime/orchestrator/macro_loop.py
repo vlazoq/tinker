@@ -208,16 +208,90 @@ async def run_macro_loop(
                             "macro: self-improve prompt adjustment — %s",
                             action.description,
                         )
+                        # Apply the prompt adjustment to the Architect's
+                        # system prompt via the PromptBuilder's global
+                        # project instructions (reversible, marker-based).
+                        try:
+                            from core.prompts.builder import PromptBuilder as _PB
+
+                            current = _PB.get_global_project_instructions()
+                            updated = orch._self_improvement.apply_prompt_adjustment(
+                                current, action,
+                            )
+                            _PB.set_global_project_instructions(updated)
+                            logger.info(
+                                "macro: applied prompt adjustment for '%s'",
+                                action.parameters.get("subsystem", "?"),
+                            )
+                        except Exception as pa_exc:
+                            logger.warning(
+                                "macro: could not apply prompt adjustment: %s",
+                                pa_exc,
+                            )
+
                     elif action.action_type == "config_adjustment":
                         logger.info(
                             "macro: self-improve config adjustment — %s",
                             action.description,
                         )
+                        # Apply config adjustment (temperature tuning).
+                        try:
+                            current_temp = getattr(
+                                orch.config, "temperature", 0.7
+                            )
+                            new_temp = orch._self_improvement.apply_config_adjustment(
+                                current_temp, action,
+                            )
+                            orch.config.temperature = new_temp
+                            logger.info(
+                                "macro: temperature adjusted %.3f → %.3f",
+                                current_temp, new_temp,
+                            )
+                        except Exception as ca_exc:
+                            logger.warning(
+                                "macro: could not apply config adjustment: %s",
+                                ca_exc,
+                            )
+
                     elif action.action_type == "task_generation":
                         logger.info(
                             "macro: self-improve task generated — %s",
                             action.description,
                         )
+                        # Enqueue the self-improvement task so the next
+                        # micro loop picks it up.
+                        try:
+                            await coroutine_if_needed(
+                                orch.task_engine.add_task
+                            )({
+                                "type": action.parameters.get(
+                                    "task_type", "self_improvement"
+                                ),
+                                "title": action.parameters.get(
+                                    "task_title", action.description
+                                ),
+                                "description": action.parameters.get(
+                                    "task_description", action.description
+                                ),
+                                "subsystem": "self_improvement",
+                                "priority": action.parameters.get(
+                                    "priority", "NORMAL"
+                                ),
+                                "metadata": {
+                                    "source": "self_improvement_engine",
+                                    "confidence": action.confidence,
+                                    "target": action.target,
+                                },
+                            })
+                            logger.info(
+                                "macro: enqueued self-improvement task: %s",
+                                action.parameters.get("task_title", "?"),
+                            )
+                        except Exception as tg_exc:
+                            logger.warning(
+                                "macro: could not enqueue self-improvement task: %s",
+                                tg_exc,
+                            )
             except Exception as si_exc:
                 logger.warning(
                     "macro: self-improvement analysis failed (non-fatal): %s",

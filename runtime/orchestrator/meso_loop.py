@@ -124,18 +124,38 @@ async def run_meso_loop(
     )
     logger.info("meso START subsystem=%s", subsystem)
 
+    # ── Tracing ──────────────────────────────────────────────────────────────
+    from contextlib import nullcontext
+    _trace_ctx = None
+    _trace = None
+    try:
+        from infra.observability.tracing import default_tracer as _meso_tracer
+        _trace_ctx = _meso_tracer.start_trace(
+            "meso_loop",
+            attributes={"subsystem": subsystem, "trigger_iteration": trigger_iteration},
+        )
+        _trace = _trace_ctx.__enter__()
+    except ImportError:
+        pass
+
+    def _span(name: str, attrs: dict | None = None):
+        if _trace is not None:
+            return _trace.span(name, attrs)
+        return nullcontext()
+
     try:
         # ── 1a. Collect artifacts by subsystem tag ────────────────────────────
         # Primary fetch: ask the memory manager for the most recent artifacts
         # tagged with this subsystem.  ``context_max_artifacts`` caps the total
         # because the Synthesizer has a finite context window.
-        artifacts = await asyncio.wait_for(
-            coroutine_if_needed(orch.memory_manager.get_artifacts)(
-                subsystem=subsystem,
-                limit=cfg.context_max_artifacts,
-            ),
-            timeout=20.0,
-        )
+        with _span("fetch_artifacts", {"subsystem": subsystem}):
+            artifacts = await asyncio.wait_for(
+                coroutine_if_needed(orch.memory_manager.get_artifacts)(
+                    subsystem=subsystem,
+                    limit=cfg.context_max_artifacts,
+                ),
+                timeout=20.0,
+            )
 
         # ── 1b. Supplement with task-id–targeted fetch ────────────────────────
         # Secondary fetch: pull artifacts by the specific task IDs from recent
@@ -212,14 +232,15 @@ async def run_meso_loop(
         # coherent subsystem design document.  We pass ``level="meso"`` so the
         # Synthesizer knows what kind of output to produce (as opposed to the
         # system-wide "macro" synthesis it produces for the macro loop).
-        synthesis = await asyncio.wait_for(
-            coroutine_if_needed(orch.synthesizer_agent.call)(
-                level="meso",
-                subsystem=subsystem,
-                artifacts=artifacts,
-            ),
-            timeout=cfg.synthesizer_timeout,
-        )
+        with _span("synthesizer_call", {"artifact_count": len(artifacts)}):
+            synthesis = await asyncio.wait_for(
+                coroutine_if_needed(orch.synthesizer_agent.call)(
+                    level="meso",
+                    subsystem=subsystem,
+                    artifacts=artifacts,
+                ),
+                timeout=cfg.synthesizer_timeout,
+            )
 
         # ── 4. Store subsystem design document ───────────────────────────────
         # Package the synthesis into a document dict and store it.  This
@@ -308,5 +329,11 @@ async def run_meso_loop(
         # block handles the normal and error paths.
         if record.finished_at is None:
             record.finished_at = time.monotonic()
+        # Close the trace context manager if tracing is active.
+        if _trace_ctx is not None:
+            try:
+                _trace_ctx.__exit__(None, None, None)
+            except Exception:
+                pass
 
     return record

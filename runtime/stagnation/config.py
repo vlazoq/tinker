@@ -26,6 +26,14 @@ class SemanticLoopConfig:
     # Embedding model identifier (resolved by the EmbeddingBackend)
     embedding_model: str = "nomic-embed-text"
 
+    def __post_init__(self) -> None:
+        if self.window_size < 2:
+            raise ValueError(f"window_size must be >= 2, got {self.window_size}")
+        if not 0.0 < self.similarity_threshold <= 1.0:
+            raise ValueError(f"similarity_threshold must be in (0, 1], got {self.similarity_threshold}")
+        if self.min_breach_count < 1:
+            raise ValueError(f"min_breach_count must be >= 1, got {self.min_breach_count}")
+
 
 @dataclass
 class SubsystemFixationConfig:

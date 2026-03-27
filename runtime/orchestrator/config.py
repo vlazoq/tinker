@@ -212,6 +212,12 @@ class OrchestratorConfig:
     # high-level drift in the architecture, not minute-to-minute changes.
     macro_interval_seconds: float = 4 * 60 * 60  # 4 hours
 
+    # ── AI temperature ─────────────────────────────────────────────────────
+    # The creativity/randomness parameter passed to the LLM.  Higher values
+    # produce more diverse output; lower values produce more focused output.
+    # The self-improvement engine may adjust this at runtime (within bounds).
+    temperature: float = 0.7
+
     # ── Researcher routing ──────────────────────────────────────────────────
     # When the Architect AI says "I don't know enough about X", the orchestrator
     # can call a Tool Layer to look X up.  This setting caps how many such

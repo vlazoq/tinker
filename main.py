@@ -242,8 +242,25 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     # ── Dashboard snapshot callback ───────────────────────────────────────────
     from ui.dashboard.subscriber import publish_state as _publish_state
 
+    # Try to import the web UI StatePublisher for SSE push notifications.
+    # If the web UI is not running in-process, this is a no-op.
+    _web_notify: object = None
+    try:
+        from ui.web.app import _publisher as _web_publisher, notify_state_change as _notify_web
+        _web_notify = (_web_publisher, _notify_web)
+    except ImportError:
+        pass
+
     def _dashboard_snapshot_cb() -> None:
-        _publish_state(_make_dashboard_patch(orchestrator.state.to_dict()))
+        state_dict = orchestrator.state.to_dict()
+        _publish_state(_make_dashboard_patch(state_dict))
+        # Also push to the web UI StatePublisher for SSE clients.
+        if _web_notify is not None:
+            pub, notify_fn = _web_notify
+            try:
+                asyncio.get_event_loop().create_task(notify_fn(pub, state_dict))
+            except Exception:
+                pass  # Event loop may not be running yet
 
     # ── Create Orchestrator ───────────────────────────────────────────────────
     orchestrator = Orchestrator(

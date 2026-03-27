@@ -36,6 +36,7 @@ from agents.synthesizer import SynthesizerAgent
 
 # ── Structural protocols (interfaces) ────────────────────────────────────────
 from agents.protocols import ArchitectStrategy, CriticStrategy, SynthesizerStrategy
+from agents.fritz.protocol import VCSAgentProtocol
 
 # ── Shared internals re-exported for backward compatibility ──────────────────
 # These are imported directly by tests/test_agents.py, core/tools/web_search.py,
@@ -61,6 +62,7 @@ __all__ = [
     "ArchitectStrategy",
     "CriticStrategy",
     "SynthesizerStrategy",
+    "VCSAgentProtocol",
     # Semi-public: re-exported internals (backward compat)
     "_current_trace_id",
     "_extract_knowledge_gaps",

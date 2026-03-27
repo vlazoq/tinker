@@ -14,6 +14,7 @@ eventually written to the event log.
 from __future__ import annotations
 
 import itertools
+import logging
 import math
 from collections import Counter, deque
 from dataclasses import dataclass, field
@@ -28,6 +29,8 @@ from .config import (
 )
 from .embeddings import EmbeddingBackend
 from .models import MicroLoopContext, StagnationType
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -67,7 +70,13 @@ class SemanticLoopDetector:
         if not ctx.output_text:
             return None
 
-        vec = self.backend.embed(ctx.output_text)
+        try:
+            vec = self.backend.embed(ctx.output_text)
+        except Exception as exc:
+            logger.warning(
+                "SemanticLoopDetector: embedding failed (skipping check): %s", exc
+            )
+            return None
         self._window.append((ctx.loop_index, vec))
 
         if len(self._window) < 2:

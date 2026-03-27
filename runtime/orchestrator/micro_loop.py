@@ -214,12 +214,31 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         task.get("subsystem"),
     )
 
+    # ── Tracing: wrap the entire micro loop in a trace ─────────────────────
+    from contextlib import nullcontext
+    _trace_ctx = None
+    _trace = None
+    if _TRACING_AVAILABLE:
+        _trace_ctx = default_tracer.start_trace(
+            "micro_loop",
+            attributes={"iteration": iteration, "task_id": task["id"],
+                        "subsystem": task.get("subsystem", "unknown")},
+        )
+        _trace = _trace_ctx.__enter__()
+
+    # Helper to safely create spans (no-op when tracing unavailable).
+    def _span(name: str, attrs: dict | None = None):
+        if _trace is not None:
+            return _trace.span(name, attrs)
+        return nullcontext()
+
     try:
         # ── 2. Context Assembly ──────────────────────────────────────────────
         # Before asking the Architect anything, we give it some background:
         # recent artifacts related to this subsystem, the task description,
         # and any other relevant system context.
-        context = await _assemble_context(orch, task)
+        with _span("context_assembly"):
+            context = await _assemble_context(orch, task)
 
         # ── 2b. Review-task enrichment ───────────────────────────────────────
         # When Grub writes back a 'review' task, the Grub result data lives
@@ -248,9 +267,10 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                     exc,
                 )
 
-        architect_result = await _call_architect_with_validation_retry(
-            orch, task, context, cfg.architect_timeout, cfg.max_validation_retries
-        )
+        with _span("architect_call", {"task_id": task["id"]}):
+            architect_result = await _call_architect_with_validation_retry(
+                orch, task, context, cfg.architect_timeout, cfg.max_validation_retries
+            )
         # Record how many tokens the Architect used — useful for cost tracking.
         # _call_architect_with_validation_retry accumulates tokens across all
         # retry attempts into the returned dict's tokens_used field.
@@ -314,9 +334,10 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                         "Critic rate limiter acquire failed (non-fatal): %s", exc
                     )
 
-            critic_result = await _call_critic(
-                orch, task, architect_result, cfg.critic_timeout
-            )
+            with _span("critic_call", {"refinement_iter": _refinement_iter}):
+                critic_result = await _call_critic(
+                    orch, task, architect_result, cfg.critic_timeout
+                )
             _call_tokens = critic_result.get("tokens_used", 0)
             record.critic_tokens += _call_tokens
             record.critic_score = critic_result.get("score")
@@ -388,7 +409,8 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # single "artifact" and save it to long-term memory.  This artifact
         # will be used as context in future micro loops and as raw material
         # for the next meso synthesis.
-        artifact_id = await _store_artifact(orch, task, architect_result, critic_result)
+        with _span("store_artifact"):
+            artifact_id = await _store_artifact(orch, task, architect_result, critic_result)
         record.artifact_id = artifact_id
 
         # ── Lineage tracking ─────────────────────────────────────────────────
@@ -414,7 +436,8 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # Tell the task engine that this task has been worked on and link it
         # to the artifact we just created.  This allows the task engine to
         # track what has been done and avoid re-queuing the same task.
-        await _complete_task(orch, task, artifact_id)
+        with _span("complete_task"):
+            await _complete_task(orch, task, artifact_id)
 
         # ── 8. New Task Generation ───────────────────────────────────────────
         # The Architect's output may have raised new questions or identified
@@ -467,6 +490,12 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
             record.duration(),
             record.artifact_id,
         )
+        # Close the trace context manager if tracing is active.
+        if _trace_ctx is not None:
+            try:
+                _trace_ctx.__exit__(None, None, None)
+            except Exception:
+                pass
 
     return record
 

@@ -122,8 +122,12 @@ class FritzAgent:
         self._policy = policy
 
         # Credentials
-        creds = FritzCredentials(self.config)
-        await creds.load()
+        try:
+            creds = FritzCredentials(self.config)
+            await creds.load()
+        except Exception as exc:
+            logger.error("FritzAgent: credential loading failed: %s", exc)
+            raise
         self._creds = creds
 
         # Identity
@@ -134,10 +138,18 @@ class FritzAgent:
 
         # Remote drivers
         if self.config.github_enabled and creds.github_token:
-            self._github = FritzGitHub(self.config, creds.github_token, metrics=self._metrics)
+            try:
+                self._github = FritzGitHub(self.config, creds.github_token, metrics=self._metrics)
+            except Exception as exc:
+                logger.error("FritzAgent: GitHub driver init failed: %s", exc)
+                raise
 
         if self.config.gitea_enabled and creds.gitea_token:
-            self._gitea = FritzGitea(self.config, creds.gitea_token, metrics=self._metrics)
+            try:
+                self._gitea = FritzGitea(self.config, creds.gitea_token, metrics=self._metrics)
+            except Exception as exc:
+                logger.error("FritzAgent: Gitea driver init failed: %s", exc)
+                raise
 
         self._ready = True
         logger.info(
