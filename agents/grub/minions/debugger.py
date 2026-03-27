@@ -126,7 +126,10 @@ Rules:
                 "with filepath comments."
             )
 
-            response = await self._llm(prompt, temperature=0.1)
+            response = await self._llm(
+                prompt, temperature=0.1,
+                timeout=self.config.timeouts.get(self.name, 120.0),
+            )
 
             if response.startswith("ERROR:"):
                 return self._make_failed_result(task, response)

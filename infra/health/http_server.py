@@ -305,7 +305,14 @@ class HealthServer:
             )
 
     async def _check_ollama(self) -> bool:
-        """Ping Ollama's /api/tags endpoint; return True if reachable."""
+        """
+        Check Ollama reachability and verify the expected model is loaded.
+
+        When ``self._ollama_model`` is set, the /api/tags response is parsed
+        to confirm the model appears in the list of available models.  A
+        reachable Ollama server with a missing model returns False so the
+        /ready endpoint correctly reports the issue.
+        """
         try:
             import aiohttp  # type: ignore
 
@@ -314,7 +321,32 @@ class HealthServer:
                     f"{self._ollama_url}/api/tags",
                     timeout=aiohttp.ClientTimeout(total=3),
                 ) as resp:
-                    return resp.status < 500
+                    if resp.status >= 500:
+                        return False
+
+                    # If we know which model to expect, verify it's in the list
+                    if self._ollama_model:
+                        try:
+                            data = await resp.json()
+                            models = data.get("models", [])
+                            model_names = [
+                                m.get("name", "") for m in models
+                            ]
+                            if not any(
+                                self._ollama_model in name
+                                for name in model_names
+                            ):
+                                logger.warning(
+                                    "Ollama reachable but model '%s' not loaded "
+                                    "(available: %s)",
+                                    self._ollama_model,
+                                    [n for n in model_names[:5]],
+                                )
+                                return False
+                        except Exception:
+                            pass  # JSON parse failed — still count as reachable
+
+                    return True
         except Exception:
             return False
 

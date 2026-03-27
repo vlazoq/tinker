@@ -54,11 +54,29 @@ def build_real_components(problem: str) -> dict:
     """
     # ── LLM / Model Router ───────────────────────────────────────────────────
     from core.llm.router import ModelRouter
-    from core.llm.types import MachineConfig
+    from core.llm.types import MachineConfig, TaskAwareRoutingStrategy, AgentRole, Machine
+
+    # Build a task-aware routing strategy that respects per-role overrides
+    # from environment variables.  E.g. setting TINKER_RESEARCHER_MACHINE=secondary
+    # would route the Researcher to the lighter model.
+    _role_overrides: dict[AgentRole, Machine] = {}
+    for _role in AgentRole:
+        _env = os.getenv(f"TINKER_{_role.value.upper()}_MACHINE", "")
+        if _env:
+            try:
+                _role_overrides[_role] = Machine(_env)
+            except ValueError:
+                logger.warning(
+                    "Ignoring invalid TINKER_%s_MACHINE=%s (expected 'server' or 'secondary')",
+                    _role.value.upper(), _env,
+                )
+
+    routing_strategy = TaskAwareRoutingStrategy(model_overrides=_role_overrides)
 
     router = ModelRouter(
         server_config=MachineConfig.server_defaults(),
         secondary_config=MachineConfig.secondary_defaults(),
+        routing_strategy=routing_strategy,
     )
 
     # ── Memory Manager ────────────────────────────────────────────────────────

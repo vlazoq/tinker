@@ -61,7 +61,7 @@ import time
 from typing import Any
 
 from .client import OllamaClient
-from exceptions import ModelRouterError, ResponseParseError
+from exceptions import ModelNotFoundError, ModelRouterError, ResponseParseError
 from .context import enforce_context_limit
 from .parsing import build_json_instruction, extract_json
 from .types import (
@@ -353,12 +353,31 @@ class ModelRouter:
 
         # Step 4: send the request and measure how long it takes
         t0 = time.monotonic()
-        raw_response = await client.chat(
-            messages=messages,
-            model=config.model,
-            temperature=request.temperature,
-            max_tokens=config.max_output_tokens,
-        )
+        try:
+            raw_response = await client.chat(
+                messages=messages,
+                model=config.model,
+                temperature=request.temperature,
+                max_tokens=config.max_output_tokens,
+            )
+        except ModelNotFoundError:
+            # The primary model is not pulled in Ollama.  If a fallback model
+            # is configured for this machine, retry with it before giving up.
+            fallback = config.fallback_model
+            if fallback:
+                logger.warning(
+                    "Model '%s' not found on %s — retrying with fallback '%s'",
+                    config.model, machine.value, fallback,
+                )
+                request.resolved_model = fallback
+                raw_response = await client.chat(
+                    messages=messages,
+                    model=fallback,
+                    temperature=request.temperature,
+                    max_tokens=config.max_output_tokens,
+                )
+            else:
+                raise
         elapsed = time.monotonic() - t0
 
         # Step 5: unpack the raw Ollama response JSON into (text, usage, attempts)

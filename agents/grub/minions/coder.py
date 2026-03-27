@@ -137,7 +137,10 @@ Quality requirements:
         system = self._build_system_prompt()
 
         # ── 4. Call LLM ───────────────────────────────────────────────────────
-        response = await self._llm(prompt, system_prompt=system, temperature=0.2)
+        response = await self._llm(
+            prompt, system_prompt=system, temperature=0.2,
+            timeout=self.config.timeouts.get(self.name, 120.0),
+        )
 
         if response.startswith("ERROR:"):
             return self._make_failed_result(task, response)

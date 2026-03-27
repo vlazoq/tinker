@@ -110,7 +110,10 @@ Bad test names:
             "Output a single fenced Python code block with filepath comment."
         )
 
-        response = await self._llm(prompt, temperature=0.2)
+        response = await self._llm(
+            prompt, temperature=0.2,
+            timeout=self.config.timeouts.get(self.name, 120.0),
+        )
         if response.startswith("ERROR:"):
             return self._make_failed_result(task, response)
 
@@ -187,7 +190,10 @@ Bad test names:
                     "Fix the test file (or the implementation if the test is correct). "
                     "Output the corrected code as a fenced Python block."
                 )
-                fix_response = await self._llm(fix_prompt, temperature=0.1)
+                fix_response = await self._llm(
+                    fix_prompt, temperature=0.1,
+                    timeout=self.config.timeouts.get(self.name, 120.0),
+                )
                 if not fix_response.startswith("ERROR:"):
                     fixed_blocks = self._extract_code_blocks(fix_response, "python")
                     if fixed_blocks:

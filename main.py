@@ -262,6 +262,20 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         checkpoint_manager=checkpoint_manager,
     )
 
+    # ── Self-improvement engine ─────────────────────────────────────────────
+    _self_improvement_engine = None
+    if os.getenv("TINKER_SELF_IMPROVE_ENABLED", "false").lower() == "true":
+        from runtime.orchestrator.self_improvement import SelfImprovementEngine
+
+        _self_improvement_engine = SelfImprovementEngine(
+            baseline_temperature=float(os.getenv("TINKER_TEMPERATURE", "0.7")),
+            self_improve_branch=os.getenv(
+                "TINKER_SELF_IMPROVE_BRANCH", "tinker/self-improve"
+            ),
+            enabled=True,
+        )
+        logger.info("Self-improvement engine enabled")
+
     # ── MCP ───────────────────────────────────────────────────────────────────
     try:
         from core.mcp.config import MCPConfig as _MCPConfig
@@ -281,6 +295,10 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
             logger.info("MCP subsystem ready")
     except ImportError as _exc:
         logger.debug("MCP subsystem not available: %s", _exc)
+
+    # Attach optional self-improvement engine to the orchestrator so
+    # macro_loop.py can access it via orch._self_improvement.
+    orchestrator._self_improvement = _self_improvement_engine
 
     if enterprise.get("health_server") is not None:
         enterprise["health_server"]._orchestrator = orchestrator
@@ -397,6 +415,12 @@ Press Ctrl-C to stop.  Dashboard in a separate terminal: python -m dashboard
     from bootstrap.logging_config import setup_logging
 
     setup_logging(args.log_level)
+
+    # Install trace context filter on the root logger so every log record
+    # (from any module) carries trace_id, loop_level, task_id, etc.
+    from infra.observability.structured_logging import install_trace_filter
+
+    install_trace_filter()
 
     try:
         asyncio.run(

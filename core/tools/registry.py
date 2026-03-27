@@ -336,7 +336,9 @@ class ToolRegistry:
         """
         try:
             from agents._shared import _current_trace_id
-            return _current_trace_id.get("no-trace")
+            # The ContextVar has default="" so .get() always succeeds.
+            # Use "no-trace" when the value is empty (not yet set by orchestrator).
+            return _current_trace_id.get() or "no-trace"
         except Exception:
             return "no-trace"
 

@@ -224,6 +224,12 @@ class AutoRecoveryManager:
                     self._recovery_success[service_name] = True
                     self._recovery_attempts[service_name] = 0
                     self._last_recovery_at[service_name] = time.monotonic()
+                    # Reset degraded mode when Redis recovers
+                    if service_name == "redis" and self.degraded_mode:
+                        self.degraded_mode = False
+                        logger.info(
+                            "AutoRecovery: Redis recovered — exiting degraded mode"
+                        )
                     logger.info("AutoRecovery: %s recovered successfully", service_name)
                     return True
             except Exception as exc:
@@ -589,7 +595,7 @@ class AutoRecoveryManager:
         -------
         dict : Maps service name to "healthy", "degraded", or "unknown".
         """
-        summary = {}
+        summary: dict[str, str] = {}
         if self._circuit_registry is not None:
             for name, stats in self._circuit_registry.all_stats().items():
                 if stats["state"] == "open":
@@ -598,4 +604,6 @@ class AutoRecoveryManager:
                     summary[name] = "recovering"
                 else:
                     summary[name] = "healthy"
+        # Include overall degraded mode flag (set when Redis recovery fails)
+        summary["_degraded_mode"] = "active" if self.degraded_mode else "inactive"
         return summary

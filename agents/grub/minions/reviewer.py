@@ -152,7 +152,10 @@ Below 5 means it needs to be rewritten.
         prompt = "\n\n".join(prompt_parts)
 
         # ── 5. Call LLM ───────────────────────────────────────────────────────
-        response = await self._llm(prompt, temperature=0.1)
+        response = await self._llm(
+            prompt, temperature=0.1,
+            timeout=self.config.timeouts.get(self.name, 120.0),
+        )
 
         if response.startswith("ERROR:"):
             return self._make_failed_result(task, response)
