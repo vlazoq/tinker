@@ -137,6 +137,16 @@ class MCPServer:
         @app.get(f"{path}/sse")
         async def mcp_sse(request: Request):
             """SSE stream — clients connect here first."""
+            # ── Bearer token authentication (same check as /messages) ────
+            if self._auth_token:
+                auth_header = request.headers.get("authorization", "")
+                parts = auth_header.split(" ", 1)
+                if len(parts) != 2 or parts[0] != "Bearer" or parts[1] != self._auth_token:
+                    return JSONResponse(
+                        {"error": "Unauthorized", "detail": "Missing or invalid Bearer token."},
+                        status_code=401,
+                    )
+
             client_id = str(uuid.uuid4())[:8]
             queue: asyncio.Queue = asyncio.Queue()
             self._clients[client_id] = queue

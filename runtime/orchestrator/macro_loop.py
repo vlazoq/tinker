@@ -176,6 +176,54 @@ async def run_macro_loop(
         record.status = LoopStatus.SUCCESS
         logger.info("macro END version=%d commit=%s", snapshot_version, commit_hash)
 
+        # ── 4. Self-improvement analysis ─────────────────────────────────
+        # If the self-improvement engine is available, collect a performance
+        # snapshot and let it analyze whether Tinker should adjust its own
+        # prompts, config, or generate improvement tasks.
+        if hasattr(orch, "_self_improvement") and orch._self_improvement is not None:
+            try:
+                from .self_improvement import PerformanceSnapshot
+
+                # Collect recent metrics from the orchestrator state
+                snap = PerformanceSnapshot(
+                    subsystem_scores=dict(
+                        getattr(orch.state, "subsystem_critic_scores", {})
+                    ),
+                    stagnation_events=list(
+                        getattr(orch.state, "recent_stagnation_events", [])
+                    ),
+                    dlq_entries=[],  # populated below if DLQ available
+                    error_counts=dict(
+                        getattr(orch.state, "error_counts", {})
+                    ),
+                    loop_durations=list(
+                        getattr(orch.state, "recent_loop_durations", [])
+                    ),
+                )
+
+                actions = orch._self_improvement.analyze(snap)
+                for action in actions:
+                    if action.action_type == "prompt_adjustment":
+                        logger.info(
+                            "macro: self-improve prompt adjustment — %s",
+                            action.description,
+                        )
+                    elif action.action_type == "config_adjustment":
+                        logger.info(
+                            "macro: self-improve config adjustment — %s",
+                            action.description,
+                        )
+                    elif action.action_type == "task_generation":
+                        logger.info(
+                            "macro: self-improve task generated — %s",
+                            action.description,
+                        )
+            except Exception as si_exc:
+                logger.warning(
+                    "macro: self-improvement analysis failed (non-fatal): %s",
+                    si_exc,
+                )
+
     except asyncio.TimeoutError as exc:
         # One of the timed operations (document fetch, Synthesizer call, or
         # commit) took too long.  Record the error and return — do NOT raise.
