@@ -200,6 +200,8 @@ Rules:
         duration = time.monotonic() - t0
 
         if last_test_summary and last_test_summary.all_passed:
+            # Log structured metrics for observability dashboards.
+            self._log_metrics(task.id, ResultStatus.SUCCESS.value, 0.85, duration)
             return MinionResult(
                 task_id=task.id,
                 minion_name=self.name,
@@ -214,11 +216,14 @@ Rules:
         else:
             passed = last_test_summary.passed if last_test_summary else 0
             total = last_test_summary.total if last_test_summary else 0
+            partial_score = passed / max(total, 1)
+            # Log structured metrics for observability dashboards.
+            self._log_metrics(task.id, ResultStatus.PARTIAL.value, partial_score, duration)
             return MinionResult(
                 task_id=task.id,
                 minion_name=self.name,
                 status=ResultStatus.PARTIAL,
-                score=passed / max(total, 1),
+                score=partial_score,
                 files_written=files_fixed,
                 test_results=last_test_summary,
                 summary=f"Partial fix: {passed}/{total} tests pass after {iteration} iterations.",

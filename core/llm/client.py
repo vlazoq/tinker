@@ -74,6 +74,7 @@ from .types import MachineConfig, Message, RetryConfig
 from exceptions import (
     ModelClientError,
     ModelConnectionError,
+    ModelNotFoundError,
     ModelTimeoutError,
     ModelRateLimitError,
     ModelServerError,
@@ -248,7 +249,7 @@ class OllamaClient:
     # Core request
     # ------------------------------------------------------------------
 
-    async def warmup(self) -> bool:
+    async def warmup(self, timeout: float = 60.0) -> bool:
         """
         Pre-load this client's model into Ollama's VRAM.
 
@@ -257,14 +258,25 @@ class OllamaClient:
         after creating a new client or after ``hot_reload()`` so agents never
         wait for a cold model load during their actual work.
 
+        Parameters
+        ----------
+        timeout : float
+            Maximum seconds to wait for the warmup chat call to complete.
+            Defaults to 60 seconds.  If the timeout fires, the warmup is
+            considered failed (non-fatal) and the model will load lazily on
+            the first real request instead.
+
         Returns True if the warmup succeeded, False if the server was
-        unreachable (non-fatal — the model will load lazily on the first
-        real request instead).
+        unreachable or the timeout elapsed (non-fatal — the model will load
+        lazily on the first real request instead).
         """
         try:
             from .types import Message as _Msg
             dummy = [_Msg(role="user", content=" ")]
-            await self.chat(messages=dummy, max_tokens=1, temperature=0.0)
+            await asyncio.wait_for(
+                self.chat(messages=dummy, max_tokens=1, temperature=0.0),
+                timeout=timeout,
+            )
             logger.info("Warmup complete for model=%s @ %s", self.config.model, self.config.base_url)
             return True
         except Exception as exc:
@@ -480,6 +492,15 @@ class OllamaClient:
                     raise ModelRateLimitError(
                         f"Rate limited by {url}",
                         context={"url": url, "status": 429},
+                    )
+
+                if resp.status == 404:
+                    body = await resp.text()
+                    raise ModelNotFoundError(
+                        f"Model not found on {url}. Ensure the model is "
+                        f"pulled in Ollama (run 'ollama pull <model>'): "
+                        f"{body[:200]}",
+                        context={"url": url, "status": 404, "model": payload.get("model", "unknown")},
                     )
 
                 if resp.status in self.retry.retryable_status_codes:

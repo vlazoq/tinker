@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -28,6 +30,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from infra.resilience.rate_limiter import TokenBucketRateLimiter
 
 from ui.core import (
+    BASE_DIR,
     ORCH_CONFIG_SCHEMA,
     STAGNATION_CONFIG_SCHEMA,
     FLAG_DEFAULTS,
@@ -945,43 +948,465 @@ async def api_models_ollama_sync(request: Request):
     return {"ok": True, "added": added, "skipped": skipped}
 
 
-# ── Log streaming (SSE) ───────────────────────────────────────────────────────
+# ── True SSE push via StatePublisher ──────────────────────────────────────────
+# Instead of each SSE client independently polling the state file, we use an
+# in-process pub/sub model.  A single ``StatePublisher`` maintains a set of
+# ``asyncio.Queue`` objects — one per connected browser/client.  When any part
+# of the application calls ``publisher.publish(event_type, data)``, the event is
+# pushed into every connected client's queue instantly.
+#
+# The SSE endpoint yields events from the client's personal queue, so there is
+# zero polling on the SSE side.  Clients that disconnect are detected by the
+# ``request.is_disconnected()`` check, and their queue is removed from the set.
+#
+# For backward compatibility, a lightweight fallback poll loop is also included
+# so that state changes originating outside this process (e.g. the orchestrator
+# writing ``tinker_state.json``) are still picked up every 2 seconds.
+
+logger = logging.getLogger(__name__)
+
+
+class StatePublisher:
+    """
+    Broadcast SSE events to all connected clients.
+
+    Usage
+    -----
+    1. At startup, create a single instance and store it on ``app.state``.
+    2. The SSE endpoint calls ``subscribe()`` to get a per-client queue.
+    3. Any code path (orchestrator hooks, background tasks) calls
+       ``publish(event_type, data)`` to push an event to every client.
+    4. On client disconnect, the SSE endpoint calls ``unsubscribe(queue)``.
+
+    Thread Safety
+    -------------
+    All public methods are coroutines and use an ``asyncio.Lock`` internally.
+    They are safe to call from any async task on the same event loop.
+    """
+
+    def __init__(self) -> None:
+        # Set of asyncio.Queue objects — one per connected SSE client.
+        self._clients: set[asyncio.Queue] = set()
+        # Lock protects the _clients set from concurrent modification.
+        self._lock: asyncio.Lock = asyncio.Lock()
+
+    async def subscribe(self) -> asyncio.Queue:
+        """
+        Register a new client and return its personal event queue.
+
+        The SSE endpoint should call this once per connection and then
+        continuously ``await queue.get()`` to yield events.
+        """
+        queue: asyncio.Queue = asyncio.Queue(maxsize=256)
+        async with self._lock:
+            self._clients.add(queue)
+        logger.debug("SSE client subscribed (total=%d)", len(self._clients))
+        return queue
+
+    async def unsubscribe(self, queue: asyncio.Queue) -> None:
+        """
+        Remove a client's queue after disconnect.
+
+        Safe to call even if the queue was already removed.
+        """
+        async with self._lock:
+            self._clients.discard(queue)
+        logger.debug("SSE client unsubscribed (total=%d)", len(self._clients))
+
+    async def publish(self, event_type: str, data: dict) -> None:
+        """
+        Push an event to every connected client.
+
+        Parameters
+        ----------
+        event_type : str
+            SSE event name (e.g. ``"state_update"``, ``"error"``).
+        data : dict
+            JSON-serialisable payload.
+
+        If a client's queue is full (slow consumer), the event is dropped for
+        that client to avoid blocking the publisher.
+        """
+        # Build the SSE-formatted message once, share it with all clients.
+        payload = json.dumps({"type": event_type, **data})
+        message = f"event: {event_type}\ndata: {payload}\n\n"
+
+        async with self._lock:
+            for queue in self._clients:
+                try:
+                    queue.put_nowait(message)
+                except asyncio.QueueFull:
+                    # Slow consumer — drop the event rather than blocking.
+                    logger.warning("SSE queue full for a client; dropping event")
+
+    @property
+    def client_count(self) -> int:
+        """Number of currently connected SSE clients."""
+        return len(self._clients)
+
+
+# Create the global publisher and attach it to app.state so other modules
+# (e.g. orchestrator hooks) can access it via ``app.state.publisher``.
+_publisher = StatePublisher()
+
+
+@app.on_event("startup")
+async def _attach_publisher() -> None:
+    """Attach the StatePublisher to app.state on startup."""
+    app.state.publisher = _publisher
+
+
+async def notify_state_change(publisher: StatePublisher, state_dict: dict) -> None:
+    """
+    Convenience helper the orchestrator can call after mutating state.
+
+    Parameters
+    ----------
+    publisher : StatePublisher
+        The global publisher (``app.state.publisher``).
+    state_dict : dict
+        The current orchestrator state dictionary.  The function extracts
+        the fields the dashboard needs and pushes a ``state_update`` event.
+
+    Example
+    -------
+    >>> from ui.web.app import notify_state_change
+    >>> await notify_state_change(app.state.publisher, current_state)
+    """
+    totals = state_dict.get("totals", {})
+    micro_hist = state_dict.get("micro_history", [])
+    critic = micro_hist[-1].get("critic_score") if micro_hist else None
+    await publisher.publish(
+        "state_update",
+        {
+            "time": now_iso(),
+            "micro_loops": totals.get("micro", 0),
+            "meso_loops": totals.get("meso", 0),
+            "macro_loops": totals.get("macro", 0),
+            "current_task": state_dict.get("current_task_id"),
+            "critic_score": critic,
+            "current_level": state_dict.get("current_level"),
+            "current_subsystem": state_dict.get("current_subsystem"),
+            "consecutive_failures": totals.get("consecutive_failures", 0),
+            "status": state_dict.get("status"),
+        },
+    )
+
+
 @app.get("/api/logs/stream")
 async def api_logs_stream(request: Request, level: str = "INFO"):
-    """Server-Sent Events: polls tinker_state.json and emits updates."""
+    """
+    Server-Sent Events endpoint: true push via ``StatePublisher``.
+
+    Each connected client gets its own ``asyncio.Queue``.  Events published
+    via ``StatePublisher.publish()`` are delivered instantly.  A lightweight
+    fallback poll (every 2 seconds) also reads ``tinker_state.json`` so that
+    state changes from external processes (the orchestrator) are still picked up.
+    """
 
     async def gen() -> AsyncIterator[str]:
+        # Subscribe this client to the global publisher.
+        queue = await _publisher.subscribe()
         last_micro = -1
-        while True:
-            if await request.is_disconnected():
-                break
-            state = load_state()
-            totals = state.get("totals", {})
-            micro = totals.get("micro", -1)
-            if micro != last_micro:
-                last_micro = micro
-                # Derive last critic score from micro history (not a top-level key)
-                micro_hist = state.get("micro_history", [])
-                critic = micro_hist[-1].get("critic_score") if micro_hist else None
-                evt = json.dumps(
-                    {
-                        "time": now_iso(),
-                        "level": "INFO",
-                        "micro_loops": micro,
-                        "meso_loops": totals.get("meso", 0),
-                        "macro_loops": totals.get("macro", 0),
-                        "current_task": state.get("current_task_id"),  # correct key
-                        "critic_score": critic,
-                        "current_level": state.get("current_level"),
-                        "current_subsystem": state.get("current_subsystem"),
-                        "consecutive_failures": totals.get("consecutive_failures", 0),
-                    }
-                )
-                yield f"data: {evt}\n\n"
-            await asyncio.sleep(2)
+        try:
+            while True:
+                # Check for client disconnect.
+                if await request.is_disconnected():
+                    break
+
+                # --- Drain any events pushed by the publisher ---
+                # Use a short timeout so we also get to the file-poll fallback.
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=2.0)
+                    yield message
+                    # Drain any additional queued events without blocking.
+                    while not queue.empty():
+                        yield queue.get_nowait()
+                    continue  # Skip file-poll this iteration; we already sent data.
+                except asyncio.TimeoutError:
+                    pass  # No push events — fall through to file-based poll.
+
+                # --- Fallback: poll tinker_state.json for external changes ---
+                state = load_state()
+                totals = state.get("totals", {})
+                micro = totals.get("micro", -1)
+                if micro != last_micro:
+                    last_micro = micro
+                    micro_hist = state.get("micro_history", [])
+                    critic = (
+                        micro_hist[-1].get("critic_score") if micro_hist else None
+                    )
+                    evt = json.dumps(
+                        {
+                            "type": "state_update",
+                            "time": now_iso(),
+                            "level": "INFO",
+                            "micro_loops": micro,
+                            "meso_loops": totals.get("meso", 0),
+                            "macro_loops": totals.get("macro", 0),
+                            "current_task": state.get("current_task_id"),
+                            "critic_score": critic,
+                            "current_level": state.get("current_level"),
+                            "current_subsystem": state.get("current_subsystem"),
+                            "consecutive_failures": totals.get(
+                                "consecutive_failures", 0
+                            ),
+                            "status": state.get("status"),
+                        }
+                    )
+                    yield f"event: state_update\ndata: {evt}\n\n"
+        finally:
+            # Always clean up: remove this client's queue from the publisher.
+            await _publisher.unsubscribe(queue)
 
     return StreamingResponse(
         gen(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Error detail viewer ──────────────────────────────────────────────────────
+# These endpoints let the Dashboard drill into specific errors.  They query
+# both the DLQ (dead letter queue) SQLite database and the audit log for
+# correlated events, giving operators a single place to understand what
+# went wrong and what the system was doing when it happened.
+
+
+@app.get("/api/errors/recent")
+async def api_errors_recent(limit: int = 20):
+    """
+    Return the most recent DLQ entries.
+
+    Query Parameters
+    ----------------
+    limit : int
+        Maximum number of entries to return (default 20, capped at 200).
+
+    Returns
+    -------
+    JSON with ``items`` (list of DLQ rows) and ``count`` (total items returned).
+    """
+    # Cap the limit to prevent accidentally fetching the entire table.
+    limit = max(1, min(limit, 200))
+    items = await db_query(
+        DLQ_DB,
+        "SELECT id, operation, error, status, retry_count, "
+        "created_at, updated_at, resolved_at, notes "
+        "FROM dlq_items ORDER BY created_at DESC LIMIT ?",
+        (limit,),
+    )
+    return {"items": items, "count": len(items)}
+
+
+@app.get("/api/errors/{trace_id}")
+async def api_error_detail(trace_id: str):
+    """
+    Return detailed error information for a given trace ID.
+
+    Queries two databases:
+    1. The DLQ for entries whose ``id`` or ``trace_id`` matches.
+    2. The audit log for any events correlated by ``trace_id``.
+
+    Returns 404 if no matching DLQ entry is found.
+
+    Response Schema
+    ---------------
+    {
+        "trace_id": "...",
+        "dlq_entries": [ ... ],          # Full DLQ rows (error, stack trace, etc.)
+        "audit_events": [ ... ],         # Related audit events
+        "dlq_count": int,
+        "audit_count": int,
+    }
+    """
+    # Look up DLQ entries that match by id or by a trace_id column (if present).
+    # The DLQ schema may or may not have a trace_id column, so we search by id
+    # first and also attempt a trace_id match with a UNION to be resilient.
+    dlq_entries = await db_query(
+        DLQ_DB,
+        "SELECT id, operation, error, status, retry_count, "
+        "created_at, updated_at, resolved_at, notes "
+        "FROM dlq_items WHERE id = ?",
+        (trace_id,),
+    )
+
+    # Also try matching a trace_id column if the schema has one.
+    try:
+        trace_matches = await db_query(
+            DLQ_DB,
+            "SELECT id, operation, error, status, retry_count, "
+            "created_at, updated_at, resolved_at, notes "
+            "FROM dlq_items WHERE trace_id = ?",
+            (trace_id,),
+        )
+        # Merge results, avoiding duplicates by id.
+        seen_ids = {e["id"] for e in dlq_entries}
+        for row in trace_matches:
+            if row["id"] not in seen_ids:
+                dlq_entries.append(row)
+    except Exception:
+        # trace_id column may not exist — that is fine, just skip.
+        pass
+
+    if not dlq_entries:
+        return JSONResponse(
+            {"error": "Not found", "detail": f"No DLQ entry for trace_id '{trace_id}'."},
+            status_code=404,
+        )
+
+    # Fetch correlated audit events for this trace_id.
+    audit_events = await db_query(
+        AUDIT_DB,
+        "SELECT id, event_type, actor, resource, outcome, trace_id, "
+        "created_at, details "
+        "FROM audit_events WHERE trace_id = ? ORDER BY created_at ASC",
+        (trace_id,),
+    )
+
+    return {
+        "trace_id": trace_id,
+        "dlq_entries": dlq_entries,
+        "audit_events": audit_events,
+        "dlq_count": len(dlq_entries),
+        "audit_count": len(audit_events),
+    }
+
+
+# ── Fritz diff viewer ────────────────────────────────────────────────────────
+# Shows recent git commits and their diffs so the Dashboard can display what
+# Fritz (or any contributor) has changed recently.  This is purely read-only
+# and runs ``git log`` / ``git diff`` in the workspace directory.
+
+
+@app.get("/api/fritz/recent-diffs")
+async def api_fritz_recent_diffs(limit: int = 5):
+    """
+    Return the last *N* commits with their diffs.
+
+    Query Parameters
+    ----------------
+    limit : int
+        Number of recent commits to return (default 5, capped at 25).
+
+    Returns
+    -------
+    JSON array under ``"commits"`` key.  Each entry:
+    ``{"sha": "...", "message": "...", "diff": "...", "timestamp": "..."}``
+
+    If the workspace is not a git repository, returns an error with status 400.
+
+    Implementation Notes
+    --------------------
+    We shell out to ``git`` rather than using a Python git library because:
+    - It avoids adding a dependency (e.g. GitPython / pygit2).
+    - The workspace already has git installed (Fritz requires it).
+    - Subprocess calls are run via ``asyncio.create_subprocess_exec`` so they
+      do not block the event loop.
+    """
+    limit = max(1, min(limit, 25))
+
+    # Determine the workspace directory.  Fritz stores its repo_path in config;
+    # fall back to BASE_DIR (the tinker project root).
+    workspace = str(BASE_DIR)
+    try:
+        cfg_path = FRITZ_CONFIG_FILE
+        if cfg_path.exists():
+            with open(cfg_path, "r") as f:
+                fritz_cfg = json.load(f)
+            workspace = fritz_cfg.get("repo_path", workspace)
+    except Exception:
+        pass  # Use default workspace if config is unreadable.
+
+    # Verify the workspace is a git repo.
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git", "rev-parse", "--is-inside-work-tree",
+            cwd=workspace,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+        if proc.returncode != 0:
+            return JSONResponse(
+                {
+                    "error": "Not a git repository",
+                    "detail": f"'{workspace}' is not inside a git work tree.",
+                },
+                status_code=400,
+            )
+    except (asyncio.TimeoutError, FileNotFoundError) as exc:
+        return JSONResponse(
+            {"error": "Git not available", "detail": str(exc)},
+            status_code=500,
+        )
+
+    # Fetch the last N commits in a machine-parseable format.
+    # Format: <sha>|<ISO timestamp>|<subject line>
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git", "log", f"-{limit}", "--format=%H|%aI|%s",
+            cwd=workspace,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except (asyncio.TimeoutError, Exception) as exc:
+        return JSONResponse(
+            {"error": "git log failed", "detail": str(exc)},
+            status_code=500,
+        )
+
+    lines = stdout.decode().strip().splitlines()
+    if not lines or not lines[0]:
+        return {"commits": [], "workspace": workspace}
+
+    commits: list[dict[str, str]] = []
+    for line in lines:
+        parts = line.split("|", 2)
+        if len(parts) < 3:
+            continue
+        sha, timestamp, message = parts
+
+        # Get the diff for this specific commit.
+        try:
+            diff_proc = await asyncio.create_subprocess_exec(
+                "git", "diff", f"{sha}~1..{sha}", "--stat", "--patch",
+                cwd=workspace,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            diff_out, _ = await asyncio.wait_for(diff_proc.communicate(), timeout=15)
+            diff_text = diff_out.decode(errors="replace")
+        except Exception:
+            # For the very first commit (no parent), git diff fails.
+            # Use `git show` instead to get the diff.
+            try:
+                show_proc = await asyncio.create_subprocess_exec(
+                    "git", "show", sha, "--format=", "--stat", "--patch",
+                    cwd=workspace,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                show_out, _ = await asyncio.wait_for(
+                    show_proc.communicate(), timeout=15
+                )
+                diff_text = show_out.decode(errors="replace")
+            except Exception:
+                diff_text = "(diff unavailable)"
+
+        # Truncate very large diffs to avoid overwhelming the UI.
+        max_diff_chars = 50_000
+        if len(diff_text) > max_diff_chars:
+            diff_text = diff_text[:max_diff_chars] + "\n\n... (diff truncated) ..."
+
+        commits.append(
+            {
+                "sha": sha,
+                "message": message,
+                "diff": diff_text,
+                "timestamp": timestamp,
+            }
+        )
+
+    return {"commits": commits, "workspace": workspace}

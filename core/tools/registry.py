@@ -35,8 +35,11 @@ structured "function call" dict (as used by OpenAI/Ollama APIs),
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 import logging
+import time
 from typing import Any
 
 from .base import BaseTool, ToolResult, ToolSchema
@@ -55,6 +58,21 @@ class ToolRegistry:
     a name.  The chef (Orchestrator) just says "get me the whisk" — it doesn't
     need to know where the whisk is kept or how it was made.
 
+    Concurrency control
+    -------------------
+    The registry enforces two levels of concurrency limiting via
+    ``asyncio.Semaphore`` objects:
+
+      1. **Global semaphore** — caps the total number of tool calls that can
+         run at the same time across *all* tools (default: 5).  This prevents
+         the system from overwhelming the host machine with too many
+         simultaneous subprocess / network calls.
+
+      2. **Per-tool semaphores** — caps concurrency for individual tools that
+         hit shared external resources.  For example, web_scraper and
+         web_search each default to 3 concurrent calls, so a burst of scrape
+         requests doesn't flood SearXNG or a target website.
+
     Typical usage
     -------------
         registry = ToolRegistry()
@@ -70,15 +88,50 @@ class ToolRegistry:
         registry = build_default_registry()
     """
 
-    def __init__(self, circuit_registry: Any = None) -> None:
+    # Default per-tool concurrency limits.  Tools not listed here inherit the
+    # global limit only (no per-tool cap).  Override or extend via the
+    # ``per_tool_limits`` constructor parameter.
+    DEFAULT_PER_TOOL_LIMITS: dict[str, int] = {
+        "web_scraper": 3,
+        "web_search": 3,
+    }
+
+    def __init__(
+        self,
+        circuit_registry: Any = None,
+        max_concurrent: int = 5,
+        per_tool_limits: dict[str, int] | None = None,
+    ) -> None:
         # Internal dictionary: tool name (string) → tool instance (BaseTool).
         # We use a dict so we can look tools up by name in O(1) time.
         self._tools: dict[str, BaseTool] = {}
+
         # Optional circuit breaker registry — when provided, execute() wraps
         # each tool call with a per-tool circuit breaker named "tool:<name>".
         # This prevents a failing external service (SearXNG down, scrape timeout)
         # from blocking every micro loop iteration with slow timeouts.
         self._circuit_registry = circuit_registry
+
+        # ----- Concurrency control (new) -----
+        # Global semaphore: limits the total number of tool calls running at
+        # the same time, regardless of which tool they belong to.  A value of
+        # 5 means at most 5 tools execute concurrently; a 6th caller will
+        # await until one of the 5 finishes.
+        self._semaphore = asyncio.Semaphore(max_concurrent)
+
+        # Per-tool semaphores: some tools (e.g. web scrapers) should have a
+        # tighter limit to avoid overwhelming external services.  We merge
+        # the class-level defaults with any caller-provided overrides.
+        merged_limits = dict(self.DEFAULT_PER_TOOL_LIMITS)
+        if per_tool_limits:
+            merged_limits.update(per_tool_limits)
+
+        # Build a Semaphore for each tool that has a per-tool limit.
+        # Tools not in this dict will only be gated by the global semaphore.
+        self._per_tool_limits: dict[str, asyncio.Semaphore] = {
+            name: asyncio.Semaphore(limit)
+            for name, limit in merged_limits.items()
+        }
 
     # ------------------------------------------------------------------
     # Registration
@@ -248,16 +301,61 @@ class ToolRegistry:
     # Execution
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Audit helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _hash_args(kwargs: dict[str, Any]) -> str:
+        """
+        Compute a deterministic SHA-256 hash of the tool's keyword arguments.
+
+        This is used in the audit trail so we can correlate duplicate calls
+        without logging potentially sensitive argument *values*.  The hash
+        is computed from the JSON-serialised form of the args dict.
+
+        We use ``sort_keys=True`` and ``default=str`` to make the hash
+        deterministic even when dict ordering or non-serialisable types
+        (e.g. Path objects) vary between calls.
+        """
+        try:
+            serialised = json.dumps(kwargs, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            # Fallback: if serialisation fails for any reason, hash the repr.
+            serialised = repr(kwargs)
+        return hashlib.sha256(serialised.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _get_trace_id() -> str:
+        """
+        Retrieve the current trace ID from the agents shared ContextVar.
+
+        The trace ID is set by the orchestrator at the start of each
+        research loop iteration, stored in ``agents._shared._current_trace_id``.
+        If unavailable (e.g. during tests), we return ``"no-trace"``.
+        """
+        try:
+            from agents._shared import _current_trace_id
+            return _current_trace_id.get("no-trace")
+        except Exception:
+            return "no-trace"
+
+    # ------------------------------------------------------------------
+    # Execution
+    # ------------------------------------------------------------------
+
     async def execute(self, tool_name: str, **kwargs: Any) -> ToolResult:
         """
         Run a tool by name and return a ``ToolResult``.
 
         This is the primary method called by the Orchestrator.  It:
           1. Looks up the tool by name (returns an error result if not found).
-          2. Calls ``tool.execute(**kwargs)`` — which runs the tool's logic,
+          2. Acquires the global and per-tool semaphores (concurrency control).
+          3. Calls ``tool.execute(**kwargs)`` — which runs the tool's logic,
              measures how long it took, and catches any exceptions.
-          3. Logs success or failure at the appropriate log level.
-          4. Returns the ToolResult to the caller.
+          4. Emits a structured audit log line with timing, success/fail, and
+             trace ID for downstream log aggregators.
+          5. Returns the ToolResult to the caller.
 
         Crucially, this method NEVER raises an exception.  All errors are
         captured inside the ToolResult (``result.success=False``,
@@ -289,6 +387,96 @@ class ToolRegistry:
         # We log only the argument *names* here, not the values, to keep logs tidy.
         logger.info("Executing tool '%s' with args: %s", tool_name, list(kwargs.keys()))
 
+        # ----- Concurrency control -----
+        # We acquire TWO semaphores before running the tool:
+        #   1. The global semaphore — limits total concurrent tool calls.
+        #   2. A per-tool semaphore (if one exists) — limits concurrency
+        #      for this specific tool.
+        #
+        # If either semaphore is fully taken, we log a message so operators
+        # can see that tool calls are queuing up (potential bottleneck).
+        per_tool_sem = self._per_tool_limits.get(tool_name)
+
+        # Log when we're about to wait for a semaphore slot.  The locked()
+        # method returns True when the semaphore's internal counter is zero,
+        # meaning no slots are available and we will block.
+        if self._semaphore.locked():
+            logger.info(
+                "Tool '%s' waiting for a global concurrency slot.", tool_name
+            )
+        if per_tool_sem is not None and per_tool_sem.locked():
+            logger.info(
+                "Tool '%s' waiting for a per-tool concurrency slot.", tool_name
+            )
+
+        # Acquire the global semaphore first, then the per-tool semaphore.
+        # Using nested ``async with`` ensures both are released even if the
+        # tool call raises an unexpected exception.
+        async with self._semaphore:
+            if per_tool_sem is not None:
+                async with per_tool_sem:
+                    result = await self._run_tool_with_breaker(
+                        tool, tool_name, **kwargs
+                    )
+            else:
+                result = await self._run_tool_with_breaker(
+                    tool, tool_name, **kwargs
+                )
+
+        # ----- Audit trail -----
+        # Emit a structured log line after every tool call (success or failure).
+        # The format is designed for easy parsing by log aggregators (Loki,
+        # Datadog, etc.) while remaining human-readable in a terminal.
+        args_hash = self._hash_args(kwargs)
+        trace_id = self._get_trace_id()
+        duration = result.duration_ms
+
+        logger.info(
+            "tool_audit | tool=%s duration=%.0fms success=%s trace=%s",
+            tool_name,
+            duration,
+            result.success,
+            trace_id,
+            extra={
+                "tool_name": tool_name,
+                "args_hash": args_hash,
+                "duration_ms": duration,
+                "success": result.success,
+                "trace_id": trace_id,
+            },
+        )
+
+        # Step 3: log the outcome at different levels depending on success/failure.
+        if result.success:
+            logger.debug(
+                "Tool '%s' succeeded in %.1f ms", tool_name, result.duration_ms
+            )
+        else:
+            logger.warning(
+                "Tool '%s' failed in %.1f ms: %s",
+                tool_name,
+                result.duration_ms,
+                result.error,
+            )
+        return result
+
+    async def _run_tool_with_breaker(
+        self,
+        tool: BaseTool,
+        tool_name: str,
+        **kwargs: Any,
+    ) -> ToolResult:
+        """
+        Run a single tool call, optionally wrapped in a circuit breaker.
+
+        This helper is extracted from ``execute()`` so the semaphore
+        acquisition logic doesn't get interleaved with the breaker logic,
+        keeping both readable.
+
+        If a circuit breaker registry is configured and has (or can create)
+        a breaker for this tool, the call is routed through it.  Otherwise,
+        the tool is called directly.
+        """
         # Microservices resilience: wrap the tool call with a circuit breaker
         # if one is registered for this tool name (keyed as "tool:<name>").
         # If the breaker is OPEN (service down), fail fast instead of timing out.
@@ -312,7 +500,7 @@ class ToolRegistry:
             except Exception:
                 breaker = None
 
-        # Step 2: actually run the tool. BaseTool.execute() wraps the real logic
+        # Actually run the tool.  BaseTool.execute() wraps the real logic
         # in timing and error handling, so we always get a ToolResult back.
         if breaker is not None:
             try:
@@ -328,18 +516,6 @@ class ToolRegistry:
         else:
             result = await tool.execute(**kwargs)
 
-        # Step 3: log the outcome at different levels depending on success/failure.
-        if result.success:
-            logger.debug(
-                "Tool '%s' succeeded in %.1f ms", tool_name, result.duration_ms
-            )
-        else:
-            logger.warning(
-                "Tool '%s' failed in %.1f ms: %s",
-                tool_name,
-                result.duration_ms,
-                result.error,
-            )
         return result
 
     async def execute_from_model_call(self, tool_call: dict) -> ToolResult:

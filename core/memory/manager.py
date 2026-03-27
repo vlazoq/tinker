@@ -60,9 +60,27 @@ from .schemas import (
 )
 from .storage import RedisAdapter, DuckDBAdapter, ChromaAdapter, SQLiteAdapter
 from .embeddings import EmbeddingPipeline
-from .compression import MemoryCompressor
+from .compression import MemoryCompressor, _cosine_similarity
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Semantic deduplication settings
+#
+# Before storing a new artifact, MemoryManager checks cosine similarity
+# against the N most recent artifacts.  If any existing artifact is very
+# similar (above the threshold), the new content is merged into the existing
+# one instead of creating a near-duplicate entry.  This keeps the session
+# memory lean and avoids redundant compression work later.
+# ---------------------------------------------------------------------------
+
+# How many recent artifacts to check for duplicates
+_DEDUP_RECENT_WINDOW = 5
+
+# Cosine similarity above which a new artifact is considered a duplicate
+# of an existing one.  0.92 is deliberately high — we only merge when the
+# two pieces of content are nearly identical.
+_DEDUP_SIMILARITY_THRESHOLD = 0.92
 
 
 # ---------------------------------------------------------------------------
@@ -323,12 +341,27 @@ class MemoryManager:
         """
         Persist an output artifact to Session Memory (DuckDB).
 
+        Before writing, runs semantic deduplication: if the new content is
+        near-identical (cosine similarity > 0.92) to a recent artifact, the
+        new content is merged into the existing artifact instead of creating
+        a duplicate.
+
         After writing, optionally triggers compression if the session
         has grown beyond the configured threshold.
 
-        Returns the stored Artifact (with its assigned id).
+        Returns the stored Artifact (with its assigned id).  When dedup merges
+        into an existing artifact, the *existing* artifact is returned.
         """
         sid = session_id or self.session_id
+
+        # ── Semantic deduplication ────────────────────────────────────
+        # Check the last N artifacts for near-duplicates before inserting.
+        # This prevents the session from accumulating redundant entries
+        # (e.g. repeated micro-loop outputs for the same sub-problem).
+        existing = await self._check_semantic_duplicate(content, sid)
+        if existing is not None:
+            return existing
+
         artifact = Artifact(
             content=content,
             artifact_type=artifact_type,
@@ -343,6 +376,93 @@ class MemoryManager:
             await self._compressor.maybe_compress(sid)
 
         return artifact
+
+    async def _check_semantic_duplicate(
+        self,
+        new_content: str,
+        session_id: str,
+    ) -> Optional[Artifact]:
+        """
+        Check if *new_content* is semantically near-identical to any of the
+        last ``_DEDUP_RECENT_WINDOW`` artifacts in the session.
+
+        How it works
+        ------------
+        1. Fetch the N most recent (non-archived) artifacts from DuckDB.
+        2. Embed the new content and each recent artifact's content.
+        3. Compute cosine similarity between the new embedding and each
+           existing embedding.
+        4. If any similarity exceeds ``_DEDUP_SIMILARITY_THRESHOLD``, merge
+           the new content into the existing artifact (append a separator
+           and the new text) and return the updated Artifact.
+        5. Otherwise return ``None`` to signal "no duplicate found".
+
+        Returns
+        -------
+        Artifact or None
+            The merged artifact if dedup triggered, otherwise None.
+        """
+        try:
+            recent_rows = await self._duckdb.get_recent(
+                session_id, limit=_DEDUP_RECENT_WINDOW, include_archived=False
+            )
+            if not recent_rows:
+                return None
+
+            # Embed the new content
+            new_emb = await self._embeddings.embed(new_content)
+
+            for row in recent_rows:
+                existing_content = str(row.get("content", ""))
+                if not existing_content:
+                    continue
+
+                existing_emb = await self._embeddings.embed(existing_content)
+                similarity = _cosine_similarity(new_emb, existing_emb)
+
+                if similarity > _DEDUP_SIMILARITY_THRESHOLD:
+                    # Merge: append the new content to the existing artifact
+                    merged_content = (
+                        f"{existing_content}\n\n"
+                        f"--- [merged duplicate, similarity={similarity:.3f}] ---\n\n"
+                        f"{new_content}"
+                    )
+                    row_id = row["id"]
+                    logger.info(
+                        "[dedup] Merging new artifact into existing %s "
+                        "(cosine_similarity=%.3f > %.3f). "
+                        "Duplicate content appended instead of creating new entry.",
+                        row_id,
+                        similarity,
+                        _DEDUP_SIMILARITY_THRESHOLD,
+                    )
+
+                    # Update the existing artifact in DuckDB with merged content.
+                    # We reconstruct an Artifact with the same ID and upsert it.
+                    _parse_row_metadata(row)
+                    merged_artifact = Artifact(
+                        content=merged_content,
+                        artifact_type=ArtifactType(
+                            row.get("artifact_type", "raw")
+                        ),
+                        session_id=session_id,
+                        task_id=row.get("task_id"),
+                        metadata=row.get("metadata", {}),
+                    )
+                    # Preserve the original artifact's ID so the upsert
+                    # replaces it rather than creating a new row.
+                    merged_artifact.id = row_id
+                    await self._duckdb.insert_artifact(merged_artifact)
+                    return merged_artifact
+
+        except Exception as exc:
+            # Dedup is best-effort — if embeddings fail or anything goes wrong,
+            # fall through and store the artifact normally.
+            logger.debug(
+                "[dedup] Semantic dedup check failed (non-fatal): %s", exc
+            )
+
+        return None
 
     async def get_artifact(self, artifact_id: str) -> Optional[Artifact]:
         """Retrieve an artifact by its UUID. Returns None if not found."""

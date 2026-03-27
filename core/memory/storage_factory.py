@@ -108,7 +108,31 @@ def create_storage_adapter(
             ),
         )
 
+    if key == "trino":
+        # Trino is an optional backend — requires ``pip install trino``.
+        # If the package is missing, fall back to DuckDB with a warning.
+        try:
+            from core.memory.trino_store import TrinoSessionStore, TrinoConfig
+
+            config = TrinoConfig.from_env()
+            return TrinoSessionStore(config=config)
+        except ImportError:
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "TINKER_SESSION_BACKEND=trino but 'trino' package is not "
+                "installed.  Falling back to DuckDB.  Install with: "
+                "pip install trino"
+            )
+            from core.memory.storage import DuckDBAdapter
+
+            return DuckDBAdapter(
+                path=kwargs.get("path") or os.getenv(
+                    "TINKER_DUCKDB_PATH", "tinker_session.duckdb"
+                ),
+            )
+
     raise ValueError(
         f"Unknown storage backend: {backend!r}.  "
-        f"Supported values: 'redis', 'duckdb', 'chroma', 'sqlite'."
+        f"Supported values: 'redis', 'duckdb', 'chroma', 'sqlite', 'trino'."
     )

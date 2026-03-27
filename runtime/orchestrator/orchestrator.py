@@ -128,6 +128,18 @@ except ImportError:
     CapacityPlanner = None  # type: ignore[assignment,misc]
     _CAPACITY_AVAILABLE = False
 
+# DLQ auto-replayer is an optional enterprise dependency.  When available, the
+# orchestrator starts a background task that periodically re-enqueues failed
+# operations (e.g. incomplete task completions) back into the task engine.
+# If the DLQ module is not installed, all DLQ-related logic is a safe no-op.
+try:
+    from infra.resilience.dead_letter_queue import DLQAutoReplayer
+
+    _DLQ_REPLAYER_AVAILABLE = True
+except ImportError:
+    DLQAutoReplayer = None  # type: ignore[assignment,misc]
+    _DLQ_REPLAYER_AVAILABLE = False
+
 # Logger specific to the orchestrator — messages will appear as
 # "tinker.orchestrator" in log output, making them easy to filter.
 logger = logging.getLogger("tinker.orchestrator")
@@ -271,6 +283,11 @@ class Orchestrator:
         from .confirmation import ConfirmationGate
         self.confirmation_gate = ConfirmationGate(self.config, self.state)
 
+        # DLQ auto-replayer — initialised lazily in ``_setup_dlq_replayer()``
+        # during the ``run()`` startup sequence.  Stored as an instance
+        # attribute so ``_on_shutdown()`` can stop it cleanly.
+        self._dlq_replayer: Any = None
+
     # ── Public API ───────────────────────────────────────────────────────────
 
     async def run(self) -> None:
@@ -294,6 +311,12 @@ class Orchestrator:
         # Wire up OS signals (SIGINT = Ctrl-C, SIGTERM = ``kill`` command).
         self._install_signal_handlers()
         logger.info("Orchestrator starting — PID signals wired, entering main loop")
+
+        # ── Optional startup wiring ───────────────────────────────────────
+        # Start the DLQ auto-replayer so that failed operations from previous
+        # runs are automatically retried.  This is non-blocking and safe to
+        # skip if the DLQ module is not installed.
+        await self._setup_dlq_replayer()
 
         try:
             # This call blocks (from the caller's perspective) until the
@@ -419,6 +442,126 @@ class Orchestrator:
         on-disk version up to date.
         """
         return self.state.to_dict()
+
+    # ── DLQ replay wiring ───────────────────────────────────────────────────
+
+    async def _setup_dlq_replayer(self) -> None:
+        """
+        Configure and start the DLQ auto-replayer if the module is available.
+
+        The replayer periodically drains the Dead Letter Queue by re-enqueuing
+        failed task operations back into the task engine.  This is wired once
+        during orchestrator startup (inside ``run()``).
+
+        How it works:
+          1. Look up the DLQ instance from ``self.enterprise`` (populated by
+             ``bootstrap/components.py`` or ``main.py``).
+          2. Define a replay handler that routes each DLQ item to the
+             appropriate recovery action (e.g. re-completing a task).
+          3. Create and start a ``DLQAutoReplayer`` background task.
+
+        If the DLQ module is not installed or no DLQ instance is wired, this
+        method is a silent no-op — the orchestrator works fine without it.
+        """
+        if not _DLQ_REPLAYER_AVAILABLE:
+            logger.debug(
+                "DLQ replayer not available (infra.resilience.dead_letter_queue "
+                "not installed) — skipping DLQ wiring"
+            )
+            return
+
+        # The DLQ instance is stored in the enterprise dict by the bootstrap
+        # layer.  If it's not there, DLQ replay is simply not enabled.
+        dlq = self.enterprise.get("dlq")
+        if dlq is None:
+            logger.debug(
+                "No DLQ instance in enterprise dict — DLQ replay disabled"
+            )
+            return
+
+        # ── Define the replay handler ─────────────────────────────────────
+        # This async function is called once per pending DLQ item.  It
+        # inspects the ``operation`` field to decide how to replay the item.
+        # Currently supported operations:
+        #   - "complete_task"  → re-call task_engine.complete_task()
+        #   - Anything else    → log and skip (the item will be retried later
+        #     or discarded after max retries)
+        task_engine = self.task_engine
+
+        async def _replay_handler(item: dict) -> None:
+            """
+            Re-enqueue a single failed DLQ item back into the task engine.
+
+            Parameters
+            ----------
+            item : A dict with at least ``operation`` and ``payload`` keys,
+                   as returned by ``DeadLetterQueue.pending_items()``.
+            """
+            operation = item.get("operation", "")
+            payload = item.get("payload", {})
+
+            if operation == "complete_task":
+                task_id = payload.get("task_id")
+                artifact_id = payload.get("artifact_id")
+                if task_id:
+                    logger.info(
+                        "DLQ replay: re-completing task %s (artifact=%s)",
+                        task_id,
+                        artifact_id,
+                    )
+                    await task_engine.complete_task(
+                        task_id=task_id,
+                        artifact_id=artifact_id,
+                    )
+                else:
+                    raise ValueError(
+                        f"DLQ item missing task_id in payload: {payload}"
+                    )
+
+            elif operation == "store_artifact":
+                # Artifact storage failures can be replayed if the memory
+                # manager supports it.
+                logger.info(
+                    "DLQ replay: re-storing artifact for task %s",
+                    payload.get("task_id", "unknown"),
+                )
+                if hasattr(self.memory_manager, "store_artifact"):
+                    await self.memory_manager.store_artifact(
+                        **payload,
+                    )
+                else:
+                    raise ValueError(
+                        "Memory manager does not support store_artifact"
+                    )
+
+            else:
+                # Unknown operation — raise so the replayer increments the
+                # retry count.  After max retries the item is discarded.
+                raise ValueError(
+                    f"DLQ replay: unknown operation '{operation}' — "
+                    f"cannot replay automatically"
+                )
+
+        # ── Start the replayer ────────────────────────────────────────────
+        try:
+            self._dlq_replayer = DLQAutoReplayer(
+                dlq=dlq,
+                handler=_replay_handler,
+                interval=60.0,   # Replay every 60 seconds
+                batch_size=10,   # Process up to 10 items per pass
+                max_retries=5,   # Discard after 5 failed retries
+            )
+            await self._dlq_replayer.start()
+            logger.info(
+                "DLQ auto-replayer started — replaying failed operations "
+                "every 60s"
+            )
+        except Exception as exc:
+            # DLQ replay is optional — never let it block orchestrator startup.
+            logger.warning(
+                "Failed to start DLQ auto-replayer (non-fatal): %s", exc
+            )
+            self._dlq_replayer = None
 
     # ── Main loop ────────────────────────────────────────────────────────────
 
@@ -1144,6 +1287,19 @@ class Orchestrator:
             self.state.total_meso_loops,
             self.state.total_macro_loops,
         )
+
+        # ── Stop the DLQ auto-replayer ────────────────────────────────────
+        # Cancel the background replay task so it doesn't keep running after
+        # the orchestrator has stopped processing new micro loops.
+        if self._dlq_replayer is not None:
+            try:
+                await self._dlq_replayer.stop()
+                logger.info("DLQ auto-replayer stopped")
+            except Exception as exc:
+                logger.warning(
+                    "DLQ auto-replayer stop failed (non-fatal): %s", exc
+                )
+
         # Mark the overall orchestrator as shut down.
         self.state.status = LoopStatus.SHUTDOWN
         # Write one last snapshot so the Dashboard shows "shutdown" and the

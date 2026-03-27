@@ -66,6 +66,7 @@ from .context import enforce_context_limit
 from .parsing import build_json_instruction, extract_json
 from .types import (
     AgentRole,
+    DefaultRoutingStrategy,
     Machine,
     MachineConfig,
     Message,
@@ -73,6 +74,7 @@ from .types import (
     ModelResponse,
     RetryConfig,
     ROLE_MACHINE_MAP,
+    RoutingStrategy,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,11 +114,15 @@ class ModelRouter:
         server_config: MachineConfig | None = None,
         secondary_config: MachineConfig | None = None,
         retry_config: RetryConfig | None = None,
+        routing_strategy: "RoutingStrategy | None" = None,
     ) -> None:
         # Use provided configs or fall back to environment-variable defaults
         self._server_cfg = server_config or MachineConfig.server_defaults()
         self._secondary_cfg = secondary_config or MachineConfig.secondary_defaults()
         self._retry = retry_config or RetryConfig()
+        # Routing strategy decides which Machine handles each request.
+        # Defaults to the original role-based lookup when no strategy is given.
+        self._routing = routing_strategy or DefaultRoutingStrategy()
 
         # Will hold {Machine.SERVER: OllamaClient, Machine.SECONDARY: OllamaClient}
         # after start() is called.
@@ -325,7 +331,7 @@ class ModelRouter:
                         timing, and which machine/model was used.
         """
         # Step 1: figure out which machine and config to use for this role
-        machine = ROLE_MACHINE_MAP[request.agent_role]
+        machine = self._routing.route(request)
         config = self._config_for(machine)
         client = self._client_for(machine)
 

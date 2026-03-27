@@ -22,6 +22,7 @@ Orchestrator (e.g. every N minutes or after every K new artifacts).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from datetime import datetime, timedelta, timezone
@@ -37,6 +38,171 @@ logger = logging.getLogger(__name__)
 # and the summary embedding.  Below this, a WARNING is emitted so operators
 # know the summariser may be producing low-quality or hallucinated output.
 _MIN_SUMMARY_SIMILARITY = 0.4
+
+# Maximum number of retry attempts when a summary's cosine similarity is
+# below _MIN_SUMMARY_SIMILARITY.  Each retry uses a more explicit prompt
+# to force the summariser to preserve technical details.
+_MAX_QUALITY_RETRIES = 2
+
+# The retry prompt prefix, prepended to the original prompt when the
+# quality gate fails.  This nudges the model to be more faithful.
+_QUALITY_RETRY_PREFIX = (
+    "IMPORTANT: Preserve ALL technical decisions, trade-offs, and specific "
+    "details. The previous summary lost too much information.\n\n"
+)
+
+
+class OllamaSummarizer:
+    """
+    A production-grade summariser that calls a local Ollama model via HTTP.
+
+    How it works
+    ------------
+    1. Receives a text prompt (from ``MemoryCompressor._summarise``).
+    2. Sends an HTTP POST to the Ollama ``/api/generate`` endpoint.
+    3. Returns the model's response text.
+    4. On transient failures (network errors, timeouts), retries once
+       (2 total attempts) before falling back to simple truncation.
+
+    Parameters
+    ----------
+    base_url : str
+        The base URL where Ollama is running, e.g. ``"http://localhost:11434"``.
+    model : str
+        The Ollama model name to use for summarisation.  Typically a small,
+        fast Judge model (2-3B params) like ``"phi3:mini"`` — the same model
+        used for the Critic role.
+    timeout : float
+        HTTP request timeout in seconds.  Defaults to 60 seconds, which is
+        generous enough for the 2-3B Judge model on most hardware.
+
+    Usage
+    -----
+    ::
+
+        summariser = OllamaSummarizer(
+            base_url="http://localhost:11434",
+            model="phi3:mini",
+        )
+
+        # Pass it directly to MemoryCompressor or MemoryManager:
+        manager = MemoryManager(summariser=summariser)
+
+    The class implements ``__call__`` so it can be used anywhere a
+    ``SummariserFn`` (i.e. ``Callable[[str], Awaitable[str]]``) is expected.
+    """
+
+    # The system prompt instructs the model to focus on preserving the
+    # information that matters most in an architecture research context.
+    _SYSTEM_PROMPT = (
+        "Summarize the following text, preserving all technical decisions, "
+        "architecture choices, trade-offs, function signatures, and error "
+        "details. Be concise but complete."
+    )
+
+    # Number of total attempts before falling back to truncation.
+    # 2 means: try once, and if that fails, retry once more.
+    _MAX_ATTEMPTS = 2
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        model: str = "phi3:mini",
+        timeout: float = 60.0,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.timeout = timeout
+
+    async def __call__(self, text: str) -> str:
+        """
+        Summarise *text* using the Ollama model.
+
+        This method is the ``SummariserFn`` interface that ``MemoryCompressor``
+        calls.  It tries up to ``_MAX_ATTEMPTS`` times to get a response from
+        the Ollama API.  If all attempts fail, it falls back to returning a
+        truncated version of the input so that compression can still proceed
+        (data loss from truncation beats a total failure).
+
+        Parameters
+        ----------
+        text : str
+            The prompt text to send to the model (typically a structured
+            prompt built by ``MemoryCompressor._summarise``).
+
+        Returns
+        -------
+        str
+            The model's summary, or a truncated fallback on failure.
+        """
+        import aiohttp  # type: ignore  — lazy import to match codebase pattern
+
+        url = f"{self.base_url}/api/generate"
+        payload = {
+            "model": self.model,
+            "system": self._SYSTEM_PROMPT,
+            "prompt": text,
+            "stream": False,  # We want the full response at once
+        }
+
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, self._MAX_ATTEMPTS + 1):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        url,
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=self.timeout),
+                    ) as resp:
+                        resp.raise_for_status()
+                        data = await resp.json()
+                        # Ollama returns the generated text in the "response" field
+                        response_text = data.get("response", "").strip()
+                        if response_text:
+                            return response_text
+                        # Empty response — treat as a failure and retry
+                        last_error = ValueError("Ollama returned empty response")
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "[OllamaSummarizer] Attempt %d/%d failed: %s",
+                    attempt,
+                    self._MAX_ATTEMPTS,
+                    exc,
+                )
+                if attempt < self._MAX_ATTEMPTS:
+                    # Brief pause before retry to allow transient issues to clear
+                    await asyncio.sleep(1.0)
+
+        # All attempts exhausted — fall back to truncation so compression
+        # doesn't stall.  We truncate to ~500 chars which is enough to
+        # preserve the most important leading content.
+        logger.warning(
+            "[OllamaSummarizer] All %d attempts failed (last error: %s). "
+            "Falling back to truncation.",
+            self._MAX_ATTEMPTS,
+            last_error,
+        )
+        return self._truncation_fallback(text)
+
+    @staticmethod
+    def _truncation_fallback(text: str, max_chars: int = 500) -> str:
+        """
+        Emergency fallback: return the first *max_chars* characters of the
+        input when the LLM is unreachable.
+
+        We strip the prompt scaffolding (everything before "ARTIFACTS:")
+        so the truncated text contains actual content rather than the
+        instruction prefix.
+        """
+        # Try to skip past the prompt prefix to get at the raw artifacts
+        marker = "ARTIFACTS:\n"
+        idx = text.find(marker)
+        body = text[idx + len(marker) :] if idx != -1 else text
+        if len(body) <= max_chars:
+            return body
+        return body[:max_chars] + "… [truncated — LLM unavailable]"
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -183,12 +349,17 @@ class MemoryCompressor:
             summary_text = await self._summarise(chunk, reason)
             artifact_ids = [a["id"] for a in chunk]
 
-            # ── Quality validation ────────────────────────────────────────────
+            # ── Quality validation with retry ─────────────────────────────────
             # Embed the concatenated original content and the generated summary,
             # then measure cosine similarity.  A very low similarity suggests
             # the summariser drifted from the source material (hallucination or
-            # stub output).  We log a warning but continue — archival is still
-            # better than losing the context entirely.
+            # stub output).
+            #
+            # If the similarity is below _MIN_SUMMARY_SIMILARITY, we retry with
+            # a more explicit prompt up to _MAX_QUALITY_RETRIES times.  This
+            # gives the model a second (and third) chance to produce a faithful
+            # summary.  If it still fails, we log a WARNING and proceed rather
+            # than blocking the compression pipeline.
             try:
                 original_text = " ".join(
                     str(a.get("content", ""))[:500] for a in chunk
@@ -196,19 +367,53 @@ class MemoryCompressor:
                 orig_emb = await self.embeddings.embed(original_text)
                 summ_emb = await self.embeddings.embed(summary_text)
                 similarity = _cosine_similarity(orig_emb, summ_emb)
+
+                # Retry loop: re-summarise with a stronger prompt if quality
+                # is too low.  Each retry prepends _QUALITY_RETRY_PREFIX to
+                # nudge the model toward higher fidelity.
+                quality_retries = 0
+                while (
+                    similarity < _MIN_SUMMARY_SIMILARITY
+                    and quality_retries < _MAX_QUALITY_RETRIES
+                ):
+                    quality_retries += 1
+                    logger.info(
+                        "[compression] Low summary quality (cosine=%.3f < %.3f). "
+                        "Retrying with explicit prompt (attempt %d/%d) for "
+                        "chunk starting at artifact %s.",
+                        similarity,
+                        _MIN_SUMMARY_SIMILARITY,
+                        quality_retries,
+                        _MAX_QUALITY_RETRIES,
+                        artifact_ids[0] if artifact_ids else "unknown",
+                    )
+                    # Re-summarise with the retry prefix for emphasis
+                    summary_text = await self._summarise(
+                        chunk, reason, prompt_prefix=_QUALITY_RETRY_PREFIX
+                    )
+                    summ_emb = await self.embeddings.embed(summary_text)
+                    similarity = _cosine_similarity(orig_emb, summ_emb)
+
                 if similarity < _MIN_SUMMARY_SIMILARITY:
+                    # All retries exhausted — warn but do NOT block compression
                     logger.warning(
-                        "[compression] Low summary quality: cosine_similarity=%.3f "
-                        "< threshold=%.3f for chunk starting at artifact %s. "
-                        "The summariser may be producing low-fidelity output.",
+                        "[compression] Low summary quality persists after %d "
+                        "retries: cosine_similarity=%.3f < threshold=%.3f for "
+                        "chunk starting at artifact %s. "
+                        "Proceeding with best-effort summary.",
+                        _MAX_QUALITY_RETRIES,
                         similarity,
                         _MIN_SUMMARY_SIMILARITY,
                         artifact_ids[0] if artifact_ids else "unknown",
                     )
                 else:
                     logger.debug(
-                        "[compression] Summary quality OK: cosine_similarity=%.3f",
+                        "[compression] Summary quality OK: cosine_similarity=%.3f"
+                        "%s",
                         similarity,
+                        f" (after {quality_retries} retry/retries)"
+                        if quality_retries > 0
+                        else "",
                     )
             except Exception as exc:
                 logger.debug(
@@ -256,8 +461,23 @@ class MemoryCompressor:
 
         return total_archived
 
-    async def _summarise(self, artifacts: list[dict], reason: str) -> str:
-        """Call the summariser with a structured prompt."""
+    async def _summarise(
+        self,
+        artifacts: list[dict],
+        reason: str,
+        prompt_prefix: str = "",
+    ) -> str:
+        """
+        Call the summariser with a structured prompt.
+
+        Parameters
+        ----------
+        artifacts    : The chunk of artifact dicts to summarise.
+        reason       : Human-readable reason for compression (e.g. "age-based").
+        prompt_prefix: Optional prefix prepended to the prompt on quality retries.
+                       Used by the quality-gate retry loop to nudge the model
+                       toward higher-fidelity output.  Empty string on first call.
+        """
         lines = []
         for a in artifacts:
             ts = a.get("created_at", "?")
@@ -267,6 +487,7 @@ class MemoryCompressor:
 
         joined = "\n\n---\n\n".join(lines)
         prompt = (
+            f"{prompt_prefix}"
             f"You are a technical memory compressor for an AI architecture engine.\n"
             f"Reason for compression: {reason}\n\n"
             f"Summarise the following {len(artifacts)} session artifacts into a single "

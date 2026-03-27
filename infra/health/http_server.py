@@ -103,6 +103,7 @@ class HealthServer:
         ollama_url: str = "",
         data_dir: str = ".",
         disk_warn_pct: float = 90.0,
+        ollama_model: str = "",
     ) -> None:
         self._orchestrator = orchestrator
         self._memory_manager = memory_manager
@@ -113,9 +114,26 @@ class HealthServer:
         self._ollama_url = ollama_url.rstrip("/")
         self._data_dir = data_dir
         self._disk_warn_pct = disk_warn_pct
+
+        # The expected Ollama model name (e.g. "qwen3:7b").  Used by the
+        # /ready endpoint to verify the model is actually loaded, not just
+        # that the Ollama server is reachable.  Read from the
+        # ``TINKER_SERVER_MODEL`` env var if not provided explicitly.
+        import os
+
+        self._ollama_model: str = ollama_model or os.getenv(
+            "TINKER_SERVER_MODEL", ""
+        )
+
         self._server = None
         self._start_time = time.monotonic()
         self._request_count = 0
+
+        # Track the last-known task queue depth for the degraded-check.
+        # If the queue has been at zero for consecutive /ready checks, we
+        # report a "degraded" status because it may mean the task engine
+        # has stalled.
+        self._last_queue_depth: int = -1  # -1 means "not yet checked"
 
     async def start(self, host: str = "0.0.0.0", port: int = 8080) -> None:
         """

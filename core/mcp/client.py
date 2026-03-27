@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any, TYPE_CHECKING
 
 import httpx
@@ -45,6 +46,12 @@ if TYPE_CHECKING:
     from core.mcp.config import MCPConfig
 
 logger = logging.getLogger(__name__)
+
+# ── Heartbeat health threshold ───────────────────────────────────────────────
+# The MCP server sends a ``ping`` SSE event every 30 seconds.  If no ping is
+# received within this many seconds, is_healthy() returns False — the server
+# is likely down or the network path is broken.
+_HEARTBEAT_TIMEOUT_SECONDS: float = 90.0
 
 
 class RemoteMCPTool(BaseTool):
@@ -136,10 +143,73 @@ class MCPClient:
     Parameters
     ----------
     config : MCPConfig with client_server_urls and connect_timeout.
+
+    Heartbeat tracking
+    ------------------
+    When the client receives ``ping`` events on the SSE stream, it records the
+    timestamp.  Call ``is_healthy()`` to check whether the server has sent a
+    ping recently (within the last 90 seconds).  This is useful for health
+    dashboards and automatic reconnection logic.
     """
 
     def __init__(self, config: "MCPConfig") -> None:
         self._config = config
+
+        # ── Heartbeat tracking ───────────────────────────────────────────────
+        # Stores the monotonic timestamp of the last ping event received from
+        # each connected MCP server.  Keyed by SSE URL.  Updated by the SSE
+        # listener when a ``ping`` event arrives.
+        self._last_ping: dict[str, float] = {}
+
+    def record_ping(self, server_url: str) -> None:
+        """
+        Record that a ping was received from *server_url*.
+
+        Called internally when the SSE stream delivers a ``ping`` event.
+        External callers can also use this for testing.
+
+        Parameters
+        ----------
+        server_url : The SSE URL of the server that sent the ping.
+        """
+        self._last_ping[server_url] = time.monotonic()
+
+    def is_healthy(self, server_url: str | None = None) -> bool:
+        """
+        Check whether a connected MCP server is still alive.
+
+        The server sends ``ping`` events every 30 seconds.  If no ping has
+        been received within the last 90 seconds (3 missed pings), the
+        server is considered unhealthy.
+
+        Parameters
+        ----------
+        server_url : The SSE URL to check.  If None, checks all configured
+                     servers — returns True only if *all* are healthy.
+
+        Returns
+        -------
+        bool : True if the server(s) sent a ping within the threshold.
+               Returns False if no ping has ever been received (e.g. the
+               client hasn't connected yet).
+        """
+        now = time.monotonic()
+
+        if server_url is not None:
+            last = self._last_ping.get(server_url)
+            if last is None:
+                # No ping ever received from this server.
+                return False
+            return (now - last) < _HEARTBEAT_TIMEOUT_SECONDS
+
+        # Check all configured servers — healthy only if all are healthy.
+        if not self._config.client_server_urls:
+            # No servers configured; vacuously healthy (nothing to fail).
+            return True
+
+        return all(
+            self.is_healthy(url) for url in self._config.client_server_urls
+        )
 
     async def fetch_all_tools(self) -> list[RemoteMCPTool]:
         """

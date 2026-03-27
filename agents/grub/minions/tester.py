@@ -215,6 +215,9 @@ Bad test names:
             status = ResultStatus.FAILED
             summary = "Could not run tests."
 
+        # Log structured metrics for observability dashboards.
+        self._log_metrics(task.id, status.value, score, duration)
+
         return MinionResult(
             task_id=task.id,
             minion_name=self.name,

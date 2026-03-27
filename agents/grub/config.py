@@ -122,6 +122,18 @@ class GrubConfig:
         default_factory=lambda: dict(_DEFAULT_OLLAMA_URLS)
     )
 
+    # ── Per-minion LLM timeouts ──────────────────────────────────────────────
+    # Timeout in seconds for each minion's LLM call.  Larger models and
+    # complex tasks need more time; reviewers and testers can be faster.
+    # Override individual values via grub_config.json or programmatically.
+    timeouts: dict[str, float] = field(default_factory=lambda: {
+        "coder": 180.0,      # 3 min — code generation is slow on 32B models
+        "reviewer": 90.0,    # 1.5 min — evaluation is faster
+        "tester": 120.0,     # 2 min — test writing + fixture setup
+        "debugger": 180.0,   # 3 min — root cause analysis needs time
+        "refactorer": 120.0, # 2 min — structural changes
+    })
+
     # ── Quality control ────────────────────────────────────────────────────────
     quality_threshold: float = float(os.getenv("GRUB_QUALITY_THRESHOLD", "0.75"))
     max_iterations: int = int(os.getenv("GRUB_MAX_ITERATIONS", "5"))
