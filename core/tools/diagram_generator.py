@@ -1,23 +1,46 @@
 """
 Diagram Generator Tool
+======================
+
 Accepts a component/relationship description as structured JSON,
-renders a Graphviz .dot file, and produces a PNG image.
+renders a Graphviz .dot file **or** a Mermaid .mmd file, and produces
+a PNG image (when the CLI renderer is available on PATH).
+
+Two rendering back-ends are supported:
+
+  1. **Graphviz** (default) — generates a ``.dot`` file, renders via the
+     ``dot`` (or other layout engine) command.
+  2. **Mermaid** — generates a ``.mmd`` file, renders via ``mmdc``
+     (the Mermaid CLI, ``@mermaid-js/mermaid-cli``).
+
+The caller selects the back-end via the ``render_format`` parameter
+(``"graphviz"`` or ``"mermaid"``).  If the chosen CLI tool is not
+installed, the source file is still saved and ``rendered: false`` is
+returned so downstream code can handle it gracefully.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
 from .base import BaseTool, ToolSchema
 
+# Standard Python logging — messages appear under "tools.diagram_generator".
+logger = logging.getLogger(__name__)
+
 DEFAULT_DIAGRAM_DIR = os.getenv("DIAGRAM_OUTPUT_DIR", "./artifacts/diagrams")
 
 # Graphviz layout engines available
 LAYOUT_ENGINES = ("dot", "neato", "fdp", "circo", "twopi", "sfdp")
+
+# Supported render formats — used for parameter validation
+RENDER_FORMATS = ("graphviz", "mermaid")
 
 
 class DiagramGeneratorTool(BaseTool):
@@ -36,9 +59,10 @@ class DiagramGeneratorTool(BaseTool):
         return ToolSchema(
             name="diagram_generator",
             description=(
-                "Generate a Graphviz architecture diagram from a structured description "
-                "of components and their relationships. Returns paths to the .dot source "
-                "and the rendered PNG."
+                "Generate an architecture diagram from a structured description "
+                "of components and their relationships.  Supports two rendering "
+                "back-ends: Graphviz (.dot → PNG) and Mermaid (.mmd → PNG/SVG).  "
+                "Returns paths to the source file and the rendered image."
             ),
             parameters={
                 "type": "object",
@@ -121,6 +145,17 @@ class DiagramGeneratorTool(BaseTool):
                             "required": ["from", "to"],
                         },
                     },
+                    "render_format": {
+                        "type": "string",
+                        "enum": ["graphviz", "mermaid"],
+                        "description": (
+                            "Which rendering back-end to use.  'graphviz' produces "
+                            "a .dot file and renders via the Graphviz CLI.  'mermaid' "
+                            "produces a .mmd file and renders via the Mermaid CLI "
+                            "(mmdc).  Default: 'graphviz'."
+                        ),
+                        "default": "graphviz",
+                    },
                     "layout_engine": {
                         "type": "string",
                         "enum": list(LAYOUT_ENGINES),
@@ -137,8 +172,10 @@ class DiagramGeneratorTool(BaseTool):
                 "required": ["diagram_name", "components", "relationships"],
             },
             returns=(
-                "Dict: {dot_path, png_path, diagram_name, node_count, edge_count, "
-                "rendered}"
+                "Dict: {source_path, image_path, diagram_name, node_count, "
+                "edge_count, rendered, render_format}.  For Graphviz: source_path "
+                "is .dot, image_path is .png.  For Mermaid: source_path is .mmd, "
+                "image_path is .png (or .svg)."
             ),
         )
 
@@ -228,6 +265,118 @@ class DiagramGeneratorTool(BaseTool):
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
+    # Mermaid generation
+    # ------------------------------------------------------------------
+
+    def _mermaid_direction(self, direction: str) -> str:
+        """
+        Map the user-facing direction string to a Mermaid graph direction.
+
+        Mermaid uses the same abbreviations as Graphviz (LR, TB, RL, BT),
+        so this is mostly a validation pass — if the caller sends an
+        unrecognised value we fall back to ``LR`` (left-to-right).
+        """
+        valid = {"LR", "TB", "RL", "BT"}
+        return direction if direction in valid else "LR"
+
+    def _mermaid_edge_style(self, style: str) -> str:
+        """
+        Convert a Graphviz edge style name to a Mermaid arrow syntax.
+
+        Mermaid does not support all Graphviz edge styles natively, so we
+        approximate:
+          - "solid"  → ``-->``  (solid arrow)
+          - "dashed" → ``-.->`` (dashed arrow)
+          - "dotted" → ``-.->`` (Mermaid has no separate dotted; use dashed)
+
+        Returns the arrow string (e.g. ``"-->"``).
+        """
+        if style in ("dashed", "dotted"):
+            return "-.->"
+        # Default: solid arrow
+        return "-->"
+
+    def _build_mermaid(
+        self,
+        title: str,
+        components: list[dict],
+        relationships: list[dict],
+        direction: str,
+    ) -> str:
+        """
+        Build a Mermaid diagram definition string from components and edges.
+
+        Mermaid syntax overview (for beginners):
+          - ``graph LR`` starts a left-to-right flowchart.
+          - ``A[Label]`` defines a node with id ``A`` and display text ``Label``.
+          - ``A-->B`` draws a solid arrow from A to B.
+          - ``A-.->B`` draws a dashed arrow.
+          - ``A-->|text|B`` adds an edge label.
+          - ``subgraph Title ... end`` groups nodes visually.
+
+        We convert the same JSON structure used by the Graphviz path into
+        valid Mermaid syntax so callers don't need to change their input.
+        """
+        mermaid_dir = self._mermaid_direction(direction)
+        lines: list[str] = []
+
+        # Header — "graph" creates a flowchart; direction follows immediately.
+        lines.append(f"graph {mermaid_dir}")
+
+        # Optional title comment (Mermaid doesn't have a native graph title,
+        # but the %% comment serves as documentation in the source file).
+        if title:
+            lines.append(f"    %% Title: {self._escape(title)}")
+            lines.append("")
+
+        # ----- Nodes -----
+        # Collect groups for subgraph clustering (same logic as Graphviz path).
+        groups: dict[str, list[dict]] = {}
+        ungrouped: list[dict] = []
+        for comp in components:
+            g = comp.get("group")
+            if g:
+                groups.setdefault(g, []).append(comp)
+            else:
+                ungrouped.append(comp)
+
+        # Emit ungrouped nodes first.
+        for comp in ungrouped:
+            nid = self._safe_id(comp["id"])
+            label = comp.get("label", comp["id"])
+            # Mermaid node shapes: [...] = rectangle (default).
+            # We use the rectangle shape for all nodes to keep it simple;
+            # Mermaid's shape options are more limited than Graphviz.
+            lines.append(f"    {nid}[\"{self._escape(label)}\"]")
+
+        # Emit grouped nodes inside Mermaid subgraphs.
+        for group_name, members in groups.items():
+            lines.append(f"    subgraph {self._safe_id(group_name)}[\"{self._escape(group_name)}\"]")
+            for comp in members:
+                nid = self._safe_id(comp["id"])
+                label = comp.get("label", comp["id"])
+                lines.append(f"        {nid}[\"{self._escape(label)}\"]")
+            lines.append("    end")
+
+        lines.append("")
+
+        # ----- Edges -----
+        for rel in relationships:
+            src = self._safe_id(rel["from"])
+            dst = self._safe_id(rel["to"])
+            lbl = rel.get("label", "")
+            arrow = self._mermaid_edge_style(rel.get("style", "solid"))
+
+            if lbl:
+                # Edge with label: A -->|label| B
+                lines.append(f"    {src} {arrow}|{self._escape(lbl)}| {dst}")
+            else:
+                # Edge without label: A --> B
+                lines.append(f"    {src} {arrow} {dst}")
+
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
     # Implementation
     # ------------------------------------------------------------------
 
@@ -237,17 +386,93 @@ class DiagramGeneratorTool(BaseTool):
         components: list[dict],
         relationships: list[dict],
         title: str = "",
+        render_format: str = "graphviz",
         layout_engine: str = "dot",
         direction: str = "LR",
         **_: Any,
     ) -> dict:
+        """
+        Generate a diagram source file and attempt to render it to an image.
+
+        This method dispatches to one of two rendering paths based on the
+        ``render_format`` parameter:
+
+          - ``"graphviz"`` (default): builds a ``.dot`` file and shells out
+            to the Graphviz ``dot`` (or other layout engine) command to
+            produce a PNG.
+          - ``"mermaid"``: builds a ``.mmd`` (Mermaid) file and shells out
+            to ``mmdc`` (the Mermaid CLI) to produce a PNG.
+
+        In both cases, if the CLI tool is not installed on the system, the
+        source file is still saved to disk and ``rendered: false`` is
+        returned.  This lets the caller display the source or render it
+        later in a browser.
+        """
+        # Validate render_format — fall back to "graphviz" if unrecognised.
+        if render_format not in RENDER_FORMATS:
+            logger.warning(
+                "Unknown render_format '%s', falling back to 'graphviz'.",
+                render_format,
+            )
+            render_format = "graphviz"
+
+        # Sanitise the diagram name so it's safe for use as a filename.
+        safe_name = re.sub(r"[^A-Za-z0-9_\-]", "_", diagram_name)
+
+        # -----------------------------------------------------------------
+        # PATH 1: Graphviz rendering (the original, unchanged behaviour)
+        # -----------------------------------------------------------------
+        if render_format == "graphviz":
+            return await self._render_graphviz(
+                safe_name=safe_name,
+                diagram_name=diagram_name,
+                title=title,
+                components=components,
+                relationships=relationships,
+                layout_engine=layout_engine,
+                direction=direction,
+            )
+
+        # -----------------------------------------------------------------
+        # PATH 2: Mermaid rendering (new)
+        # -----------------------------------------------------------------
+        return await self._render_mermaid(
+            safe_name=safe_name,
+            diagram_name=diagram_name,
+            title=title,
+            components=components,
+            relationships=relationships,
+            direction=direction,
+        )
+
+    # ------------------------------------------------------------------
+    # Graphviz render path (extracted from the original _execute)
+    # ------------------------------------------------------------------
+
+    async def _render_graphviz(
+        self,
+        safe_name: str,
+        diagram_name: str,
+        title: str,
+        components: list[dict],
+        relationships: list[dict],
+        layout_engine: str,
+        direction: str,
+    ) -> dict:
+        """
+        Build a Graphviz .dot file and attempt to render it to PNG.
+
+        This is the original rendering logic, extracted into its own method
+        so that ``_execute`` can cleanly dispatch between Graphviz and
+        Mermaid without deeply nested if/else blocks.
+        """
         if layout_engine not in LAYOUT_ENGINES:
             layout_engine = "dot"
 
-        safe_name = re.sub(r"[^A-Za-z0-9_\-]", "_", diagram_name)
         dot_path = self._root / f"{safe_name}.dot"
         png_path = self._root / f"{safe_name}.png"
 
+        # Build the DOT source from the structured component/edge data.
         dot_src = self._build_dot(
             title=title or diagram_name,
             components=components,
@@ -256,7 +481,8 @@ class DiagramGeneratorTool(BaseTool):
         )
         dot_path.write_text(dot_src, encoding="utf-8")
 
-        # Try to render PNG via Graphviz subprocess
+        # Try to render PNG via the Graphviz CLI subprocess.
+        # If Graphviz is not installed, we still have the .dot file.
         rendered = False
         render_error = None
         try:
@@ -280,10 +506,107 @@ class DiagramGeneratorTool(BaseTool):
         return {
             "dot_path": str(dot_path),
             "png_path": str(png_path) if rendered else None,
+            # Backward-compatible aliases so existing callers keep working:
+            "source_path": str(dot_path),
+            "image_path": str(png_path) if rendered else None,
             "diagram_name": diagram_name,
             "node_count": len(components),
             "edge_count": len(relationships),
             "rendered": rendered,
+            "render_format": "graphviz",
             "render_error": render_error,
             "dot_source": dot_src,
+        }
+
+    # ------------------------------------------------------------------
+    # Mermaid render path (new)
+    # ------------------------------------------------------------------
+
+    async def _render_mermaid(
+        self,
+        safe_name: str,
+        diagram_name: str,
+        title: str,
+        components: list[dict],
+        relationships: list[dict],
+        direction: str,
+    ) -> dict:
+        """
+        Build a Mermaid .mmd file and attempt to render it to PNG via mmdc.
+
+        ``mmdc`` is the Mermaid CLI tool, installed separately via npm:
+            npm install -g @mermaid-js/mermaid-cli
+
+        If ``mmdc`` is not found on PATH, we still save the ``.mmd`` source
+        file so the user can:
+          - Open it in a Mermaid-compatible editor (VS Code, GitHub, etc.)
+          - Paste it into https://mermaid.live for online rendering
+          - Install mmdc later and re-render
+
+        The ``.mmd`` extension is the conventional Mermaid file extension.
+        """
+        mmd_path = self._root / f"{safe_name}.mmd"
+        png_path = self._root / f"{safe_name}.png"
+
+        # Build the Mermaid source from the structured component/edge data.
+        mmd_src = self._build_mermaid(
+            title=title or diagram_name,
+            components=components,
+            relationships=relationships,
+            direction=direction,
+        )
+        mmd_path.write_text(mmd_src, encoding="utf-8")
+
+        # Check whether the Mermaid CLI (mmdc) is available on PATH.
+        # shutil.which() returns the full path if found, or None if not.
+        mmdc_available = shutil.which("mmdc") is not None
+
+        rendered = False
+        render_error = None
+
+        if mmdc_available:
+            # Attempt to render the .mmd file to PNG via mmdc.
+            # The command:  mmdc -i input.mmd -o output.png
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "mmdc",
+                    "-i", str(mmd_path),
+                    "-o", str(png_path),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+                if proc.returncode == 0:
+                    rendered = True
+                else:
+                    render_error = stderr.decode().strip()
+            except (FileNotFoundError, asyncio.TimeoutError) as exc:
+                render_error = str(exc)
+        else:
+            # mmdc is not installed — this is a soft failure, not a crash.
+            # The .mmd source file is still useful on its own.
+            render_error = (
+                "Mermaid CLI (mmdc) not found on PATH.  Install it with: "
+                "npm install -g @mermaid-js/mermaid-cli"
+            )
+            logger.info(
+                "mmdc not available; saved Mermaid source to %s without rendering.",
+                mmd_path,
+            )
+
+        return {
+            "mmd_path": str(mmd_path),
+            "png_path": str(png_path) if rendered else None,
+            # Unified keys that work the same for both formats:
+            "source_path": str(mmd_path),
+            "image_path": str(png_path) if rendered else None,
+            "diagram_name": diagram_name,
+            "node_count": len(components),
+            "edge_count": len(relationships),
+            "rendered": rendered,
+            "render_format": "mermaid",
+            "render_error": render_error,
+            # Include the raw Mermaid source so callers can display it
+            # in a browser or editor even when rendering fails.
+            "mermaid_source": mmd_src,
         }

@@ -31,7 +31,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol as TypingProtocol
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +97,96 @@ ROLE_MACHINE_MAP: dict[AgentRole, Machine] = {
 }
 
 
+class RoutingStrategy(TypingProtocol):
+    """
+    Protocol for model routing strategies.
+
+    A routing strategy decides which Machine (SERVER or SECONDARY) should
+    handle a given request.  The default implementation is a simple dictionary
+    lookup (``DefaultRoutingStrategy``).  More advanced strategies can inspect
+    the task metadata to make smarter choices.
+
+    Implementing a custom strategy
+    ------------------------------
+    1. Create a class that satisfies this protocol (has a ``route`` method).
+    2. Pass it to ``ModelRouter(routing_strategy=my_strategy)``.
+
+    Example::
+
+        class AlwaysServerStrategy:
+            def route(self, request: "ModelRequest") -> Machine:
+                return Machine.SERVER
+
+        router = ModelRouter(routing_strategy=AlwaysServerStrategy())
+    """
+
+    def route(self, request: "ModelRequest") -> Machine:
+        """Return the Machine that should handle this request."""
+        ...
+
+
+class DefaultRoutingStrategy:
+    """
+    The default routing strategy — looks up the agent role in a static map.
+
+    This is the original Tinker routing behaviour: Architect, Researcher, and
+    Synthesizer go to SERVER; Critic goes to SECONDARY.  Task metadata is
+    ignored.
+
+    Parameters
+    ----------
+    role_map : dict[AgentRole, Machine], optional
+        Override the default mapping.  Useful for testing or for deployments
+        where all roles run on one machine.
+    """
+
+    def __init__(self, role_map: dict[AgentRole, Machine] | None = None) -> None:
+        self._map = role_map or dict(ROLE_MACHINE_MAP)
+
+    def route(self, request: "ModelRequest") -> Machine:
+        """Look up the machine by agent role, falling back to SERVER."""
+        return self._map.get(request.agent_role, Machine.SERVER)
+
+
+class TaskAwareRoutingStrategy:
+    """
+    A routing strategy that can override the default role-based routing
+    when per-agent model overrides are configured.
+
+    This strategy checks ``model_overrides`` first (keyed by AgentRole).
+    If the agent's role has an override, it returns the configured machine.
+    Otherwise it falls back to the default role map.
+
+    Parameters
+    ----------
+    role_map : dict[AgentRole, Machine], optional
+        Base role → machine mapping (same as DefaultRoutingStrategy).
+    model_overrides : dict[AgentRole, Machine], optional
+        Per-role overrides.  When set, takes priority over role_map.
+
+    Example::
+
+        strategy = TaskAwareRoutingStrategy(
+            model_overrides={AgentRole.RESEARCHER: Machine.SECONDARY},
+        )
+        # Now Researcher uses the lighter model, everything else unchanged.
+    """
+
+    def __init__(
+        self,
+        role_map: dict[AgentRole, Machine] | None = None,
+        model_overrides: dict[AgentRole, Machine] | None = None,
+    ) -> None:
+        self._map = role_map or dict(ROLE_MACHINE_MAP)
+        self._overrides = model_overrides or {}
+
+    def route(self, request: "ModelRequest") -> Machine:
+        """Check overrides first, then fall back to the role map."""
+        if request.agent_role in self._overrides:
+            return self._overrides[request.agent_role]
+        return self._map.get(request.agent_role, Machine.SERVER)
+
+
 # ---------------------------------------------------------------------------
 # Model names (override via environment or MachineConfig)
 # ---------------------------------------------------------------------------
@@ -158,6 +248,7 @@ class MachineConfig:
     request_timeout: float = 120.0  # seconds before a slow reply is abandoned
     connect_timeout: float = 10.0  # seconds to wait for the TCP handshake
     keep_alive: str = "10m"  # how long Ollama keeps the model in VRAM
+    fallback_model: str = ""  # Tried if the primary model is not found in Ollama
 
     @classmethod
     def server_defaults(cls) -> "MachineConfig":
@@ -182,6 +273,7 @@ class MachineConfig:
             max_output_tokens=int(os.getenv("TINKER_SERVER_MAX_OUT", "2048")),
             request_timeout=float(os.getenv("TINKER_SERVER_TIMEOUT", "120")),
             keep_alive=os.getenv("TINKER_SERVER_KEEP_ALIVE", "10m"),
+            fallback_model=os.getenv("TINKER_SERVER_FALLBACK_MODEL", ""),
         )
 
     @classmethod
@@ -204,6 +296,7 @@ class MachineConfig:
             max_output_tokens=int(os.getenv("TINKER_SECONDARY_MAX_OUT", "1024")),
             request_timeout=float(os.getenv("TINKER_SECONDARY_TIMEOUT", "60")),
             keep_alive=os.getenv("TINKER_SECONDARY_KEEP_ALIVE", "10m"),
+            fallback_model=os.getenv("TINKER_SECONDARY_FALLBACK_MODEL", ""),
         )
 
 
@@ -286,6 +379,13 @@ class ModelRequest:
     temperature: float = 0.7
     expect_json: bool = False  # If True, extract/validate JSON from reply
     json_schema_hint: str | None = None  # Optional schema description for the prompt
+
+    # Optional task metadata — used by the routing strategy to pick the
+    # best model for a given task.  Callers that don't care about per-task
+    # routing can leave these as None and the default ROLE_MACHINE_MAP is used.
+    task_type: str | None = None        # e.g. "research", "implementation", "review"
+    task_id: str | None = None          # correlation ID for logging
+    task_description: str | None = None # short summary, used by adaptive routing
 
     # Populated by the router before sending — callers don't set these
     resolved_model: str = ""

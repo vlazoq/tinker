@@ -141,6 +141,73 @@ def get_trace_context() -> dict:
 # ---------------------------------------------------------------------------
 
 
+class TraceContextFilter(logging.Filter):
+    """
+    Logging filter that injects trace context into every log record.
+
+    Python's ``logging.Filter`` can modify log records before they reach a
+    handler/formatter.  This filter reads the current trace context from
+    ContextVars (set by ``set_trace_context()``) and attaches the values
+    directly to the ``LogRecord`` object.
+
+    Why this matters
+    ----------------
+    Without this filter, only the ``JsonFormatter`` (and ``HumanReadableFormatter``)
+    read the ContextVars.  Third-party log handlers (Sentry, DataDog, etc.)
+    never see the trace_id because they read ``record.trace_id``, not the
+    ContextVar.  By injecting the values into the record itself, ALL handlers
+    get access to them — even ones we didn't write.
+
+    Usage
+    -----
+    ::
+
+        # Install on the root logger so ALL log records get trace context:
+        install_trace_filter()
+
+        # Or install on a specific logger:
+        install_trace_filter("tinker.orchestrator")
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """
+        Inject trace context fields into the log record.
+
+        Always returns True — this filter never blocks records, it only
+        enriches them.
+        """
+        # Read current values from ContextVars.  If not set, default to
+        # empty string / zero so downstream code doesn't need null checks.
+        record.trace_id = _trace_id_var.get()          # type: ignore[attr-defined]
+        record.loop_level = _loop_level_var.get()      # type: ignore[attr-defined]
+        record.task_id = _task_id_var.get()             # type: ignore[attr-defined]
+        record.subsystem = _subsystem_var.get()         # type: ignore[attr-defined]
+        record.iteration = _iteration_var.get()         # type: ignore[attr-defined]
+        return True
+
+
+def install_trace_filter(logger_name: str = "") -> None:
+    """
+    Install the ``TraceContextFilter`` on a logger.
+
+    Parameters
+    ----------
+    logger_name : str
+        Name of the logger to install the filter on.  Empty string (the
+        default) installs it on the root logger, which means ALL loggers
+        in the process get trace context injected.
+
+    Calling this multiple times is safe — it checks for an existing
+    ``TraceContextFilter`` before adding a new one to avoid duplicates.
+    """
+    target_logger = logging.getLogger(logger_name)
+    # Avoid adding the filter twice
+    for existing in target_logger.filters:
+        if isinstance(existing, TraceContextFilter):
+            return
+    target_logger.addFilter(TraceContextFilter())
+
+
 class JsonFormatter(logging.Formatter):
     """
     Log formatter that outputs one JSON object per line.
@@ -299,6 +366,11 @@ def setup_structured_logging(
             root.addHandler(file_handler)
         except Exception as exc:
             logging.warning("Could not open log file '%s': %s", log_file, exc)
+
+    # Install the trace context filter on the root logger so every log
+    # record (from any logger in any module) gets trace_id, loop_level,
+    # task_id, subsystem, and iteration injected automatically.
+    install_trace_filter()
 
     logging.getLogger("tinker").info(
         "Logging configured (level=%s, json=%s, file=%s)",

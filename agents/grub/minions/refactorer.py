@@ -187,6 +187,8 @@ If no changes are needed:
                 # Roll back — restore all original files
                 for fpath, original in originals.items():
                     write_file(fpath, original)
+                # Log structured metrics for observability dashboards.
+                self._log_metrics(task.id, ResultStatus.FAILED.value, 0.0, duration)
                 return MinionResult(
                     task_id=task.id,
                     minion_name=self.name,
@@ -210,6 +212,9 @@ If no changes are needed:
         else:
             summary = f"Successfully refactored {len(files_written)} file(s)."
             score = 0.9
+
+        # Log structured metrics for observability dashboards.
+        self._log_metrics(task.id, ResultStatus.SUCCESS.value, score, duration)
 
         return MinionResult(
             task_id=task.id,

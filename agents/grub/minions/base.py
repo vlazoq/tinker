@@ -34,6 +34,7 @@ STATUS: FULLY IMPLEMENTED
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -41,6 +42,7 @@ from typing import Optional, TYPE_CHECKING
 
 import httpx
 
+from exceptions import MinionTimeoutError
 from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus
 from ..context_summarizer import MinionContextSummarizer
@@ -158,6 +160,7 @@ class BaseMinion(ABC):
         system_prompt: Optional[str] = None,
         temperature: float = 0.3,
         max_tokens: int = 4096,
+        timeout: float = 120.0,
     ) -> str:
         """
         Send a prompt to the Ollama model assigned to this Minion.
@@ -173,18 +176,33 @@ class BaseMinion(ABC):
         temperature   : Sampling temperature. Lower = more deterministic.
                         0.1–0.3 for coding tasks. 0.7+ for creative tasks.
         max_tokens    : Maximum tokens in the response.
+        timeout       : Per-call timeout in seconds.  Defaults to 120s.
+                        When a per-minion timeout is configured in
+                        ``GrubConfig.timeouts``, callers should pass that
+                        value here.  If the LLM call exceeds this limit,
+                        ``MinionTimeoutError`` is raised so the orchestrator
+                        can decide whether to retry or route to another minion.
 
         Returns
         -------
         str : The model's text response, or an error message starting with
               "ERROR:" if the call failed.
+
+        Raises
+        ------
+        MinionTimeoutError
+            If the LLM call exceeds *timeout* seconds.  This is a structured
+            exception (inherits ``GrubError``) with ``retryable=True`` so the
+            orchestrator can distinguish timeouts from permanent failures.
         """
         if system_prompt is None:
             system_prompt = self._build_system_prompt()
 
         model = self.config.models.get(self.name, "qwen3:7b")
         ollama_url = self.config.ollama_urls.get(self.name, "http://localhost:11434")
-        timeout = self.config.request_timeout
+        # Use the httpx-level timeout from config as a safety net; the
+        # asyncio.wait_for wrapper below provides the authoritative deadline.
+        http_timeout = self.config.request_timeout
 
         payload = {
             "model": model,
@@ -200,26 +218,45 @@ class BaseMinion(ABC):
         t0 = time.monotonic()
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                r = await client.post(
-                    f"{ollama_url}/api/chat",
-                    json=payload,
-                )
-                r.raise_for_status()
-                data = r.json()
-                content = data.get("message", {}).get("content", "")
-                elapsed = time.monotonic() - t0
-                self.logger.debug(
-                    "_llm OK: %.1fs, %d chars returned", elapsed, len(content)
-                )
-                return content
+            # Wrap the entire HTTP round-trip in asyncio.wait_for so that
+            # even a hanging connection is terminated after *timeout* seconds.
+            async def _do_request() -> str:
+                async with httpx.AsyncClient(timeout=http_timeout) as client:
+                    r = await client.post(
+                        f"{ollama_url}/api/chat",
+                        json=payload,
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                    return data.get("message", {}).get("content", "")
 
+            content = await asyncio.wait_for(_do_request(), timeout=timeout)
+            elapsed = time.monotonic() - t0
+            self.logger.debug(
+                "_llm OK: %.1fs, %d chars returned", elapsed, len(content)
+            )
+            return content
+
+        except asyncio.TimeoutError:
+            # asyncio.wait_for exceeded the deadline — raise a structured
+            # MinionTimeoutError so the caller can decide to retry or fail.
+            elapsed = time.monotonic() - t0
+            raise MinionTimeoutError(
+                f"Minion '{self.name}' LLM call timed out after {timeout:.0f}s",
+                context={
+                    "minion": self.name,
+                    "timeout_seconds": timeout,
+                    "elapsed_seconds": round(elapsed, 2),
+                    "model": model,
+                    "ollama_url": ollama_url,
+                },
+            )
         except httpx.ConnectError:
             msg = f"ERROR: Cannot connect to Ollama at {ollama_url}. Is it running?"
             self.logger.error(msg)
             return msg
         except httpx.TimeoutException:
-            msg = f"ERROR: Ollama timed out after {timeout}s."
+            msg = f"ERROR: Ollama timed out after {http_timeout}s."
             self.logger.error(msg)
             return msg
         except Exception as exc:
@@ -245,6 +282,35 @@ class BaseMinion(ABC):
         str : Original or compressed text.
         """
         return await self._summarizer.compress(text, label)
+
+    # ── Metrics ────────────────────────────────────────────────────────────────
+
+    def _log_metrics(self, task_id: str, status: str, score: float, duration_s: float) -> None:
+        """
+        Emit a structured log line with minion execution metrics.
+
+        These structured fields are machine-parseable by log aggregators
+        (Loki, ELK, CloudWatch) for building dashboards and alerts.
+
+        Parameters
+        ----------
+        task_id    : Unique identifier for the task being executed.
+        status     : Outcome of the run (e.g. "success", "failed", "partial").
+        score      : Quality score assigned by the minion (0.0–1.0).
+        duration_s : Wall-clock seconds the run() method took.
+        """
+        logger.info(
+            "minion_metrics | minion=%s task=%s status=%s score=%.3f duration=%.2fs",
+            self.name, task_id, status, score, duration_s,
+            extra={
+                "event": "minion_metrics",
+                "minion": self.name,
+                "task_id": task_id,
+                "status": status,
+                "score": score,
+                "duration_seconds": duration_s,
+            },
+        )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

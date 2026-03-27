@@ -20,6 +20,7 @@ STATUS: FULLY IMPLEMENTED
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
@@ -166,19 +167,40 @@ Quality requirements:
         syntax_errors = []
         ensure_dir(self.config.output_dir)
 
+        # Ordered list of regex patterns to extract a filepath from the first
+        # line of a code block.  We try each pattern in order; the first match
+        # wins.  This handles the various conventions LLMs use when labelling
+        # output files:
+        #   - "# filepath: path/to/file.py"   (our canonical format)
+        #   - "# file: path/to/file.py"        (shorter variant)
+        #   - "## filename: path/to/file.py"   (Markdown heading variant)
+        #   - "path: path/to/file.py"          (frontmatter-style)
+        _FILEPATH_PATTERNS: list[re.Pattern[str]] = [
+            re.compile(r"^#\s*filepath:\s*(.+)", re.IGNORECASE),
+            re.compile(r"^#\s*file:\s*(.+)", re.IGNORECASE),
+            re.compile(r"^##\s*filename:\s*(.+)", re.IGNORECASE),
+            re.compile(r"^path:\s*(.+)", re.IGNORECASE),
+        ]
+
         for i, block in enumerate(code_blocks):
-            # Try to extract filepath from first line comment
+            # Try to extract filepath from first line comment using multiple
+            # fallback patterns — LLMs are inconsistent with their labelling.
             lines = block.split("\n")
             filepath = None
 
-            if lines and "filepath:" in lines[0].lower():
-                # "# filepath: path/to/file.py"
-                filepath = lines[0].split("filepath:")[-1].strip()
-                filepath = filepath.lstrip("#").strip()
-                block = "\n".join(lines[1:]).strip()
-            elif task.target_files and i < len(task.target_files):
+            if lines:
+                for pattern in _FILEPATH_PATTERNS:
+                    m = pattern.match(lines[0].strip())
+                    if m:
+                        filepath = m.group(1).strip().lstrip("#").strip()
+                        # Remove the filepath line from the code block so it
+                        # doesn't end up in the written file.
+                        block = "\n".join(lines[1:]).strip()
+                        break
+
+            if filepath is None and task.target_files and i < len(task.target_files):
                 filepath = task.target_files[i]
-            else:
+            elif filepath is None:
                 # Default: write to output_dir with a generated name
                 ext = ".py" if task.language == "python" else f".{task.language}"
                 filepath = str(
@@ -204,6 +226,9 @@ Quality requirements:
         duration = time.monotonic() - t0
 
         if syntax_errors:
+            # Log structured metrics before returning — allows dashboards to
+            # track partial successes caused by syntax errors.
+            self._log_metrics(task.id, ResultStatus.PARTIAL.value, 0.4, duration)
             return MinionResult(
                 task_id=task.id,
                 minion_name=self.name,
@@ -226,10 +251,14 @@ Quality requirements:
             0.75, 0.5 + 0.25 * target_coverage
         )  # max 0.75 (Reviewer will score higher)
 
+        # Log structured metrics for observability dashboards.
+        final_status = ResultStatus.SUCCESS if files_written else ResultStatus.FAILED
+        self._log_metrics(task.id, final_status.value, score, duration)
+
         return MinionResult(
             task_id=task.id,
             minion_name=self.name,
-            status=ResultStatus.SUCCESS if files_written else ResultStatus.FAILED,
+            status=final_status,
             score=score,
             files_written=files_written,
             summary=f"Wrote {len(files_written)} file(s): {', '.join(files_written[:3])}",
