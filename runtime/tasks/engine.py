@@ -129,14 +129,16 @@ class TaskEngine:
         await asyncio.get_running_loop().run_in_executor(
             None, self.queue.complete_task, task_id, out
         )
-        if tokens_used or duration_seconds:
-            await asyncio.get_running_loop().run_in_executor(
-                None,
-                self.registry.complete_task,
-                task_id,
-                tokens_used,
-                duration_seconds,
-            )
+        # Always record completion metadata in the registry — even when
+        # tokens_used and duration_seconds are zero — so every completed
+        # task has a registry entry for reporting and audit.
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            self.registry.complete_task,
+            task_id,
+            tokens_used,
+            duration_seconds,
+        )
 
     async def fail_task(
         self,

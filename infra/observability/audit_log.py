@@ -80,7 +80,18 @@ _FLUSH_BUFFER_MAX: int = 50
 # Baseline migration — establishes the schema_migrations table for this DB.
 # Future schema changes should be added as version 2, 3, etc.
 AUDIT_MIGRATIONS: list[tuple[int, str]] = [
-    (1, "-- baseline"),
+    (1, (
+        "CREATE INDEX IF NOT EXISTS idx_audit_event_type "
+        "ON audit_events(event_type)"
+    )),
+    (2, (
+        "CREATE INDEX IF NOT EXISTS idx_audit_trace_id "
+        "ON audit_events(trace_id) WHERE trace_id IS NOT NULL"
+    )),
+    (3, (
+        "CREATE INDEX IF NOT EXISTS idx_audit_created_at "
+        "ON audit_events(created_at)"
+    )),
 ]
 
 

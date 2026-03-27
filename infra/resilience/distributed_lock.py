@@ -223,6 +223,7 @@ class DistributedLock:
         False : Lock had already expired or token didn't match (no-op).
         """
         if token.startswith("advisory:"):
+            logger.debug("release_lock: advisory token for '%s' — no Redis release needed", resource)
             return True  # Advisory mode — nothing to release
 
         client = await self._get_client()

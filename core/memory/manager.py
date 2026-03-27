@@ -352,6 +352,8 @@ class MemoryManager:
         Returns the stored Artifact (with its assigned id).  When dedup merges
         into an existing artifact, the *existing* artifact is returned.
         """
+        if not self._connected:
+            logger.warning("store_artifact called before connect() — call connect() first")
         sid = session_id or self.session_id
 
         # ── Semantic deduplication ────────────────────────────────────
@@ -827,8 +829,8 @@ class MemoryManager:
         redis_ok = False
         try:
             redis_ok = await self._redis.ping()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("health_check: Redis ping failed: %s", exc)
 
         duckdb_ok = False
         try:
@@ -836,28 +838,29 @@ class MemoryManager:
                 self.session_id, include_archived=True
             )
             duckdb_ok = isinstance(count, int)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("health_check: DuckDB probe failed: %s", exc)
 
         chroma_ok = False
         try:
             n = await self._chroma.count()
             chroma_ok = isinstance(n, int)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("health_check: ChromaDB probe failed: %s", exc)
 
         sqlite_ok = False
         try:
             tasks = await self._sqlite.get_tasks_by_status("pending", limit=1)
             sqlite_ok = isinstance(tasks, list)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("health_check: SQLite probe failed: %s", exc)
 
         return {
             "redis_working_memory": redis_ok,
             "duckdb_session_memory": duckdb_ok,
             "chroma_research_archive": chroma_ok,
             "sqlite_task_registry": sqlite_ok,
+            "connected": self._connected,
         }
 
     async def stats(self, session_id: Optional[str] = None) -> dict[str, Any]:

@@ -155,6 +155,8 @@ Quality requirements:
 
         if not code_blocks:
             self.logger.warning("CoderMinion: no code blocks found in LLM response")
+            duration = time.monotonic() - t0
+            self._log_metrics(task.id, ResultStatus.NEEDS_RETRY.value, 0.1, duration)
             return MinionResult(
                 task_id=task.id,
                 minion_name=self.name,
@@ -164,6 +166,7 @@ Quality requirements:
                 + response[:500],
                 summary="No code blocks found in LLM output.",
                 raw_llm_output=response,
+                duration_seconds=duration,
             )
 
         # ── 6. Write files ────────────────────────────────────────────────────

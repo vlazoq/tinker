@@ -210,10 +210,12 @@ class ArchitectureStateManager:
         if self.auto_git:
             try:
                 return self._run_git("rev-parse", "--short", "HEAD")
-            except Exception:
-                pass
-        import uuid as _uuid
-        return _uuid.uuid4().hex[:8]
+            except Exception as exc:
+                logger.warning("Could not get git commit hash: %s — using timestamp fallback", exc)
+        # Deterministic fallback: ISO timestamp prefix instead of random UUID
+        # so the hash is meaningful and reproducible for debugging.
+        import time as _time
+        return f"t{int(_time.time())}"
 
     def apply_update(self, update: dict[str, Any]) -> ArchitectureState:
         """

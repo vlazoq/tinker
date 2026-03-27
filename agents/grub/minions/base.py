@@ -382,11 +382,14 @@ class BaseMinion(ABC):
         """
         Convenience: create a FAILED MinionResult with an error message.
 
+        Also logs failure metrics so observability dashboards track early exits.
+
         Parameters
         ----------
         task   : The task that failed.
         reason : Human-readable explanation of why it failed.
         """
+        self._log_metrics(task.id, ResultStatus.FAILED.value, 0.0, 0.0)
         return MinionResult(
             task_id=task.id,
             minion_name=self.name,

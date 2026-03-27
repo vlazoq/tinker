@@ -63,6 +63,9 @@ from .parsing import extract_json, build_json_instruction
 # The main entry-point most callers will use
 from .router import ModelRouter
 
+# Vendor-agnostic provider abstraction (Ollama, OpenAI, LM Studio, vLLM)
+from .providers import build_client, PROVIDER_PRESETS, ProviderConfig
+
 # All data-types that callers need when building requests or reading responses
 from .types import (
     AgentRole,  # which AI agent is asking (ARCHITECT, CRITIC, …)
@@ -97,4 +100,7 @@ __all__ = [
     "TimeoutError",  # raised when a request takes too long
     "extract_json",  # standalone helper to pull JSON out of raw text
     "build_json_instruction",  # helper to add "respond in JSON" to a prompt
+    "build_client",  # factory: build OllamaClient for any provider
+    "PROVIDER_PRESETS",  # known provider presets (ollama, openai, lm_studio, …)
+    "ProviderConfig",  # dataclass: named provider settings
 ]

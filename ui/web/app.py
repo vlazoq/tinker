@@ -1245,9 +1245,9 @@ async def api_error_detail(trace_id: str):
         for row in trace_matches:
             if row["id"] not in seen_ids:
                 dlq_entries.append(row)
-    except Exception:
-        # trace_id column may not exist — that is fine, just skip.
-        pass
+    except Exception as exc:
+        # trace_id column may not exist in older schemas — log and skip.
+        logger.debug("DLQ trace_id lookup failed (non-fatal): %s", exc)
 
     if not dlq_entries:
         return JSONResponse(
@@ -1392,7 +1392,8 @@ async def api_fritz_recent_diffs(limit: int = 5):
                     show_proc.communicate(), timeout=15
                 )
                 diff_text = show_out.decode(errors="replace")
-            except Exception:
+            except Exception as exc:
+                logger.debug("git show fallback failed for %s: %s", sha, exc)
                 diff_text = "(diff unavailable)"
 
         # Truncate very large diffs to avoid overwhelming the UI.

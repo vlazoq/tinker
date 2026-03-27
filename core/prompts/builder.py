@@ -77,6 +77,11 @@ class PromptBuilder:
         """
         cls._global_project_instructions = instructions.strip()
 
+    @classmethod
+    def get_global_project_instructions(cls) -> str:
+        """Return the current global project instructions text."""
+        return cls._global_project_instructions
+
     # Required context keys per (role, loop_level) combination
     REQUIRED_CONTEXT: dict[str, list[str]] = {
         "architect.micro": [

@@ -223,20 +223,31 @@ class MCPClient:
         """
         all_tools: list[RemoteMCPTool] = []
         for url in self._config.client_server_urls:
-            try:
-                tools = await self._fetch_tools_from(url)
-                logger.info(
-                    "MCP client: connected to %s, imported %d tool(s)",
-                    url,
-                    len(tools),
-                )
-                all_tools.extend(tools)
-            except Exception as exc:
-                logger.warning(
-                    "MCP client: could not connect to %s (%s) — skipping",
-                    url,
-                    exc,
-                )
+            # Retry with exponential backoff (2s, 4s) before giving up.
+            max_attempts = 3
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    tools = await self._fetch_tools_from(url)
+                    logger.info(
+                        "MCP client: connected to %s, imported %d tool(s)",
+                        url,
+                        len(tools),
+                    )
+                    all_tools.extend(tools)
+                    break
+                except Exception as exc:
+                    if attempt < max_attempts:
+                        delay = 2 ** attempt
+                        logger.warning(
+                            "MCP client: attempt %d/%d to %s failed (%s) — retrying in %ds",
+                            attempt, max_attempts, url, exc, delay,
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.warning(
+                            "MCP client: could not connect to %s after %d attempts (%s) — skipping",
+                            url, max_attempts, exc,
+                        )
         return all_tools
 
     async def _fetch_tools_from(self, sse_url: str) -> list[RemoteMCPTool]:

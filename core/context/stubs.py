@@ -136,8 +136,11 @@ class StubMemoryManager(_MemoryManagerProtocol):
         self, query: str, top_k: int = 5
     ) -> list[MemoryItem]:
         await asyncio.sleep(self.latency)
-        # Shuffle scores slightly to simulate a live semantic search
-        items = _FAKE_ARTIFACTS[:top_k]
+        # Return copies with slightly shuffled scores to simulate a live
+        # semantic search without mutating the global fake data (which would
+        # make tests non-deterministic across runs).
+        import copy
+        items = copy.deepcopy(_FAKE_ARTIFACTS[:top_k])
         for item in items:
             item.score = round(min(1.0, item.score + random.uniform(-0.02, 0.02)), 3)
         return items

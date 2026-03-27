@@ -122,6 +122,8 @@ Bad test names:
         if not code_blocks:
             code_blocks = self._extract_code_blocks(response)
         if not code_blocks:
+            duration = time.monotonic() - t0
+            self._log_metrics(task.id, ResultStatus.NEEDS_RETRY.value, 0.1, duration)
             return MinionResult(
                 task_id=task.id,
                 minion_name=self.name,
@@ -129,6 +131,7 @@ Bad test names:
                 score=0.1,
                 notes="LLM produced no code blocks for tests.",
                 raw_llm_output=response,
+                duration_seconds=duration,
             )
 
         test_code = code_blocks[0]
