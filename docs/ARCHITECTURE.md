@@ -153,15 +153,29 @@ LOOP   ─────────►──────────►───�
 
 ```
 main.py
-├── orchestrator/
-│   ├── orchestrator.py     ← main loop driver
+│
+├── bootstrap/              ← Application wiring (DI root)
+│   ├── components.py       ← builds and injects all components at startup
+│   ├── enterprise_stack.py ← wires resilience, observability, DLQ, backups
+│   └── logging_config.py   ← unified logging setup (loguru + stdlib fallback)
+│
+├── config/                 ← Centralized configuration
+│   ├── settings.py         ← TinkerSettings: nested frozen dataclasses for all ~110 env vars
+│   └── validation.py       ← startup validator (checks URLs, ports, paths, conflicts)
+│
+├── runtime/orchestrator/   ← Main control loop
+│   ├── orchestrator.py     ← Orchestrator (inherits from 4 mixins below)
+│   ├── _loop_runners.py    ← LoopRunnerMixin: micro/meso/macro dispatch
+│   ├── _resilience.py      ← ResilienceMixin: DLQ replay, backpressure
+│   ├── _stagnation.py      ← StagnationMixin: stagnation detection + intervention
+│   ├── _lifecycle.py       ← LifecycleMixin: shutdown, signal handling
+│   ├── _micro_helpers.py   ← extracted micro loop utilities
 │   ├── micro_loop.py       ← per-iteration logic
 │   ├── meso_loop.py        ← subsystem synthesis
 │   ├── macro_loop.py       ← full arch snapshot
 │   ├── state.py            ← live state model (OrchestratorState)
 │   ├── config.py           ← OrchestratorConfig (all knobs)
-│   ├── stubs.py            ← in-process test doubles
-│   └── compat.py           ← coroutine_if_needed() helper
+│   └── stubs.py            ← in-process test doubles
 │
 ├── agents/                 ← AI agent roles (one file per role)
 │   ├── __init__.py         ← thin re-export shim — all existing imports still work
@@ -171,21 +185,54 @@ main.py
 │   ├── _shared.py          ← shared helpers: trace ID · prompt builders · rate limiter hooks
 │   ├── protocols.py        ← ArchitectStrategy · CriticStrategy · SynthesizerStrategy
 │   ├── agent_factory.py    ← AgentFactory.get() / register_agent() — runtime substitution
-│   └── fritz/              ← Git / GitHub / Gitea VCS integration agent
-│       ├── agent.py        ← FritzAgent (satisfies VCSAgentProtocol)
-│       ├── protocol.py     ← VCSAgentProtocol (@runtime_checkable Protocol)
-│       ├── git_ops.py      ← bare git operations
-│       ├── github_ops.py   ← GitHub PR / push helpers
-│       └── gitea_ops.py    ← Gitea PR / push helpers
+│   ├── fritz/              ← Git / GitHub / Gitea VCS integration agent
+│   │   ├── agent.py        ← FritzAgent (satisfies VCSAgentProtocol)
+│   │   ├── protocol.py     ← VCSAgentProtocol (@runtime_checkable Protocol)
+│   │   ├── git_ops.py      ← bare git operations
+│   │   ├── github_ops.py   ← GitHub PR / push helpers
+│   │   └── gitea_ops.py    ← Gitea PR / push helpers
+│   └── grub/               ← Code-generation agent with minion pipeline
+│       ├── agent.py        ← GrubAgent (minion orchestrator)
+│       └── minions/        ← Coder · Tester · Reviewer · Debugger · Refactorer
 │
-├── llm/
-│   ├── router.py           ← ModelRouter (ARCHITECT→7B, CRITIC→2-3B)
-│   ├── client.py           ← OllamaClient (HTTP + retry)
-│   ├── types.py            ← AgentRole · Machine · ModelRequest/Response
-│   ├── parsing.py          ← JSON extraction from model output
-│   └── context.py          ← context-window trimming
+├── core/                   ← Core domain logic
+│   ├── protocols.py        ← TaskEngineProtocol · ContextAssemblerProtocol
+│   ├── llm/
+│   │   ├── router.py       ← ModelRouter (ARCHITECT→7B, CRITIC→2-3B)
+│   │   ├── client.py       ← OllamaClient (HTTP + retry)
+│   │   ├── types.py        ← AgentRole · Machine · ModelRequest/Response
+│   │   └── parsing.py      ← JSON extraction from model output
+│   │
+│   ├── memory/
+│   │   ├── manager.py      ← MemoryManager (inherits from 4 mixins below)
+│   │   ├── _working_memory.py   ← WorkingMemoryMixin: Redis key/value ops
+│   │   ├── _session_memory.py   ← SessionMemoryMixin: DuckDB artifact storage
+│   │   ├── _research_archive.py ← ResearchArchiveMixin: ChromaDB semantic search
+│   │   ├── _task_registry.py    ← TaskRegistryMixin: SQLite task CRUD
+│   │   ├── storage.py      ← Redis · DuckDB · Chroma · SQLite adapters
+│   │   ├── schemas.py      ← Artifact · ResearchNote · Task · MemoryConfig
+│   │   ├── embeddings.py   ← text → vector (sentence-transformers / TF-IDF)
+│   │   └── compression.py  ← archive old artifacts when threshold hit
+│   │
+│   ├── context/
+│   │   ├── assembler.py    ← ContextAssembler (prompt dict builder)
+│   │   └── memory_adapter.py
+│   │
+│   ├── tools/
+│   │   ├── registry.py     ← ToolRegistry
+│   │   ├── base.py         ← BaseTool protocol
+│   │   ├── web_search.py   ← SearXNG
+│   │   ├── web_scraper.py  ← Playwright
+│   │   ├── artifact_writer.py ← write files to workspace
+│   │   ├── diagram_generator.py ← Mermaid / Graphviz
+│   │   └── memory_query.py ← semantic search tool
+│   │
+│   ├── models/             ← model presets and library management
+│   ├── events/             ← internal event bus
+│   ├── mcp/                ← Model Context Protocol server
+│   └── validation/         ← boundary validation (problem stmt · task · URL · path · JSON)
 │
-├── tasks/
+├── runtime/tasks/
 │   ├── engine.py           ← TaskEngine façade
 │   ├── queue.py            ← priority queue
 │   ├── registry.py         ← SQLite-backed task registry
@@ -194,33 +241,7 @@ main.py
 │   ├── resolver.py         ← dependency topological sort
 │   └── schema.py           ← Task · TaskStatus · TaskType
 │
-├── memory/
-│   ├── manager.py          ← MemoryManager (unified interface)
-│   ├── storage.py          ← Redis · DuckDB · Chroma · SQLite adapters
-│   ├── schemas.py          ← Artifact · ResearchNote · Task · MemoryConfig
-│   ├── embeddings.py       ← text → vector (sentence-transformers / TF-IDF)
-│   └── compression.py      ← archive old artifacts when threshold hit
-│
-├── context/
-│   ├── assembler.py        ← ContextAssembler (prompt dict builder)
-│   ├── memory_adapter.py   ← MemoryManager → assembler interface
-│   └── prompt_builder_adapter.py
-│
-├── tools/
-│   ├── registry.py         ← ToolRegistry
-│   ├── base.py             ← BaseTool protocol
-│   ├── web_search.py       ← SearXNG
-│   ├── web_scraper.py      ← Playwright
-│   ├── artifact_writer.py  ← write files to workspace
-│   ├── diagram_generator.py← Mermaid / Graphviz
-│   └── memory_query.py     ← semantic search tool
-│
-├── architecture/
-│   ├── manager.py          ← ArchitectureStateManager (Git-backed)
-│   ├── schema.py           ← ArchitectureState · Component · Decision
-│   └── merger.py           ← intelligent conflict-resolution merge
-│
-├── stagnation/
+├── runtime/stagnation/
 │   ├── monitor.py          ← StagnationMonitor (5 detectors)
 │   ├── detectors.py        ← Semantic · Fixation · Critique · Research · Starvation
 │   ├── models.py           ← InterventionDirective · StagnationEvent
@@ -228,7 +249,17 @@ main.py
 │   ├── config.py
 │   └── event_log.py        ← SQLite stagnation history
 │
-├── resilience/
+├── infra/architecture/
+│   ├── manager.py          ← ArchitectureStateManager (inherits from 5 mixins below)
+│   ├── _persistence.py     ← PersistenceMixin: save/load/archive snapshots
+│   ├── _git_integration.py ← GitIntegrationMixin: auto-commit to git
+│   ├── _summarizer.py      ← SummarizerMixin: LLM-powered summaries
+│   ├── _diffing.py         ← DiffingMixin: diff/rollback between versions
+│   ├── _queries.py         ← QueriesMixin: low-confidence, unresolved, etc.
+│   ├── schema.py           ← ArchitectureState · Component · Decision
+│   └── merger.py           ← intelligent conflict-resolution merge
+│
+├── infra/resilience/
 │   ├── circuit_breaker.py  ← CircuitBreaker · CircuitBreakerRegistry
 │   ├── rate_limiter.py     ← RateLimiterRegistry (token-bucket)
 │   ├── idempotency.py      ← IdempotencyCache (SHA-256 dedup)
@@ -236,57 +267,58 @@ main.py
 │   ├── dead_letter_queue.py← DeadLetterQueue (SQLite)
 │   ├── distributed_lock.py ← Redis-backed distributed lock
 │   ├── retry.py            ← retry_async() with exponential backoff
-│   ├── auto_recovery.py
 │   └── migrations.py       ← SQLite schema migration runner
 │
-├── observability/
+├── infra/observability/
 │   ├── audit_log.py        ← AuditLog (append-only SQLite)
 │   ├── tracing.py          ← Tracer (distributed trace spans)
 │   ├── sla_tracker.py      ← p50/p95/p99 per loop type
 │   ├── alerting.py         ← AlertManager (Slack / webhook)
-│   ├── structured_logging.py
+│   ├── structured_logging.py ← JSON + human-readable formatters, trace context
 │   └── otlp.py             ← OpenTelemetry export
 │
-├── grub/                   ← Code Implementation Subsystem
-│   ├── agent.py            ← GrubAgent (minion orchestrator)
-│   ├── loop.py             ← minion pipeline
-│   ├── minions/            ← Coder · Tester · Reviewer · Debugger · Refactorer
-│   └── contracts/          ← GrubTask · MinionResult
+├── infra/health/           ← /health · /ready · /status (Kubernetes probes)
+├── infra/backup/           ← BackupManager (DuckDB + SQLite + Chroma snapshots)
+├── infra/security/         ← AES-256 encryption at rest · secrets management
+├── infra/capacity/         ← CapacityPlanner (token/disk growth projections)
 │
-├── dashboard/
-│   ├── app.py              ← Textual TUI
-│   ├── panels.py           ← LoopStatus · ActiveTask · TaskQueue · HealthArch
-│   ├── subscriber.py       ← asyncio.Queue state subscriber
-│   └── orchestrator_integration.py
+├── ui/tui/                 ← Textual TUI dashboard
+├── ui/web/                 ← FastAPI web UI (9 route modules, per-IP rate limiting)
+├── ui/gradio/              ← Gradio web interface
+├── ui/streamlit/           ← Streamlit web interface
 │
-├── health/
-│   └── http_server.py      ← /health · /ready · /status  (Kubernetes probes)
+├── utils/                  ← Shared utility helpers
+│   ├── io.py               ← atomic_write · safe_json_load · safe_json_dump
+│   └── retry.py            ← retry_with_backoff (async decorator)
 │
-├── features/
-│   └── flags.py            ← FeatureFlags (runtime enable/disable)
+├── services/               ← Background services
+├── tinker_platform/        ← Feature flags · experiments · A/B testing · lineage
 │
-├── backup/
-│   └── backup_manager.py   ← BackupManager (DuckDB+SQLite+Chroma snapshots)
-│
-├── capacity/
-│   └── planner.py          ← CapacityPlanner (token/disk growth projections)
-│
-├── lineage/
-│   └── tracker.py          ← LineageTracker (artifact derivation graph)
-│
-├── experiments/
-│   ├── ab_testing.py       ← ABTestingFramework
-│   └── offline_eval.py     ← offline design quality metrics
-│
-├── security/
-│   ├── encryption.py       ← AES-256 data at rest
-│   └── secrets.py          ← secrets management
-│
-├── validation/
-│   └── input_validator.py  ← boundary validation (problem stmt · task · URL · path · JSON)
-│
-└── exceptions.py           ← TinkerError hierarchy (single source of truth)
+├── exceptions.py           ← TinkerError hierarchy (single source of truth)
+└── conftest.py             ← Shared pytest fixtures (mock_router, dummy_deps, etc.)
 ```
+
+### Mixin Architecture Pattern
+
+Several large classes are decomposed into focused **mixin modules** for readability.
+The main class inherits from all its mixins and keeps only `__init__` + core
+orchestration logic.  Example:
+
+```python
+# runtime/orchestrator/orchestrator.py
+class Orchestrator(LoopRunnerMixin, ResilienceMixin, StagnationMixin, LifecycleMixin):
+    def __init__(self, ...): ...
+    async def run(self): ...
+
+# Each mixin lives in its own file:
+#   _loop_runners.py  → LoopRunnerMixin
+#   _resilience.py    → ResilienceMixin
+#   _stagnation.py    → StagnationMixin
+#   _lifecycle.py     → LifecycleMixin
+```
+
+The same pattern is used by `MemoryManager` (4 mixins) and
+`ArchitectureStateManager` (5 mixins).
 
 ---
 
