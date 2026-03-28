@@ -51,6 +51,9 @@ from agents._shared import (
     _build_architect_prompts,
     _build_critic_prompts,
     _build_synthesizer_prompts,
+    _get_prompt_builder_cls,
+    _get_retry_async,
+    _get_rate_limiter_registry,
 )
 
 __all__ = [
@@ -72,4 +75,7 @@ __all__ = [
     "_build_architect_prompts",
     "_build_critic_prompts",
     "_build_synthesizer_prompts",
+    "_get_prompt_builder_cls",
+    "_get_retry_async",
+    "_get_rate_limiter_registry",
 ]

@@ -9,8 +9,12 @@
 #   make deps-metrics   regenerate requirements/metrics.txt (with SHA-256 hashes)
 #   make deps-all       regenerate all three lock files
 #   make test           run the full test suite
-#   make lint           run ruff linter
-#   make fmt            auto-format with ruff
+#   make test-fast      run tests excluding slow/integration/e2e markers
+#   make lint           run ruff linter + format check
+#   make format         auto-format with ruff
+#   make fmt            alias for format
+#   make typecheck      run mypy static type checking
+#   make check          run lint + typecheck + test-fast (CI-friendly)
 #   make audit          scan all lock files for CVEs via pip-audit
 #   make audit-fix      automatically upgrade vulnerable packages
 #   make clean          remove __pycache__ and .pytest_cache trees
@@ -33,7 +37,7 @@
 # without updating *.txt will fail the dep-freshness job.
 # =============================================================================
 
-.PHONY: install install-dev deps deps-dev deps-all test lint fmt clean audit audit-fix
+.PHONY: install install-dev deps deps-dev deps-all test test-fast lint format fmt typecheck check clean audit audit-fix
 
 # ---------------------------------------------------------------------------
 # Installation
@@ -92,7 +96,10 @@ deps-all: deps deps-dev deps-metrics
 # ---------------------------------------------------------------------------
 
 test:
-	pytest -x -q
+	pytest
+
+test-fast:
+	pytest -m "not slow and not integration and not e2e"
 
 test-v:
 	pytest -x -v
@@ -103,9 +110,21 @@ test-v:
 
 lint:
 	ruff check .
+	ruff format --check .
 
-fmt:
+format:
 	ruff format .
+
+fmt: format
+
+typecheck:
+	mypy --ignore-missing-imports .
+
+# ---------------------------------------------------------------------------
+# CI-friendly aggregate target
+# ---------------------------------------------------------------------------
+
+check: lint typecheck test-fast
 
 # ---------------------------------------------------------------------------
 # Housekeeping
@@ -114,6 +133,9 @@ fmt:
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .mypy_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null || true
+	rm -rf htmlcov .coverage
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	@echo "✓ cleaned"
 
