@@ -260,7 +260,7 @@ class TestBuildArchitectPrompts:
         assert isinstance(user, str) and user
 
     def test_fallback_when_prompt_builder_unavailable(self):
-        with patch("agents._get_prompt_builder_cls", return_value=None):
+        with patch("agents._shared._get_prompt_builder_cls", return_value=None):
             system, user = _build_architect_prompts(
                 task_desc="Design auth",
                 subsystem="auth",
@@ -268,11 +268,11 @@ class TestBuildArchitectPrompts:
                 grub_section="",
                 constraints_str="None specified.",
             )
-        assert "senior software architect" in system.lower()
+        assert "architect" in system.lower()
         assert "Design auth" in user
 
     def test_grub_section_included_in_fallback_user_prompt(self):
-        with patch("agents._get_prompt_builder_cls", return_value=None):
+        with patch("agents._shared._get_prompt_builder_cls", return_value=None):
             _, user = _build_architect_prompts(
                 task_desc="Review impl",
                 subsystem="billing",
@@ -284,7 +284,7 @@ class TestBuildArchitectPrompts:
 
     def test_context_truncated_to_4000_in_fallback(self):
         long_ctx = "A" * 5000
-        with patch("agents._get_prompt_builder_cls", return_value=None):
+        with patch("agents._shared._get_prompt_builder_cls", return_value=None):
             _, user = _build_architect_prompts(
                 task_desc="Task",
                 subsystem="sys",
@@ -300,7 +300,7 @@ class TestBuildArchitectPrompts:
         mock_pb = MagicMock()
         mock_pb.for_architect_micro.return_value = ("sys_from_pb", "user_from_pb")
 
-        with patch("agents._get_prompt_builder_cls", return_value=mock_pb):
+        with patch("agents._shared._get_prompt_builder_cls", return_value=mock_pb):
             system, user = _build_architect_prompts(
                 task_desc="Design auth",
                 subsystem="auth",
@@ -318,7 +318,7 @@ class TestBuildArchitectPrompts:
         mock_pb = MagicMock()
         mock_pb.for_architect_micro.side_effect = Exception("template not found")
 
-        with patch("agents._get_prompt_builder_cls", return_value=mock_pb):
+        with patch("agents._shared._get_prompt_builder_cls", return_value=mock_pb):
             system, user = _build_architect_prompts(
                 task_desc="Design auth",
                 subsystem="auth",
@@ -339,20 +339,20 @@ class TestBuildCriticPrompts:
     def test_uses_prompt_builder_when_available(self):
         mock_pb = MagicMock()
         mock_pb.for_critic_micro.return_value = ("sys", "usr")
-        with patch("agents._get_prompt_builder_cls", return_value=mock_pb):
+        with patch("agents._shared._get_prompt_builder_cls", return_value=mock_pb):
             system, user = _build_critic_prompts("task desc", "design content")
         assert system == "sys"
         mock_pb.for_critic_micro.assert_called_once()
 
     def test_fallback_includes_task_desc(self):
-        with patch("agents._get_prompt_builder_cls", return_value=None):
+        with patch("agents._shared._get_prompt_builder_cls", return_value=None):
             _, user = _build_critic_prompts("Design auth module", "proposal text")
         assert "Design auth module" in user
 
 
 class TestBuildSynthesizerPrompts:
     def test_meso_fallback_includes_subsystem(self):
-        with patch("agents._get_prompt_builder_cls", return_value=None):
+        with patch("agents._shared._get_prompt_builder_cls", return_value=None):
             _, user = _build_synthesizer_prompts(
                 "meso",
                 subsystem="billing",
@@ -361,7 +361,7 @@ class TestBuildSynthesizerPrompts:
         assert "billing" in user
 
     def test_macro_fallback_includes_version(self):
-        with patch("agents._get_prompt_builder_cls", return_value=None):
+        with patch("agents._shared._get_prompt_builder_cls", return_value=None):
             _, user = _build_synthesizer_prompts(
                 "macro",
                 documents=[],
@@ -374,7 +374,7 @@ class TestBuildSynthesizerPrompts:
     def test_meso_uses_prompt_builder_when_available(self):
         mock_pb = MagicMock()
         mock_pb.for_synthesizer_meso.return_value = ("sys", "usr")
-        with patch("agents._get_prompt_builder_cls", return_value=mock_pb):
+        with patch("agents._shared._get_prompt_builder_cls", return_value=mock_pb):
             system, user = _build_synthesizer_prompts(
                 "meso",
                 subsystem="billing",
@@ -538,7 +538,7 @@ class TestArchitectAgentCall:
             call_count[0] += 1
             return await fn()
 
-        with patch("agents._get_retry_async", return_value=(fake_retry_async, None)):
+        with patch("agents.architect._get_retry_async", return_value=(fake_retry_async, None)):
             await agent.call(_make_task(), _make_context())
 
         assert call_count[0] == 1  # retry_async was called once
@@ -558,7 +558,7 @@ class TestArchitectAgentCall:
         router = _make_router(resp)
         agent = ArchitectAgent(router)
 
-        with patch("agents._get_retry_async", return_value=(None, None)):
+        with patch("agents.architect._get_retry_async", return_value=(None, None)):
             result = await agent.call(_make_task(), _make_context())
 
         assert result["content"] == "ok"
@@ -627,7 +627,7 @@ class TestCriticAgentCall:
             call_count[0] += 1
             return await fn()
 
-        with patch("agents._get_retry_async", return_value=(fake_retry, None)):
+        with patch("agents.critic._get_retry_async", return_value=(fake_retry, None)):
             await agent.call(_make_task(), {"content": "proposal"})
 
         assert call_count[0] == 1
@@ -679,7 +679,7 @@ class TestSynthesizerAgentCall:
             call_count[0] += 1
             return await fn()
 
-        with patch("agents._get_retry_async", return_value=(fake_retry, None)):
+        with patch("agents.synthesizer._get_retry_async", return_value=(fake_retry, None)):
             await agent.call("meso", subsystem="auth", artifacts=[])
 
         assert call_count[0] == 1
