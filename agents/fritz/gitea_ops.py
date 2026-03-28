@@ -110,10 +110,9 @@ class FritzGitea:
         return resp.json()
 
     async def _patch(self, path: str, data: dict, operation: str = "patch") -> Any:
-        async with self._client() as client:
-            resp = await client.patch(self._url(path), json=data)
-            resp.raise_for_status()
-            return resp.json()
+        resp = await self._request("PATCH", path, operation, json=data)
+        resp.raise_for_status()
+        return resp.json()
 
     async def _delete(self, path: str, operation: str = "delete") -> bool:
         resp = await self._request("DELETE", path, operation)
@@ -166,6 +165,56 @@ class FritzGitea:
             logger.error("gitea create_pr failed: %s", exc)
             return FritzRemoteResult(ok=False, operation="create_pr", error=str(exc))
 
+    async def get_pr(self, pr_number: int) -> FritzRemoteResult:
+        """Fetch details for a single pull request."""
+        try:
+            data = await self._get(
+                f"/repos/{self._owner}/{self._repo}/pulls/{pr_number}",
+                operation="get_pr",
+            )
+            return FritzRemoteResult(ok=True, operation="get_pr", data=data)
+        except Exception as exc:
+            return FritzRemoteResult(ok=False, operation="get_pr", error=str(exc))
+
+    async def list_prs(
+        self,
+        state: str = "open",
+        sort: str = "newest",
+        limit: int = 30,
+        page: int = 1,
+        labels: list[str] | None = None,
+        milestone: str | None = None,
+    ) -> FritzRemoteResult:
+        """
+        List pull requests with filtering.
+        state: open | closed | all
+        sort: newest | oldest | recentupdate | leastupdate
+        """
+        params: dict[str, Any] = {
+            "state": state,
+            "sort": sort,
+            "limit": limit,
+            "page": page,
+        }
+        if labels:
+            params["labels"] = ",".join(labels)
+        if milestone:
+            params["milestone"] = milestone
+        try:
+            resp = await self._request(
+                "GET",
+                f"/repos/{self._owner}/{self._repo}/pulls",
+                "list_prs",
+                params=params,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return FritzRemoteResult(
+                ok=True, operation="list_prs", data={"pull_requests": data, "total": len(data)}
+            )
+        except Exception as exc:
+            return FritzRemoteResult(ok=False, operation="list_prs", error=str(exc))
+
     async def merge_pr(
         self,
         pr_number: int,
@@ -188,13 +237,14 @@ class FritzGitea:
         if commit_title:
             payload["MergeMessageField"] = commit_title
         try:
-            async with self._client() as client:
-                resp = await client.post(
-                    self._url(f"/repos/{self._owner}/{self._repo}/pulls/{pr_number}/merge"),
-                    json=payload,
-                )
-                ok = resp.status_code in (200, 204)
-                return FritzRemoteResult(ok=ok, operation="merge_pr")
+            resp = await self._request(
+                "POST",
+                f"/repos/{self._owner}/{self._repo}/pulls/{pr_number}/merge",
+                "merge_pr",
+                json=payload,
+            )
+            ok = resp.status_code in (200, 204)
+            return FritzRemoteResult(ok=ok, operation="merge_pr")
         except Exception as exc:
             logger.error("gitea merge_pr #%d failed: %s", pr_number, exc)
             return FritzRemoteResult(ok=False, operation="merge_pr", error=str(exc))
@@ -263,15 +313,15 @@ class FritzGitea:
         Key fields: enable_push, required_approvals, enable_status_check, etc.
         """
         try:
-            # Gitea uses PUT to create/replace protection rules
-            async with self._client() as client:
-                resp = await client.post(
-                    self._url(f"/repos/{self._owner}/{self._repo}/branch_protections"),
-                    json={"branch_name": branch, **rules},
-                )
-                ok = resp.status_code in (200, 201)
-                data = resp.json() if ok else None
-                return FritzRemoteResult(ok=ok, operation="set_branch_protection", data=data)
+            resp = await self._request(
+                "POST",
+                f"/repos/{self._owner}/{self._repo}/branch_protections",
+                "set_branch_protection",
+                json={"branch_name": branch, **rules},
+            )
+            ok = resp.status_code in (200, 201)
+            data = resp.json() if ok else None
+            return FritzRemoteResult(ok=ok, operation="set_branch_protection", data=data)
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="set_branch_protection", error=str(exc))
 
@@ -315,15 +365,14 @@ class FritzGitea:
         permission: read | write | admin
         """
         try:
-            async with self._client() as client:
-                resp = await client.put(
-                    self._url(
-                        f"/repos/{self._owner}/{self._repo}/collaborators/{username}"
-                    ),
-                    json={"permission": permission},
-                )
-                ok = resp.status_code in (200, 204)
-                return FritzRemoteResult(ok=ok, operation="add_collaborator")
+            resp = await self._request(
+                "PUT",
+                f"/repos/{self._owner}/{self._repo}/collaborators/{username}",
+                "add_collaborator",
+                json={"permission": permission},
+            )
+            ok = resp.status_code in (200, 204)
+            return FritzRemoteResult(ok=ok, operation="add_collaborator")
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="add_collaborator", error=str(exc))
 
@@ -533,3 +582,20 @@ class FritzGitea:
             return FritzRemoteResult(ok=True, operation="get_repo", data=data)
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="get_repo", error=str(exc))
+
+    async def update_repo_settings(self, **settings: Any) -> FritzRemoteResult:
+        """
+        Update repository settings.
+        Accepts keyword arguments matching the Gitea EditRepo API fields:
+        name, description, private, has_issues, has_wiki, has_pull_requests,
+        default_branch, allow_squash_merge, allow_rebase, etc.
+        """
+        try:
+            data = await self._patch(
+                f"/repos/{self._owner}/{self._repo}",
+                settings,
+                operation="update_repo_settings",
+            )
+            return FritzRemoteResult(ok=True, operation="update_repo_settings", data=data)
+        except Exception as exc:
+            return FritzRemoteResult(ok=False, operation="update_repo_settings", error=str(exc))

@@ -268,6 +268,47 @@ class FritzGitHub:
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="get_pr", error=str(exc))
 
+    async def list_prs(
+        self,
+        state: str = "open",
+        sort: str = "created",
+        direction: str = "desc",
+        per_page: int = 30,
+        page: int = 1,
+        head: str | None = None,
+        base: str | None = None,
+    ) -> FritzRemoteResult:
+        """
+        List pull requests with filtering.
+        state: open | closed | all
+        sort: created | updated | popularity | long-running
+        """
+        params: dict[str, Any] = {
+            "state": state,
+            "sort": sort,
+            "direction": direction,
+            "per_page": per_page,
+            "page": page,
+        }
+        if head:
+            params["head"] = head
+        if base:
+            params["base"] = base
+        try:
+            resp = await self._request(
+                "GET",
+                f"/repos/{self._owner}/{self._repo}/pulls",
+                "list_prs",
+                params=params,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return FritzRemoteResult(
+                ok=True, operation="list_prs", data={"pull_requests": data, "total": len(data)}
+            )
+        except Exception as exc:
+            return FritzRemoteResult(ok=False, operation="list_prs", error=str(exc))
+
     # ── Branches ──────────────────────────────────────────────────────────────
 
     async def create_branch(
