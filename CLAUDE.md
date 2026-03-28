@@ -21,42 +21,70 @@ No paid APIs, no cloud, no API keys.  Designed for homelab hardware (i7-7700k,
 ## Project Layout — Key Directories
 
 ```
-agents/             One file per agent role + shared helpers + protocols
-  architect.py      ArchitectAgent
-  critic.py         CriticAgent
-  synthesizer.py    SynthesizerAgent
-  _shared.py        Shared: trace ID, prompt builders, lazy loaders
-  protocols.py      @runtime_checkable Protocols for the three roles
-  agent_factory.py  AgentFactory — maps AgentRole enum → class
-  fritz/            Git/GitHub/Gitea VCS integration
-    agent.py        FritzAgent (commit, push, PR creation)
-    protocol.py     VCSAgentProtocol
+agents/               One file per agent role + shared helpers + protocols
+  architect.py        ArchitectAgent
+  critic.py           CriticAgent
+  synthesizer.py      SynthesizerAgent
+  _shared.py          Shared: trace ID, prompt builders, lazy loaders
+  protocols.py        @runtime_checkable Protocols for the three roles
+  agent_factory.py    AgentFactory — maps AgentRole enum → class
+  fritz/              Git/GitHub/Gitea VCS integration
+    agent.py          FritzAgent (commit, push, PR creation)
+    protocol.py       VCSAgentProtocol
+  grub/               Code-generation agent with minion pipeline
 
-bootstrap/          Application wiring (DI root)
-  components.py     Builds and injects all components at startup
+bootstrap/            Application wiring (DI root)
+  components.py       Builds and injects all components at startup
+  enterprise_stack.py Wires resilience, observability, DLQ, backups
+  logging_config.py   Unified logging setup (loguru + stdlib fallback)
 
-core/               Cross-cutting infrastructure
-  llm/              Model client, router, types
-  tools/            Web search, scraper, artifact writer, diagram generator
-  prompts/          Prompt templates and builder
+config/               Centralized configuration
+  settings.py         TinkerSettings — nested frozen dataclasses for all ~110 env vars
+  validation.py       Startup validator (checks URLs, ports, paths, conflicts)
 
-infra/              Infrastructure services
-  resilience/       Circuit breaker, rate limiter, retry, idempotency
+core/                 Core domain logic
+  protocols.py        TaskEngineProtocol, ContextAssemblerProtocol
+  llm/                Model client, router, types
+  memory/             MemoryManager (4 mixins) + storage backends + schemas
+  context/            ContextAssembler — builds prompt dicts
+  tools/              Web search, scraper, artifact writer, diagram generator
+  prompts/            Prompt templates and builder
+  models/             Model presets and library management
+  events/             Internal event bus
+  mcp/                Model Context Protocol server
+  validation/         Input validation at system boundaries
 
-orchestrator/       The three reasoning loops
-  micro_loop.py
-  meso_loop.py
-  macro_loop.py
+runtime/              Execution engine
+  orchestrator/       Orchestrator (4 mixins) + micro/meso/macro loops
+  tasks/              TaskEngine, queue, registry, generator, scorer
+  stagnation/         5 detectors + intervention directives
+
+infra/                Infrastructure services
+  architecture/       ArchitectureStateManager (5 mixins) + schema + merger
+  resilience/         Circuit breaker, rate limiter, retry, idempotency
+  observability/      Audit log, tracing, SLA tracker, alerting, OTLP
+  health/             HTTP health probes (/health, /ready, /status)
+  backup/             Periodic backup manager
+  security/           Encryption at rest, secrets management
 
 ui/
-  tui/              Textual TUI dashboard
-  web/              FastAPI web UI (with per-IP rate limiting)
+  tui/                Textual TUI dashboard
+  web/                FastAPI web UI (9 route modules, per-IP rate limiting)
+  gradio/             Gradio web interface
+  streamlit/          Streamlit web interface
 
-docs/               Reference docs and step-by-step tutorials
-  ARCHITECTURE.md   Module dependency graph + data flow
-  Overview.md       Beginner-friendly codebase tour
-  SETUP.md          Cross-platform install guide
-  tutorial/         Numbered chapters (00-introduction through 19-new-features)
+utils/                Shared utility helpers
+  io.py               atomic_write, safe_json_load, safe_json_dump
+  retry.py            retry_with_backoff (async decorator with exp. backoff)
+
+services/             Background services
+tinker_platform/      Platform features (feature flags, experiments, A/B testing)
+
+docs/                 Reference docs and step-by-step tutorials
+  ARCHITECTURE.md     Module dependency graph + data flow
+  Overview.md         Beginner-friendly codebase tour
+  SETUP.md            Cross-platform install guide
+  tutorial/           Numbered chapters (00-introduction through 21-config)
 ```
 
 ---
@@ -157,6 +185,9 @@ full list of environment variables.
 | Set up the project | `docs/SETUP.md` |
 | Learn step by step | `docs/tutorial/00-introduction.md` |
 | Add a new agent | `agents/protocols.py` + `agents/agent_factory.py` |
-| Modify the micro loop | `orchestrator/micro_loop.py` |
+| Modify the micro loop | `runtime/orchestrator/micro_loop.py` |
 | Add a new tool | `core/tools/base.py` + `core/tools/registry.py` |
 | Change rate limiting | `infra/resilience/rate_limiter.py` |
+| Understand config system | `config/settings.py` + `config/validation.py` |
+| Use utility helpers | `utils/io.py` + `utils/retry.py` |
+| Add a new Protocol | `core/protocols.py` + `agents/protocols.py` |

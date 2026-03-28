@@ -1,6 +1,37 @@
-# tinker
+# Tinker
 
-# Tinker: High-Level Architecture Design
+**Fully local, zero-cost, autonomous AI architecture research engine.**
+
+Tinker runs three nested reasoning loops (Micro → Meso → Macro) using two local
+Ollama models. No paid APIs, no cloud, no API keys. Designed for homelab hardware.
+
+## Quick Start
+
+```bash
+cp .env.example .env           # configure environment variables
+ollama pull qwen3:7b           # primary model
+ollama pull phi3:mini           # critic model
+pip install -r requirements/base.txt
+python main.py --problem "Design a distributed job queue"
+```
+
+See [docs/SETUP.md](docs/SETUP.md) for full installation instructions.
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | **Start here** — how to run, monitor, configure, and read results |
+| [docs/Overview.md](docs/Overview.md) | Beginner-friendly codebase tour |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module dependency graph + data flow diagrams |
+| [docs/SETUP.md](docs/SETUP.md) | Cross-platform installation guide |
+| [docs/tutorial/](docs/tutorial/) | 21 step-by-step tutorial chapters |
+| [CLAUDE.md](CLAUDE.md) | Quick-start for Claude Code contributors |
+| [.env.example](.env.example) | All ~110 environment variables documented |
+
+---
+
+# Architecture Design
 
 ## System Overview
 

@@ -40,11 +40,11 @@ Tinker runs three nested loops, like a clock with three hands:
 tinker/
 │
 ├── main.py              ← Start here. Wires everything together and runs Tinker.
-├── pyproject.toml       ← Python package config and dependency list.
-├── .env.example         ← Template for your environment variables (copy → .env).
-├── Overview.md          ← This file.
-├── INSTRUCTIONS.md      ← How to install and run everything.
+├── pyproject.toml       ← Python package config, dependency list, ruff & mypy settings.
+├── Makefile             ← lint, format, typecheck, test, clean targets.
+├── .env.example         ← Template for all ~110 environment variables (copy → .env).
 ├── CLAUDE.md            ← Quick-start for Claude Code users contributing to Tinker.
+├── exceptions.py        ← TinkerError hierarchy (single source of truth for all errors).
 │
 ├── agents/              ← The AI agent roles (one file per responsibility)
 │   ├── __init__.py      ← Thin re-export shim — existing imports work unchanged.
@@ -54,90 +54,134 @@ tinker/
 │   ├── _shared.py       ← Shared helpers: trace ID, prompt builders, rate limiter hooks.
 │   ├── protocols.py     ← ArchitectStrategy, CriticStrategy, SynthesizerStrategy.
 │   ├── agent_factory.py ← AgentFactory: maps AgentRole → class, supports swapping.
-│   └── fritz/           ← Git/GitHub/Gitea integration agent (like Claude Code for git).
-│       ├── agent.py     ← FritzAgent: commit, push, create PRs.
-│       └── protocol.py  ← VCSAgentProtocol: the interface Fritz satisfies.
+│   ├── fritz/           ← Git/GitHub/Gitea integration agent.
+│   │   ├── agent.py     ← FritzAgent: commit, push, create PRs.
+│   │   └── protocol.py  ← VCSAgentProtocol: the interface Fritz satisfies.
+│   └── grub/            ← Code-generation agent with minion pipeline.
+│       ├── agent.py     ← GrubAgent: orchestrates coding minions.
+│       └── minions/     ← Coder, Tester, Reviewer, Debugger, Refactorer.
 │
-├── llm/                 ← Talks to the AI models (Ollama)
-│   ├── client.py        ← Low-level HTTP client for one Ollama server
-│   ├── router.py        ← Routes requests to the right server (main vs secondary)
-│   ├── types.py         ← Data types: MachineConfig, Message, AgentRole, etc.
-│   ├── context.py       ← Manages conversation history / token budgets
-│   └── parsing.py       ← Extracts clean JSON from messy AI responses
+├── bootstrap/           ← Application wiring (dependency injection root)
+│   ├── components.py    ← Builds and injects all components at startup.
+│   ├── enterprise_stack.py ← Wires resilience, observability, DLQ, backups.
+│   └── logging_config.py   ← Unified logging setup (loguru + stdlib fallback).
 │
-├── memory/              ← Stores and retrieves everything Tinker learns
-│   ├── manager.py       ← Single entry point for all storage operations
-│   ├── storage.py       ← Four storage backends in one place (Redis/DuckDB/Chroma/SQLite)
-│   ├── schemas.py       ← Data shapes: Artifact, ResearchNote, Task, MemoryConfig
-│   ├── embeddings.py    ← Converts text → numbers for semantic search
-│   └── compression.py   ← Shrinks old artifacts when memory gets too large
+├── config/              ← Centralized configuration (NEW)
+│   ├── settings.py      ← TinkerSettings: nested frozen dataclasses for all env vars.
+│   └── validation.py    ← Startup validator (checks URLs, ports, paths, conflicts).
 │
-├── tools/               ← Actions the AI can take (search, scrape, write, draw)
-│   ├── registry.py      ← Manages all tools; the AI calls tools through here
-│   ├── base.py          ← The base class every tool inherits from
-│   ├── web_search.py    ← Search the web via a local SearXNG instance
-│   ├── web_scraper.py   ← Read a webpage's content (Playwright + trafilatura)
-│   ├── memory_query.py  ← Search Tinker's own research archive
-│   ├── artifact_writer.py  ← Write results to structured files on disk
-│   └── diagram_generator.py ← Generate architecture diagrams (Graphviz)
+├── core/                ← Core domain logic
+│   ├── protocols.py     ← TaskEngineProtocol, ContextAssemblerProtocol.
+│   ├── llm/             ← Talks to the AI models (Ollama)
+│   │   ├── client.py    ← Low-level HTTP client for one Ollama server.
+│   │   ├── router.py    ← Routes requests to the right model (7B vs 2-3B).
+│   │   ├── types.py     ← Data types: MachineConfig, Message, AgentRole, etc.
+│   │   └── parsing.py   ← Extracts clean JSON from messy AI responses.
+│   ├── memory/          ← Stores and retrieves everything Tinker learns
+│   │   ├── manager.py   ← MemoryManager (unified interface, inherits from 4 mixins).
+│   │   ├── _working_memory.py   ← WorkingMemoryMixin: Redis key/value ops.
+│   │   ├── _session_memory.py   ← SessionMemoryMixin: DuckDB artifact storage.
+│   │   ├── _research_archive.py ← ResearchArchiveMixin: ChromaDB semantic search.
+│   │   ├── _task_registry.py    ← TaskRegistryMixin: SQLite task CRUD.
+│   │   ├── storage.py   ← Four storage backends (Redis/DuckDB/Chroma/SQLite).
+│   │   ├── schemas.py   ← Data shapes: Artifact, ResearchNote, Task, MemoryConfig.
+│   │   ├── embeddings.py← Converts text → vectors for semantic search.
+│   │   └── compression.py ← Shrinks old artifacts when memory grows too large.
+│   ├── context/         ← Builds the prompt context for each AI call
+│   │   ├── assembler.py ← Fetches from memory, fits within token budget, builds prompt.
+│   │   └── stubs.py     ← Fake memory objects used in tests.
+│   ├── tools/           ← Actions the AI can take (search, scrape, write, draw)
+│   │   ├── registry.py  ← Manages all tools; the AI calls tools through here.
+│   │   ├── base.py      ← The base class every tool inherits from.
+│   │   ├── web_search.py← Search the web via a local SearXNG instance.
+│   │   ├── web_scraper.py ← Read a webpage's content (Playwright + trafilatura).
+│   │   ├── memory_query.py ← Search Tinker's own research archive.
+│   │   ├── artifact_writer.py ← Write results to structured files on disk.
+│   │   └── diagram_generator.py ← Generate architecture diagrams (Graphviz).
+│   ├── prompts/         ← Prompt templates for the AI agents
+│   │   ├── builder.py   ← Assembles complete prompts from parts.
+│   │   ├── templates.py ← The actual text templates for each agent/loop level.
+│   │   ├── schemas.py   ← JSON output schemas the AI must follow.
+│   │   ├── variants.py  ← Personality tweaks (harder critic, socratic architect, etc.).
+│   │   └── validator.py ← Checks that AI output matches the expected schema.
+│   ├── models/          ← Model presets and library management
+│   ├── events/          ← Internal event bus
+│   ├── mcp/             ← Model Context Protocol server
+│   └── validation/      ← Input validation at system boundaries
 │
-├── prompts/             ← Prompt templates for the AI agents
-│   ├── builder.py       ← Assembles complete prompts from parts
-│   ├── templates.py     ← The actual text templates for each agent/loop level
-│   ├── schemas.py       ← JSON output schemas the AI must follow
-│   ├── variants.py      ← Personality tweaks (harder critic, socratic architect, etc.)
-│   ├── validator.py     ← Checks that AI output matches the expected schema
-│   └── examples.py      ← Few-shot examples injected into prompts
+├── runtime/             ← Execution engine
+│   ├── orchestrator/    ← The main control loop that drives everything
+│   │   ├── orchestrator.py  ← Orchestrator class (inherits from 4 mixins).
+│   │   ├── _loop_runners.py ← LoopRunnerMixin: micro/meso/macro dispatch.
+│   │   ├── _resilience.py   ← ResilienceMixin: DLQ replay, backpressure.
+│   │   ├── _stagnation.py   ← StagnationMixin: stagnation detection + intervention.
+│   │   ├── _lifecycle.py    ← LifecycleMixin: shutdown, signal handling.
+│   │   ├── _micro_helpers.py← Extracted micro loop utilities.
+│   │   ├── micro_loop.py    ← One complete micro-loop iteration.
+│   │   ├── meso_loop.py     ← Meso synthesis pass.
+│   │   ├── macro_loop.py    ← Macro snapshot pass.
+│   │   ├── config.py        ← All tunable settings (timeouts, intervals, etc.).
+│   │   ├── state.py         ← Live state snapshot (loop counts, current task, etc.).
+│   │   └── stubs.py         ← Fake components for testing without real AI.
+│   ├── tasks/           ← Work queue: what should Tinker think about next?
+│   │   ├── engine.py    ← Façade: one simple interface over queue, registry, generator.
+│   │   ├── queue.py     ← Priority queue with exploration randomisation.
+│   │   ├── registry.py  ← SQLite database of all tasks ever created.
+│   │   ├── generator.py ← Parses Architect output to create new child tasks.
+│   │   ├── scorer.py    ← 5-factor scoring algorithm (confidence gap, recency, etc.).
+│   │   ├── resolver.py  ← Dependency resolution with Kahn's topological sort.
+│   │   └── schema.py    ← The Task data class with all its fields.
+│   └── stagnation/      ← Detects when Tinker gets "stuck" and intervenes
+│       ├── monitor.py   ← Runs all detectors and decides if intervention is needed.
+│       ├── detectors.py ← 5 detectors: repetition, fixation, critique collapse, etc.
+│       ├── embeddings.py← Text similarity (TF-IDF fallback, or Ollama embeddings).
+│       ├── config.py    ← Thresholds for each detector.
+│       ├── models.py    ← Data types: StagnationEvent, InterventionDirective.
+│       └── event_log.py ← SQLite log of all stagnation events.
 │
-├── tasks/               ← Work queue: what should Tinker think about next?
-│   ├── engine.py        ← Façade: one simple interface over the queue, registry, generator
-│   ├── queue.py         ← Priority queue with exploration randomisation
-│   ├── registry.py      ← SQLite database of all tasks ever created
-│   ├── generator.py     ← Parses Architect output to create new child tasks
-│   ├── scorer.py        ← 5-factor scoring algorithm (confidence gap, recency, etc.)
-│   ├── resolver.py      ← Dependency resolution with Kahn's topological sort
-│   └── schema.py        ← The Task data class with all its fields
+├── infra/               ← Infrastructure services
+│   ├── architecture/    ← Tracks the growing architecture design document
+│   │   ├── manager.py   ← ArchitectureStateManager (inherits from 5 mixins).
+│   │   ├── _persistence.py    ← PersistenceMixin: save/load/archive snapshots.
+│   │   ├── _git_integration.py← GitIntegrationMixin: auto-commit to git.
+│   │   ├── _summarizer.py     ← SummarizerMixin: LLM-powered summaries.
+│   │   ├── _diffing.py        ← DiffingMixin: diff/rollback between versions.
+│   │   ├── _queries.py        ← QueriesMixin: low-confidence, unresolved, etc.
+│   │   ├── schema.py   ← The ArchitectureState data model.
+│   │   └── merger.py    ← Merges new AI output into the existing design.
+│   ├── resilience/      ← Circuit breaker, rate limiter, retry, idempotency.
+│   ├── observability/   ← Audit log, tracing, SLA tracker, alerting, OTLP.
+│   ├── health/          ← HTTP health probes (/health, /ready, /status).
+│   ├── backup/          ← Periodic backup manager (DuckDB + SQLite + Chroma).
+│   ├── security/        ← Encryption at rest, secrets management.
+│   └── capacity/        ← Token/disk growth projections.
 │
-├── context/             ← Builds the prompt context for each AI call
-│   ├── assembler.py     ← Fetches from memory, fits within token budget, builds prompt
-│   └── stubs.py         ← Fake memory objects used in tests
+├── ui/                  ← User interfaces
+│   ├── tui/             ← Textual TUI dashboard (terminal)
+│   ├── web/             ← FastAPI web UI (with per-IP rate limiting)
+│   │   ├── app.py       ← Composition root: middleware, router includes, SPA shell.
+│   │   └── routes/      ← 9 route modules (health, config, tasks, fritz, models, etc.).
+│   ├── gradio/          ← Gradio web interface
+│   └── streamlit/       ← Streamlit web interface
 │
-├── orchestrator/        ← The main control loop that drives everything
-│   ├── orchestrator.py  ← The Orchestrator class: starts loops, handles shutdown
-│   ├── micro_loop.py    ← One complete micro-loop iteration
-│   ├── meso_loop.py     ← Meso synthesis pass
-│   ├── macro_loop.py    ← Macro snapshot pass
-│   ├── config.py        ← All tunable settings (timeouts, intervals, etc.)
-│   ├── state.py         ← Live state snapshot (loop counts, current task, etc.)
-│   └── stubs.py         ← Fake components for testing without real AI
+├── utils/               ← Shared utility helpers (NEW)
+│   ├── io.py            ← atomic_write, safe_json_load, safe_json_dump.
+│   └── retry.py         ← retry_with_backoff (async decorator with exp. backoff).
 │
-├── architecture/        ← Tracks the growing architecture design document
-│   ├── manager.py       ← Stores/retrieves/merges architecture snapshots
-│   ├── schema.py        ← The ArchitectureState data model
-│   └── merger.py        ← Merges new AI output into the existing design
-│
-├── stagnation/          ← Detects when Tinker gets "stuck" and intervenes
-│   ├── monitor.py       ← Runs all detectors and decides if intervention is needed
-│   ├── detectors.py     ← 5 detectors: repetition, fixation, critique collapse, etc.
-│   ├── embeddings.py    ← Text similarity (TF-IDF fallback, or Ollama embeddings)
-│   ├── config.py        ← Thresholds for each detector
-│   ├── models.py        ← Data types: StagnationEvent, InterventionDirective
-│   └── event_log.py     ← SQLite log of all stagnation events
-│
-└── dashboard/           ← Real-time terminal UI showing what Tinker is doing
-    ├── app.py           ← The Textual TUI application
-    ├── subscriber.py    ← Receives state updates (queue or Redis)
-    ├── state.py         ← Shared state store for the UI panels
-    ├── panels.py        ← All the UI panels (re-exported from panel files)
-    ├── active_task.py   ← Panel: current task being worked on
-    ├── architect_critic.py ← Panels: last architect/critic outputs
-    ├── loop_status.py   ← Panel: micro/meso/macro loop counters
-    ├── task_queue.py    ← Panel: upcoming tasks in the queue
-    ├── health_arch.py   ← Panels: system health + architecture state
-    ├── log_stream.py    ← Panel: live log output
-    ├── log_handler.py   ← Hooks Python's logging into the dashboard
-    └── detail_view.py   ← Full-screen detail overlay for any panel
+├── services/            ← Background services
+├── tinker_platform/     ← Platform features (feature flags, experiments, A/B testing)
+├── tests/               ← Top-level test suite
+├── docs/                ← Reference docs and step-by-step tutorials
+│   ├── ARCHITECTURE.md  ← Module dependency graph + data flow diagrams.
+│   ├── Overview.md      ← This file (beginner-friendly codebase tour).
+│   ├── SETUP.md         ← Cross-platform install guide.
+│   └── tutorial/        ← 21 numbered chapters (00-introduction through 21-config).
+└── conftest.py          ← Shared pytest fixtures (mock_router, dummy_deps, etc.)
 ```
+
+> **Tip for newcomers:** Start with `main.py` → follow the imports into
+> `bootstrap/components.py` → see how the Orchestrator, agents, memory, and
+> task engine are wired together. Then read any module you're curious about.
 
 ---
 
@@ -195,6 +239,14 @@ TaskEngine.generate_tasks(result)    ← creates follow-up tasks
         ▼
 dashboard ← state snapshot published
 ```
+
+---
+
+## Next Steps
+
+Once you understand the structure, read the **[User Guide](USER_GUIDE.md)** for
+hands-on instructions: how to start a run, monitor progress, read output,
+configure behavior, and use the web UI.
 
 ---
 
