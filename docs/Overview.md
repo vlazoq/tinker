@@ -242,6 +242,14 @@ dashboard ← state snapshot published
 
 ---
 
+## Next Steps
+
+Once you understand the structure, read the **[User Guide](USER_GUIDE.md)** for
+hands-on instructions: how to start a run, monitor progress, read output,
+configure behavior, and use the web UI.
+
+---
+
 ## Running Modes
 
 ```bash

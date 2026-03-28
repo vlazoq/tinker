@@ -21,6 +21,7 @@ See [docs/SETUP.md](docs/SETUP.md) for full installation instructions.
 
 | Document | Purpose |
 |----------|---------|
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | **Start here** — how to run, monitor, configure, and read results |
 | [docs/Overview.md](docs/Overview.md) | Beginner-friendly codebase tour |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module dependency graph + data flow diagrams |
 | [docs/SETUP.md](docs/SETUP.md) | Cross-platform installation guide |
