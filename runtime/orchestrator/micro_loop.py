@@ -302,6 +302,16 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                 orch, task, context, architect_result["knowledge_gaps"], cfg
             )
             record.researcher_calls = researcher_calls
+
+            # Emit research event if bus is wired
+            if researcher_calls > 0 and hasattr(orch, "emit_event"):
+                from core.events import EventType
+                await orch.emit_event(EventType.RESEARCH_COMPLETED, {
+                    "task_id": task.get("id"),
+                    "gaps_requested": len(architect_result.get("knowledge_gaps", [])),
+                    "gaps_resolved": researcher_calls,
+                })
+
             # Only re-run the Architect if the Tool Layer actually found
             # something useful (i.e., at least one call succeeded).
             if researcher_calls > 0:
@@ -623,10 +633,11 @@ async def _route_researcher(
     Fill knowledge gaps flagged by the Architect using the Tool Layer.
 
     When the Architect says "I'm not sure about X", this function:
-      1. Takes each gap (up to ``cfg.max_researcher_calls_per_loop`` of them).
-      2. Calls ``tool_layer.research(query=gap)`` to look it up.
-      3. Collects the results.
-      4. Returns an enriched copy of the context with the research added.
+      1. Deduplicates gaps against recently researched queries.
+      2. Takes each gap (up to ``cfg.max_researcher_calls_per_loop`` of them).
+      3. Calls ``tool_layer.research(query=gap)`` to look it up.
+      4. Auto-archives results to memory for future reuse.
+      5. Returns an enriched copy of the context with the research added.
 
     Individual gap lookups that time out or fail are skipped with a warning —
     we want to make as much progress as possible even if one lookup fails.
@@ -653,25 +664,76 @@ async def _route_researcher(
     enriched = dict(context)
     research_results = []
 
-    # Only process up to max_researcher_calls_per_loop gaps.  The slice
-    # ``[:N]`` takes only the first N items from the list.
-    for gap in knowledge_gaps[: cfg.max_researcher_calls_per_loop]:
+    # Limit the number of gaps to process.
+    gaps_to_process = knowledge_gaps[: cfg.max_researcher_calls_per_loop]
+
+    # ── Parallel path: use ResearchTeam if available ────────────────────
+    if getattr(orch, "research_team", None) is not None:
         try:
-            result = await asyncio.wait_for(
-                coroutine_if_needed(orch.tool_layer.research)(query=gap),
-                timeout=cfg.tool_timeout,
+            research_results = await asyncio.wait_for(
+                orch.research_team.research_gaps(
+                    gaps=gaps_to_process,
+                    task=task,
+                    timeout=cfg.tool_timeout,
+                ),
+                timeout=cfg.tool_timeout * len(gaps_to_process),
             )
-            research_results.append({"gap": gap, "result": result})
-            calls_made += 1
-            logger.debug(
-                "researcher: gap=%r resolved (%d chars)", gap, len(str(result))
+            calls_made = len(research_results)
+            logger.info(
+                "researcher: ResearchTeam resolved %d/%d gaps in parallel",
+                calls_made,
+                len(gaps_to_process),
             )
         except asyncio.TimeoutError:
-            # This particular gap lookup was too slow — skip it and try the next.
-            logger.warning("researcher: timeout on gap=%r — skipping", gap)
+            logger.warning("researcher: ResearchTeam timed out — falling back to sequential")
+            research_results = []
+            calls_made = 0
         except Exception as exc:
-            # Any other error with this gap lookup — log and skip.
-            logger.warning("researcher: error on gap=%r: %s — skipping", gap, exc)
+            logger.warning("researcher: ResearchTeam error: %s — falling back to sequential", exc)
+            research_results = []
+            calls_made = 0
+
+    # ── Sequential fallback: original behaviour ─────────────────────────
+    if calls_made == 0:
+        # Deduplicate gaps — normalise and skip already-seen queries.
+        if not hasattr(orch, "_research_cache"):
+            orch._research_cache = {}  # query_normalized → result dict
+
+        def _normalize_query(q: str) -> str:
+            return " ".join(q.lower().split())
+
+        for gap in gaps_to_process:
+            norm = _normalize_query(gap)
+
+            # Check dedup cache first
+            if norm in orch._research_cache:
+                logger.debug("researcher: cache hit for gap=%r — reusing", gap)
+                research_results.append({"gap": gap, "result": orch._research_cache[norm]})
+                calls_made += 1
+                continue
+
+            try:
+                result = await asyncio.wait_for(
+                    coroutine_if_needed(orch.tool_layer.research)(query=gap),
+                    timeout=cfg.tool_timeout,
+                )
+                research_results.append({"gap": gap, "result": result})
+                calls_made += 1
+
+                # Cache the result for deduplication within this session
+                orch._research_cache[norm] = result
+
+                logger.debug(
+                    "researcher: gap=%r resolved (%d chars)", gap, len(str(result))
+                )
+
+                # Auto-archive research to memory for cross-session reuse.
+                await _archive_research(orch, task, gap, result)
+
+            except asyncio.TimeoutError:
+                logger.warning("researcher: timeout on gap=%r — skipping", gap)
+            except Exception as exc:
+                logger.warning("researcher: error on gap=%r: %s — skipping", gap, exc)
 
     if research_results:
         # Only add the "research" key if we actually got some results.
@@ -679,6 +741,46 @@ async def _route_researcher(
         enriched["research"] = research_results
 
     return enriched, calls_made
+
+
+async def _archive_research(
+    orch: "Orchestrator",
+    task: dict,
+    gap: str,
+    result: dict,
+) -> None:
+    """Auto-archive a research result to memory for future retrieval.
+
+    Research results were previously ephemeral — lost after the micro loop.
+    This function persists them as research notes in the memory manager so
+    they can be found by future context assembly and semantic search.
+    """
+    try:
+        if not hasattr(orch.memory_manager, "store_research"):
+            return
+        content = result.get("result", "")
+        sources = result.get("sources", [])
+        if not content or len(content) < 50:
+            return  # too short to be useful
+        await asyncio.wait_for(
+            coroutine_if_needed(orch.memory_manager.store_research)(
+                content=content,
+                topic=gap,
+                tags=["auto-archived", "web-research"],
+                source=", ".join(sources[:3]) if sources else "web-search",
+                task_id=task.get("id", ""),
+                metadata={
+                    "subsystem": task.get("subsystem", ""),
+                    "auto_archived": True,
+                    "sources": sources,
+                },
+            ),
+            timeout=10.0,
+        )
+        logger.debug("researcher: archived result for gap=%r", gap)
+    except Exception as exc:
+        # Archive failure is non-fatal — don't block the loop
+        logger.debug("researcher: archive failed for gap=%r: %s", gap, exc)
 
 
 async def _call_critic(

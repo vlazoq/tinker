@@ -141,6 +141,30 @@ def build_real_components(problem: str) -> dict:
 
     stagnation_monitor = StagnationMonitor(config=StagnationMonitorConfig())
 
+    # ── Event Bus (hooks system) ─────────────────────────────────────────────
+    from core.events import EventBus
+
+    event_bus = EventBus()
+
+    # ── Research Team (parallel research agents) ────────────────────────────
+    from agents.research_team import ResearchTeam
+
+    research_team = ResearchTeam(
+        tool_layer=tool_layer,
+        memory_manager=memory_manager,
+        max_concurrent=int(os.getenv("TINKER_RESEARCH_CONCURRENCY", "3")),
+    )
+
+    # ── Auto-Memory (cross-session learning) ─────────────────────────────────
+    from core.memory.auto_memory import AutoMemory
+
+    auto_memory = AutoMemory(
+        memory_dir=os.getenv("TINKER_MEMORY_DIR", "./tinker_memory"),
+        high_score_threshold=float(os.getenv("TINKER_MEMORY_HIGH_THRESHOLD", "0.85")),
+        low_score_threshold=float(os.getenv("TINKER_MEMORY_LOW_THRESHOLD", "0.4")),
+    )
+    auto_memory.attach(event_bus)
+
     return {
         "router": router,
         "memory_manager": memory_manager,
@@ -152,6 +176,8 @@ def build_real_components(problem: str) -> dict:
         "tool_layer": tool_layer,
         "arch_state_manager": arch_state_manager,
         "stagnation_monitor": stagnation_monitor,
+        "event_bus": event_bus,
+        "research_team": research_team,
     }
 
 

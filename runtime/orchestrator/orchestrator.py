@@ -51,6 +51,7 @@ import asyncio
 import logging
 from typing import Any, Optional
 
+from core.events import EventBus, Event, EventType
 from .config import OrchestratorConfig
 from .state import OrchestratorState, LoopLevel
 
@@ -108,6 +109,8 @@ class Orchestrator(
         metrics: Any = None,
         snapshot_callback: Optional[Any] = None,
         checkpoint_manager: Optional[Any] = None,
+        event_bus: Optional[Any] = None,
+        research_team: Optional[Any] = None,
     ) -> None:
         self.config = config or OrchestratorConfig()
 
@@ -127,6 +130,18 @@ class Orchestrator(
         self.metrics = metrics
         self._snapshot_callback = snapshot_callback
 
+        # Event bus for hooks — enables decoupled reactions to lifecycle events.
+        # When provided, the orchestrator emits events at key points (task
+        # selection, agent calls, loop completion, stagnation, etc.) so
+        # external handlers can react without touching orchestrator code.
+        self.event_bus = event_bus
+
+        # Research team — optional parallel research agent coordinator.
+        # When provided, knowledge-gap research runs concurrently instead
+        # of sequentially.  Created automatically in bootstrap if tool_layer
+        # is available.
+        self.research_team = research_team
+
         # Enterprise components dictionary — populated by bootstrap layer.
         self.enterprise: dict = {}
 
@@ -134,6 +149,8 @@ class Orchestrator(
             logger.info("StagnationMonitor wired — anti-stagnation detection active")
         if metrics is not None:
             logger.info("Metrics wired — Prometheus counters active")
+        if event_bus is not None:
+            logger.info("EventBus wired — lifecycle hooks active")
 
         # Checkpoint manager for pause/resume support.
         self.checkpoint_manager = checkpoint_manager
@@ -152,6 +169,24 @@ class Orchestrator(
         # DLQ auto-replayer — initialised lazily during run().
         self._dlq_replayer: Any = None
 
+    # ── Event helpers ────────────────────────────────────────────────────────
+
+    async def emit_event(
+        self,
+        event_type: EventType,
+        payload: dict | None = None,
+        source: str = "orchestrator",
+    ) -> None:
+        """Publish an event on the bus if one is wired, swallowing errors."""
+        if self.event_bus is None:
+            return
+        try:
+            await self.event_bus.publish(
+                Event(type=event_type, payload=payload or {}, source=source)
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("EventBus publish failed (non-fatal): %s", exc)
+
     # ── Public API ───────────────────────────────────────────────────────────
 
     async def run(self) -> None:
@@ -166,11 +201,23 @@ class Orchestrator(
 
         await self._setup_dlq_replayer()
 
+        await self.emit_event(EventType.SYSTEM_STARTED, {
+            "config": {
+                "meso_trigger_count": self.config.meso_trigger_count,
+                "macro_interval_seconds": self.config.macro_interval_seconds,
+            },
+        })
+
         try:
             await self._main_loop()
         except asyncio.CancelledError:
             logger.info("Orchestrator task cancelled — treating as shutdown")
         finally:
+            await self.emit_event(EventType.SYSTEM_STOPPING, {
+                "total_micro_loops": self.state.total_micro_loops,
+                "total_meso_loops": self.state.total_meso_loops,
+                "total_macro_loops": self.state.total_macro_loops,
+            })
             await self._on_shutdown()
 
     def request_shutdown(self) -> None:
