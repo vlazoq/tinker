@@ -51,9 +51,7 @@ class TestLineageTracker:
     async def test_multi_level_ancestry(self, tracker):
         # Build a 3-level chain: t1 → a1 → doc1
         await tracker.record_derivation("t1", "task", "a1", "artifact", "micro_loop")
-        await tracker.record_derivation(
-            "a1", "artifact", "doc1", "artifact", "meso_synthesis"
-        )
+        await tracker.record_derivation("a1", "artifact", "doc1", "artifact", "meso_synthesis")
         ancestry = await tracker.get_full_ancestry("doc1")
         parent_ids = {e["parent_id"] for e in ancestry}
         assert "a1" in parent_ids
@@ -90,12 +88,8 @@ class TestGetDescendants:
     @pytest.mark.asyncio
     async def test_descendants_of_root(self, tracker):
         # task → artifact → synthesis
-        await tracker.record_derivation(
-            "task1", "task", "art1", "artifact", "micro_loop"
-        )
-        await tracker.record_derivation(
-            "art1", "artifact", "syn1", "synthesis", "meso_synthesis"
-        )
+        await tracker.record_derivation("task1", "task", "art1", "artifact", "micro_loop")
+        await tracker.record_derivation("art1", "artifact", "syn1", "synthesis", "meso_synthesis")
         descendants = await tracker.get_descendants("task1")
         child_ids = {e["child_id"] for e in descendants}
         assert "art1" in child_ids
@@ -103,9 +97,7 @@ class TestGetDescendants:
 
     @pytest.mark.asyncio
     async def test_leaf_has_no_descendants(self, tracker):
-        await tracker.record_derivation(
-            "task2", "task", "art2", "artifact", "micro_loop"
-        )
+        await tracker.record_derivation("task2", "task", "art2", "artifact", "micro_loop")
         descendants = await tracker.get_descendants("art2")
         assert descendants == []
 
@@ -136,9 +128,7 @@ class TestGetByOperation:
     @pytest.mark.asyncio
     async def test_filter_by_operation(self, tracker):
         await tracker.record_derivation("t1", "task", "a1", "artifact", "micro_loop")
-        await tracker.record_derivation(
-            "a1", "artifact", "s1", "synthesis", "meso_synthesis"
-        )
+        await tracker.record_derivation("a1", "artifact", "s1", "synthesis", "meso_synthesis")
         micro_edges = await tracker.get_by_operation("micro_loop")
         assert all(e["operation"] == "micro_loop" for e in micro_edges)
         assert len(micro_edges) >= 1
@@ -161,9 +151,7 @@ class TestGetStats:
     async def test_stats_populated_graph(self, tracker):
         await tracker.record_derivation("t1", "task", "a1", "artifact", "micro_loop")
         await tracker.record_derivation("t2", "task", "a2", "artifact", "micro_loop")
-        await tracker.record_derivation(
-            "a1", "artifact", "s1", "synthesis", "meso_synthesis"
-        )
+        await tracker.record_derivation("a1", "artifact", "s1", "synthesis", "meso_synthesis")
         stats = await tracker.get_stats()
         assert stats["total_edges"] == 3
         assert stats["by_parent_type"]["task"] == 2
@@ -185,9 +173,7 @@ class TestCycleDetection:
         # a → b → c, then attempt c → a (would create cycle)
         await tracker.record_derivation("a", "task", "b", "artifact", "micro_loop")
         await tracker.record_derivation("b", "artifact", "c", "synthesis", "meso")
-        edge_id = await tracker.record_derivation(
-            "c", "synthesis", "a", "task", "bad_op"
-        )
+        edge_id = await tracker.record_derivation("c", "synthesis", "a", "task", "bad_op")
         assert edge_id is None
 
     @pytest.mark.asyncio

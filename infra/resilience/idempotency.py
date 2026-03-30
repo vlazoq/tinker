@@ -54,10 +54,11 @@ Usage
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -123,9 +124,9 @@ class IdempotencyCache:
         self._key_prefix = key_prefix
         self._client = None
         self._memory: dict[str, str] = {}  # fallback in-memory cache
-        self._redis_available: Optional[bool] = None
+        self._redis_available: bool | None = None
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         """
         Retrieve a previously cached result.
 
@@ -160,7 +161,7 @@ class IdempotencyCache:
         except Exception:
             return None
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """
         Cache the result of a completed operation.
 
@@ -187,9 +188,7 @@ class IdempotencyCache:
         if client is not None:
             try:
                 await client.set(full_key, serialised, ex=effective_ttl)
-                logger.debug(
-                    "Cached idempotency key '%s' (ttl=%ds)", key[:20], effective_ttl
-                )
+                logger.debug("Cached idempotency key '%s' (ttl=%ds)", key[:20], effective_ttl)
                 return True
             except Exception as exc:
                 logger.debug("IdempotencyCache.set Redis error (falling back): %s", exc)
@@ -230,10 +229,8 @@ class IdempotencyCache:
         deleted_redis = False
 
         if client is not None:
-            try:
+            with contextlib.suppress(Exception):
                 deleted_redis = bool(await client.delete(full_key))
-            except Exception:
-                pass
 
         deleted_memory = self._memory.pop(full_key, None) is not None
         return deleted_redis or deleted_memory
@@ -241,10 +238,8 @@ class IdempotencyCache:
     async def close(self) -> None:
         """Close the Redis connection."""
         if self._client is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await self._client.aclose()
-            except Exception:
-                pass
             self._client = None
 
     async def _get_client(self):
@@ -272,8 +267,6 @@ class IdempotencyCache:
             return None
         except Exception as exc:
             if self._redis_available is None:
-                logger.info(
-                    "IdempotencyCache: Redis unavailable (%s) — in-memory fallback", exc
-                )
+                logger.info("IdempotencyCache: Redis unavailable (%s) — in-memory fallback", exc)
             self._redis_available = False
             return None

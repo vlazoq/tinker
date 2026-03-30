@@ -104,11 +104,10 @@ class ServiceRegistry:
         """
         try:
             return self._services[name]
-        except KeyError:
+        except KeyError as err:
             raise KeyError(
-                f"No service registered as {name!r}.  "
-                f"Known services: {list(self._services)}"
-            )
+                f"No service registered as {name!r}.  Known services: {list(self._services)}"
+            ) from err
 
     def get_or_none(self, name: str) -> ServiceInterface | None:
         """Return the service, or None if not registered."""
@@ -163,13 +162,9 @@ class ServiceRegistry:
         for name, svc in self._services.items():
             try:
                 results[name] = await svc.health()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 results[name] = {"status": "down", "error": str(exc)}
                 logger.warning("Health check failed for service %r: %s", name, exc)
 
-        overall = (
-            "ok"
-            if all(r.get("status") == "ok" for r in results.values())
-            else "degraded"
-        )
+        overall = "ok" if all(r.get("status") == "ok" for r in results.values()) else "degraded"
         return {"overall": overall, "services": results}

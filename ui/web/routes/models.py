@@ -8,12 +8,14 @@ router = APIRouter()
 
 def _get_library():
     from core.models.library import ModelLibrary
+
     return ModelLibrary()
 
 
 def _get_preset_manager():
     from core.models.library import ModelLibrary
     from core.models.presets import PresetManager
+
     lib = ModelLibrary()
     return PresetManager(lib), lib
 
@@ -29,9 +31,12 @@ async def api_models_library_list():
 async def api_models_library_add(request: Request):
     """Add or update a model in the library."""
     from core.models.library import ModelEntry
+
     body = await request.json()
     if not body.get("id") or not body.get("model_tag"):
-        return JSONResponse({"ok": False, "error": "id and model_tag are required"}, status_code=422)
+        return JSONResponse(
+            {"ok": False, "error": "id and model_tag are required"}, status_code=422
+        )
     lib = _get_library()
     entry = ModelEntry(
         id=body["id"],
@@ -52,7 +57,9 @@ async def api_models_library_remove(model_id: str):
     lib = _get_library()
     removed = lib.remove(model_id)
     if not removed:
-        return JSONResponse({"ok": False, "error": f"Model '{model_id}' not found"}, status_code=404)
+        return JSONResponse(
+            {"ok": False, "error": f"Model '{model_id}' not found"}, status_code=404
+        )
     return {"ok": True, "removed_id": model_id}
 
 
@@ -77,6 +84,7 @@ async def api_models_presets_list():
 async def api_models_presets_create(request: Request):
     """Create or update a preset."""
     from core.models.presets import ModelPreset
+
     body = await request.json()
     if not body.get("name"):
         return JSONResponse({"ok": False, "error": "name is required"}, status_code=422)
@@ -98,6 +106,7 @@ async def api_models_presets_create(request: Request):
 async def api_models_presets_update(name: str, request: Request):
     """Update an existing preset."""
     from core.models.presets import ModelPreset
+
     body = await request.json()
     mgr, _ = _get_preset_manager()
     if mgr.get(name) is None:
@@ -155,6 +164,7 @@ async def api_models_active():
 async def api_models_ollama_available(urls: str = ""):
     """Query one or more Ollama servers for available models."""
     from core.models.ollama_sync import OllamaSync
+
     lib = _get_library()
     known_tags = {m.model_tag for m in lib.all()}
     server_urls = [u.strip() for u in urls.split(",") if u.strip()] or ["http://localhost:11434"]
@@ -173,6 +183,7 @@ async def api_models_ollama_sync(request: Request):
     """Import selected models from Ollama into the library."""
     from core.models.library import ModelEntry
     from core.models.ollama_sync import OllamaSync
+
     body = await request.json()
     lib = _get_library()
     to_import = body.get("models", [])
@@ -186,6 +197,7 @@ async def api_models_ollama_sync(request: Request):
             continue
         caps = OllamaSync._infer_capabilities(m.get("family", ""), m.get("model_tag", ""))
         from core.models.ollama_sync import _infer_context_window
+
         ctx = _infer_context_window(m.get("model_tag", ""), m.get("parameter_size", ""))
         entry = ModelEntry(
             id=suggested_id,

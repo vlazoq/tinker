@@ -17,7 +17,6 @@ from agents.fritz.gitea_ops import FritzGitea
 from agents.fritz.github_ops import FritzRemoteResult
 from agents.fritz.metrics import FritzMetrics
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -44,6 +43,7 @@ def _make_gitea(owner: str = "acme", repo: str = "widget") -> FritzGitea:
 
 def _resp(status: int, body: dict | list | None = None) -> httpx.Response:
     import json as _json
+
     content = _json.dumps(body or {}).encode()
     response = httpx.Response(status, content=content)
     response.request = httpx.Request("GET", "https://gitea.example.com/api/v1/")
@@ -116,9 +116,7 @@ class TestClosePr:
     @pytest.mark.asyncio
     async def test_success(self):
         gitea = _make_gitea()
-        with patch.object(
-            gitea, "_patch", new=AsyncMock(return_value={"state": "closed"})
-        ):
+        with patch.object(gitea, "_patch", new=AsyncMock(return_value={"state": "closed"})):
             result = await gitea.close_pr(5)
         assert result.ok
 
@@ -290,9 +288,11 @@ class TestWaitForCi:
         with patch.object(
             gitea,
             "get_ci_status",
-            new=AsyncMock(return_value=FritzRemoteResult(
-                ok=True, operation="get_ci_status", data={"state": "success"}
-            )),
+            new=AsyncMock(
+                return_value=FritzRemoteResult(
+                    ok=True, operation="get_ci_status", data={"state": "success"}
+                )
+            ),
         ):
             result = await gitea.wait_for_ci("sha123", timeout=60, poll_interval=1)
         assert result.ok
@@ -303,9 +303,11 @@ class TestWaitForCi:
         with patch.object(
             gitea,
             "get_ci_status",
-            new=AsyncMock(return_value=FritzRemoteResult(
-                ok=True, operation="get_ci_status", data={"state": "failure"}
-            )),
+            new=AsyncMock(
+                return_value=FritzRemoteResult(
+                    ok=True, operation="get_ci_status", data={"state": "failure"}
+                )
+            ),
         ):
             result = await gitea.wait_for_ci("sha123", timeout=60, poll_interval=1)
         assert not result.ok
@@ -313,13 +315,18 @@ class TestWaitForCi:
     @pytest.mark.asyncio
     async def test_timeout(self):
         gitea = _make_gitea()
-        with patch.object(
-            gitea,
-            "get_ci_status",
-            new=AsyncMock(return_value=FritzRemoteResult(
-                ok=True, operation="get_ci_status", data={"state": "pending"}
-            )),
-        ), patch("asyncio.sleep", new=AsyncMock()):
+        with (
+            patch.object(
+                gitea,
+                "get_ci_status",
+                new=AsyncMock(
+                    return_value=FritzRemoteResult(
+                        ok=True, operation="get_ci_status", data={"state": "pending"}
+                    )
+                ),
+            ),
+            patch("asyncio.sleep", new=AsyncMock()),
+        ):
             result = await gitea.wait_for_ci("sha123", timeout=2, poll_interval=5)
         assert not result.ok
         assert "did not complete" in result.error
@@ -332,6 +339,7 @@ class TestRateLimitProperty:
     def test_returns_rate_limit_state(self):
         gitea = _make_gitea()
         from agents.fritz.retry import RateLimitState
+
         assert isinstance(gitea.rate_limit, RateLimitState)
 
     def test_base_url_stripped(self):
@@ -359,9 +367,7 @@ class TestIssues:
     @pytest.mark.asyncio
     async def test_close_issue(self):
         gitea = _make_gitea()
-        with patch.object(
-            gitea, "_patch", new=AsyncMock(return_value={"state": "closed"})
-        ):
+        with patch.object(gitea, "_patch", new=AsyncMock(return_value={"state": "closed"})):
             result = await gitea.close_issue(1)
         assert result.ok
 

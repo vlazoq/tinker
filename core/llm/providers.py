@@ -29,7 +29,6 @@ from dataclasses import dataclass, field
 from .client import OllamaClient
 from .types import MachineConfig
 
-
 # ---------------------------------------------------------------------------
 # Provider configuration dataclass
 # ---------------------------------------------------------------------------
@@ -145,9 +144,7 @@ def build_client(
     preset = PROVIDER_PRESETS.get(provider)
     if preset is None:
         known = ", ".join(sorted(PROVIDER_PRESETS))
-        raise ValueError(
-            f"Unknown provider {provider!r}. Known providers: {known}"
-        )
+        raise ValueError(f"Unknown provider {provider!r}. Known providers: {known}")
 
     # ── Resolve base_url ────────────────────────────────────────────────────
     # For azure_openai the preset stores an empty string; the real endpoint

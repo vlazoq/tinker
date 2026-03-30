@@ -14,24 +14,24 @@ git_ops     : Git status, diff, add, commit helpers.
 code_analysis: Simple static analysis (count lines, find imports, etc.).
 """
 
-from .file_ops import read_file, write_file, append_file, list_files, ensure_dir
-from .shell import run_command, run_tests
-from .git_ops import git_status, git_diff, git_add, git_commit
 from .code_analysis import count_lines, extract_functions, extract_imports
+from .file_ops import append_file, ensure_dir, list_files, read_file, write_file
+from .git_ops import git_add, git_commit, git_diff, git_status
+from .shell import run_command, run_tests
 
 __all__ = [
-    "read_file",
-    "write_file",
     "append_file",
-    "list_files",
-    "ensure_dir",
-    "run_command",
-    "run_tests",
-    "git_status",
-    "git_diff",
-    "git_add",
-    "git_commit",
     "count_lines",
+    "ensure_dir",
     "extract_functions",
     "extract_imports",
+    "git_add",
+    "git_commit",
+    "git_diff",
+    "git_status",
+    "list_files",
+    "read_file",
+    "run_command",
+    "run_tests",
+    "write_file",
 ]

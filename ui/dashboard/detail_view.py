@@ -85,9 +85,7 @@ class DetailScreen(ModalScreen[None]):
                 wrap=True,
                 max_lines=10_000,
             )
-            yield Static(
-                Text(" Esc / q / Enter — close", style="dim"), id="detail-footer"
-            )
+            yield Static(Text(" Esc / q / Enter — close", style="dim"), id="detail-footer")
 
     def on_mount(self) -> None:
         log = self.query_one("#detail-log", RichLog)

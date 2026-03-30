@@ -95,14 +95,14 @@ In orchestrator.py::
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ class CheckpointManager:
         # In-memory copy of the most recently saved checkpoint.
         # Used when pausing: the checkpoint is already in memory, so we can
         # resume without reading from disk.
-        self._in_memory: Optional[dict] = None
+        self._in_memory: dict | None = None
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -148,7 +148,7 @@ class CheckpointManager:
 
         checkpoint = {
             "version": _CHECKPOINT_VERSION,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             **data,
         }
         self._in_memory = checkpoint
@@ -156,10 +156,12 @@ class CheckpointManager:
         logger.debug(
             "Checkpoint saved: iteration=%s, task=%s",
             data.get("micro_iteration"),
-            data.get("current_task", {}).get("id", "?")[:8] if data.get("current_task") else "none",
+            data.get("current_task", {}).get("id", "?")[:8]
+            if data.get("current_task")
+            else "none",
         )
 
-    def load(self) -> Optional[dict]:
+    def load(self) -> dict | None:
         """
         Load a checkpoint from disk, if one exists.
 
@@ -209,7 +211,9 @@ class CheckpointManager:
             "Checkpoint loaded: iteration=%s, age=%.0fs, task=%s",
             data.get("micro_iteration"),
             age_s,
-            data.get("current_task", {}).get("id", "?")[:8] if data.get("current_task") else "none",
+            data.get("current_task", {}).get("id", "?")[:8]
+            if data.get("current_task")
+            else "none",
         )
         self._in_memory = data
         return data
@@ -242,10 +246,8 @@ class CheckpointManager:
                 f.write(json_str)
             os.replace(tmp, self._path)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
 
     def _try_delete(self) -> None:

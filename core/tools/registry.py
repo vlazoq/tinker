@@ -39,11 +39,11 @@ import asyncio
 import hashlib
 import json
 import logging
-import time
 from typing import Any
 
-from .base import BaseTool, ToolResult, ToolSchema
 from exceptions import ToolNotFoundError
+
+from .base import BaseTool, ToolResult, ToolSchema
 
 # Standard Python logging.  Log messages from this file will appear under the
 # logger name "tools.registry", making it easy to filter in log output.
@@ -129,15 +129,14 @@ class ToolRegistry:
         # Build a Semaphore for each tool that has a per-tool limit.
         # Tools not in this dict will only be gated by the global semaphore.
         self._per_tool_limits: dict[str, asyncio.Semaphore] = {
-            name: asyncio.Semaphore(limit)
-            for name, limit in merged_limits.items()
+            name: asyncio.Semaphore(limit) for name, limit in merged_limits.items()
         }
 
     # ------------------------------------------------------------------
     # Registration
     # ------------------------------------------------------------------
 
-    def register(self, tool: BaseTool) -> "ToolRegistry":
+    def register(self, tool: BaseTool) -> ToolRegistry:
         """
         Add a tool to the registry.
 
@@ -159,7 +158,7 @@ class ToolRegistry:
         logger.debug("Registered tool: %s", name)
         return self  # return self so callers can chain .register() calls
 
-    def register_many(self, *tools: BaseTool) -> "ToolRegistry":
+    def register_many(self, *tools: BaseTool) -> ToolRegistry:
         """
         Register several tools at once.
 
@@ -176,7 +175,7 @@ class ToolRegistry:
             self.register(tool)
         return self
 
-    async def register_from_mcp(self, bridge: Any) -> "ToolRegistry":
+    async def register_from_mcp(self, bridge: Any) -> ToolRegistry:
         """
         Connect to external MCP servers via ``bridge`` and register their tools.
 
@@ -336,6 +335,7 @@ class ToolRegistry:
         """
         try:
             from agents._shared import _current_trace_id
+
             # The ContextVar has default="" so .get() always succeeds.
             # Use "no-trace" when the value is empty (not yet set by orchestrator).
             return _current_trace_id.get() or "no-trace"
@@ -403,13 +403,9 @@ class ToolRegistry:
         # method returns True when the semaphore's internal counter is zero,
         # meaning no slots are available and we will block.
         if self._semaphore.locked():
-            logger.info(
-                "Tool '%s' waiting for a global concurrency slot.", tool_name
-            )
+            logger.info("Tool '%s' waiting for a global concurrency slot.", tool_name)
         if per_tool_sem is not None and per_tool_sem.locked():
-            logger.info(
-                "Tool '%s' waiting for a per-tool concurrency slot.", tool_name
-            )
+            logger.info("Tool '%s' waiting for a per-tool concurrency slot.", tool_name)
 
         # Acquire the global semaphore first, then the per-tool semaphore.
         # Using nested ``async with`` ensures both are released even if the
@@ -417,13 +413,9 @@ class ToolRegistry:
         async with self._semaphore:
             if per_tool_sem is not None:
                 async with per_tool_sem:
-                    result = await self._run_tool_with_breaker(
-                        tool, tool_name, **kwargs
-                    )
+                    result = await self._run_tool_with_breaker(tool, tool_name, **kwargs)
             else:
-                result = await self._run_tool_with_breaker(
-                    tool, tool_name, **kwargs
-                )
+                result = await self._run_tool_with_breaker(tool, tool_name, **kwargs)
 
         # ----- Audit trail -----
         # Emit a structured log line after every tool call (success or failure).
@@ -450,9 +442,7 @@ class ToolRegistry:
 
         # Step 3: log the outcome at different levels depending on success/failure.
         if result.success:
-            logger.debug(
-                "Tool '%s' succeeded in %.1f ms", tool_name, result.duration_ms
-            )
+            logger.debug("Tool '%s' succeeded in %.1f ms", tool_name, result.duration_ms)
         else:
             logger.warning(
                 "Tool '%s' failed in %.1f ms: %s",
@@ -631,16 +621,12 @@ class ToolRegistry:
         if result.success and isinstance(result.data, list) and result.data:
             # Most common case: data is a list of result dicts.
             search_data = {"results": result.data}
-            urls_to_scrape = [
-                r.get("url", "") for r in result.data if r.get("url")
-            ][:max_scrape]
+            urls_to_scrape = [r.get("url", "") for r in result.data if r.get("url")][:max_scrape]
         elif result.success and isinstance(result.data, dict):
             # Alternative case: data is a dict with a "results" key.
             search_data = result.data
             items = result.data.get("results", [])
-            urls_to_scrape = [
-                r.get("url", "") for r in items if r.get("url")
-            ][:max_scrape]
+            urls_to_scrape = [r.get("url", "") for r in items if r.get("url")][:max_scrape]
         else:
             # Web search unavailable — return a minimal stub
             # so callers always get a usable dict even when tools are down.
@@ -659,10 +645,7 @@ class ToolRegistry:
                     scrape_result = await self.execute("web_scraper", url=url)
                     if scrape_result.success:
                         data = scrape_result.data or {}
-                        text = (
-                            data.get("text", "") if isinstance(data, dict)
-                            else str(data)
-                        )
+                        text = data.get("text", "") if isinstance(data, dict) else str(data)
                         if text.strip():
                             scraped_sections.append(text)
                 except Exception:
@@ -753,11 +736,11 @@ def build_default_registry(
     # the file.  This is called "lazy importing" — it avoids circular imports
     # and means the registry module doesn't fail to load if one tool's
     # dependencies (e.g. playwright) aren't installed.
-    from .web_search import WebSearchTool
-    from .web_scraper import WebScraperTool
     from .artifact_writer import ArtifactWriterTool
     from .diagram_generator import DiagramGeneratorTool
     from .memory_query import MemoryQueryTool
+    from .web_scraper import WebScraperTool
+    from .web_search import WebSearchTool
     from .webhook import WebhookTool
 
     # Build keyword args for WebSearchTool — only pass searxng_url if provided,

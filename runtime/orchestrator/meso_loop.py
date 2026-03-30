@@ -59,12 +59,13 @@ next hits the trigger count.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from typing import TYPE_CHECKING
 
 from .compat import coroutine_if_needed
-from .state import MesoLoopRecord, LoopStatus
+from .state import LoopStatus, MesoLoopRecord
 
 # Only imported by type checkers (e.g. mypy, pyright) — not at runtime.
 # Avoids a circular import: orchestrator.py imports meso_loop.py, so
@@ -78,7 +79,7 @@ logger = logging.getLogger("tinker.orchestrator.meso")
 
 
 async def run_meso_loop(
-    orch: "Orchestrator", subsystem: str, trigger_iteration: int
+    orch: Orchestrator, subsystem: str, trigger_iteration: int
 ) -> MesoLoopRecord:
     """
     Execute a meso-level synthesis for ``subsystem``.
@@ -126,10 +127,12 @@ async def run_meso_loop(
 
     # ── Tracing ──────────────────────────────────────────────────────────────
     from contextlib import nullcontext
+
     _trace_ctx = None
     _trace = None
     try:
         from infra.observability.tracing import default_tracer as _meso_tracer
+
         _trace_ctx = _meso_tracer.start_trace(
             "meso_loop",
             attributes={"subsystem": subsystem, "trigger_iteration": trigger_iteration},
@@ -177,9 +180,7 @@ async def run_meso_loop(
                     and r.task_id is not None
                 )
             ]
-            if recent_task_ids and hasattr(
-                orch.memory_manager, "get_artifacts_by_task_ids"
-            ):
+            if recent_task_ids and hasattr(orch.memory_manager, "get_artifacts_by_task_ids"):
                 extra_rows = await asyncio.wait_for(
                     coroutine_if_needed(orch.memory_manager.get_artifacts_by_task_ids)(
                         task_ids=recent_task_ids, limit_each=2
@@ -306,7 +307,7 @@ async def run_meso_loop(
             len(artifacts),
         )
 
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         # An AI call or memory operation timed out.  Record the error and
         # return — do NOT re-raise.  The orchestrator will continue with
         # micro loops.
@@ -331,9 +332,7 @@ async def run_meso_loop(
             record.finished_at = time.monotonic()
         # Close the trace context manager if tracing is active.
         if _trace_ctx is not None:
-            try:
+            with contextlib.suppress(Exception):
                 _trace_ctx.__exit__(None, None, None)
-            except Exception:
-                pass
 
     return record

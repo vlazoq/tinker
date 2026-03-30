@@ -48,8 +48,8 @@ import os
 from typing import Any
 
 from .abstract_registry import AbstractTaskRegistry
-from .registry import SQLiteTaskRegistry
 from .postgres_registry import PostgresTaskRegistry
+from .registry import SQLiteTaskRegistry
 
 
 def create_task_registry(
@@ -82,9 +82,7 @@ def create_task_registry(
         If the ``postgres`` backend is requested but ``psycopg2`` is not
         installed.
     """
-    effective_backend = (
-        (backend or os.getenv("TINKER_DB_BACKEND", "sqlite")).lower().strip()
-    )
+    effective_backend = (backend or os.getenv("TINKER_DB_BACKEND", "sqlite")).lower().strip()
 
     if effective_backend == "sqlite":
         db_path = kwargs.get("db_path") or os.getenv(

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -91,9 +91,7 @@ class ServiceRequest:
     payload: dict[str, Any] = field(default_factory=dict)
     trace_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     caller: str = "unknown"
-    timestamp: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
@@ -120,7 +118,7 @@ class ServiceResponse:
         data: dict[str, Any] | None = None,
         trace_id: str = "",
         elapsed_ms: float = 0.0,
-    ) -> "ServiceResponse":
+    ) -> ServiceResponse:
         """Convenience constructor for a successful response."""
         return cls(ok=True, data=data or {}, trace_id=trace_id, elapsed_ms=elapsed_ms)
 
@@ -130,6 +128,6 @@ class ServiceResponse:
         error: str,
         trace_id: str = "",
         elapsed_ms: float = 0.0,
-    ) -> "ServiceResponse":
+    ) -> ServiceResponse:
         """Convenience constructor for a failure response."""
         return cls(ok=False, error=error, trace_id=trace_id, elapsed_ms=elapsed_ms)

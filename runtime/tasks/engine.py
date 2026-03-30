@@ -17,12 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from .schema import Task, TaskStatus, TaskType, Subsystem
-from .registry import TaskRegistry
-from .queue import TaskQueue
 from .generator import TaskGenerator
+from .queue import TaskQueue
+from .registry import TaskRegistry
+from .schema import Subsystem, Task, TaskStatus, TaskType
 from .scorer import PriorityScorer
 
 log = logging.getLogger(__name__)
@@ -76,16 +76,16 @@ class TaskEngine:
         self,
         problem_statement: str = "Design a robust software architecture",
         db_path: str = ":memory:",
-        registry: Optional[TaskRegistry] = None,
-        scorer: Optional[PriorityScorer] = None,
-        queue: Optional[TaskQueue] = None,
-        generator: Optional[TaskGenerator] = None,
+        registry: TaskRegistry | None = None,
+        scorer: PriorityScorer | None = None,
+        queue: TaskQueue | None = None,
+        generator: TaskGenerator | None = None,
     ) -> None:
         self._problem = problem_statement
         self.registry = registry if registry is not None else TaskRegistry(db_path=db_path)
         self.scorer = scorer if scorer is not None else PriorityScorer()
-        self.queue = queue if queue is not None else TaskQueue(
-            registry=self.registry, scorer=self.scorer
+        self.queue = (
+            queue if queue is not None else TaskQueue(registry=self.registry, scorer=self.scorer)
         )
         self.generator = generator if generator is not None else TaskGenerator()
 
@@ -94,14 +94,12 @@ class TaskEngine:
 
     # ── Public async API ──────────────────────────────────────────────────
 
-    async def select_task(self) -> Optional[dict]:
+    async def select_task(self) -> dict | None:
         """
         Return the highest-priority PENDING task as a plain dict, marking it
         ACTIVE in the registry.  Returns None if there are no tasks.
         """
-        task = await asyncio.get_running_loop().run_in_executor(
-            None, self.queue.get_next
-        )
+        task = await asyncio.get_running_loop().run_in_executor(None, self.queue.get_next)
         if task is None:
             return None
         return self._task_to_orchestrator_dict(task)
@@ -109,8 +107,8 @@ class TaskEngine:
     async def complete_task(
         self,
         task_id: str,
-        artifact_id: Optional[str] = None,
-        outputs: Optional[list[str]] = None,
+        artifact_id: str | None = None,
+        outputs: list[str] | None = None,
         tokens_used: int = 0,
         duration_seconds: float = 0.0,
     ) -> None:
@@ -222,7 +220,7 @@ class TaskEngine:
             "Identify a part of the design that has received little attention and "
             "propose one or more concrete investigative questions to break the loop."
         ),
-        subsystem: "Subsystem | None" = None,
+        subsystem: Subsystem | None = None,
     ) -> dict:
         """
         Create and immediately enqueue an exploration task.
@@ -242,9 +240,7 @@ class TaskEngine:
         -------
         dict : The newly queued task in orchestrator-dict format.
         """
-        target_subsystem = (
-            subsystem if subsystem is not None else Subsystem.CROSS_CUTTING
-        )
+        target_subsystem = subsystem if subsystem is not None else Subsystem.CROSS_CUTTING
         task = self.generator.make_exploration_task(
             title=title,
             description=description,

@@ -289,9 +289,7 @@ class OrchestratorConfig:
     # Set via env: TINKER_CONFIRM_BEFORE="git_push,artifact_delete"
     confirm_before: list = field(
         default_factory=lambda: [
-            a.strip()
-            for a in os.getenv("TINKER_CONFIRM_BEFORE", "").split(",")
-            if a.strip()
+            a.strip() for a in os.getenv("TINKER_CONFIRM_BEFORE", "").split(",") if a.strip()
         ]
     )
 
@@ -313,9 +311,7 @@ class OrchestratorConfig:
     #   "hybrid"    — LLM runs first; human reviews when score < threshold
     #                 or every N loops
     #   "on_demand" — LLM-only by default; human can trigger via API
-    judge_mode: str = field(
-        default_factory=lambda: os.getenv("TINKER_JUDGE_MODE", "llm")
-    )
+    judge_mode: str = field(default_factory=lambda: os.getenv("TINKER_JUDGE_MODE", "llm"))
 
     # How long (seconds) to wait for a human review before falling back to
     # LLM critic result.  0 = wait forever.  Default: 10 minutes.
@@ -341,17 +337,13 @@ class OrchestratorConfig:
     #
     # Set TINKER_CHECKPOINT_ENABLED=false to disable (useful for testing).
     checkpoint_enabled: bool = field(
-        default_factory=lambda: os.getenv(
-            "TINKER_CHECKPOINT_ENABLED", "true"
-        ).lower() == "true"
+        default_factory=lambda: os.getenv("TINKER_CHECKPOINT_ENABLED", "true").lower() == "true"
     )
 
     # Path to the checkpoint JSON file.  Same atomic-write pattern as the
     # state snapshot file.
     checkpoint_path: str = field(
-        default_factory=lambda: os.getenv(
-            "TINKER_CHECKPOINT_PATH", "./tinker_checkpoint.json"
-        )
+        default_factory=lambda: os.getenv("TINKER_CHECKPOINT_PATH", "./tinker_checkpoint.json")
     )
 
     # ── Project instructions (TINKER.md) ─────────────────────────────────────
@@ -364,9 +356,7 @@ class OrchestratorConfig:
     #
     # Set via env: TINKER_INSTRUCTIONS_PATH=/path/to/my-project.md
     project_instructions_path: str = field(
-        default_factory=lambda: os.getenv(
-            "TINKER_INSTRUCTIONS_PATH", "./TINKER.md"
-        )
+        default_factory=lambda: os.getenv("TINKER_INSTRUCTIONS_PATH", "./TINKER.md")
     )
 
     def __post_init__(self) -> None:
@@ -392,15 +382,11 @@ class OrchestratorConfig:
         self.architect_timeout = _positive_float(
             self.architect_timeout, "architect_timeout", min_val=1.0
         )
-        self.critic_timeout = _positive_float(
-            self.critic_timeout, "critic_timeout", min_val=1.0
-        )
+        self.critic_timeout = _positive_float(self.critic_timeout, "critic_timeout", min_val=1.0)
         self.synthesizer_timeout = _positive_float(
             self.synthesizer_timeout, "synthesizer_timeout", min_val=1.0
         )
-        self.tool_timeout = _positive_float(
-            self.tool_timeout, "tool_timeout", min_val=1.0
-        )
+        self.tool_timeout = _positive_float(self.tool_timeout, "tool_timeout", min_val=1.0)
 
         # Intervals must be non-negative
         self.macro_interval_seconds = _positive_float(

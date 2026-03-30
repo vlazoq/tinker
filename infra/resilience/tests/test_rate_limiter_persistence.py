@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from infra.resilience.rate_limiter import TokenBucketRateLimiter, RateLimiterRegistry
-
+from infra.resilience.rate_limiter import RateLimiterRegistry, TokenBucketRateLimiter
 
 # ---------------------------------------------------------------------------
 # Fake Redis
@@ -183,12 +182,26 @@ class TestRegistrySaveLoadAll:
 
         redis = FakeRedis()
         # Pre-load values
-        await redis.hset("tinker:rl:x", {"tokens": "2.0", "total_calls": "10",
-                                          "total_tokens_used": "0", "calls_throttled": "0",
-                                          "last_refill": "0"})
-        await redis.hset("tinker:rl:y", {"tokens": "4.0", "total_calls": "20",
-                                          "total_tokens_used": "0", "calls_throttled": "0",
-                                          "last_refill": "0"})
+        await redis.hset(
+            "tinker:rl:x",
+            {
+                "tokens": "2.0",
+                "total_calls": "10",
+                "total_tokens_used": "0",
+                "calls_throttled": "0",
+                "last_refill": "0",
+            },
+        )
+        await redis.hset(
+            "tinker:rl:y",
+            {
+                "tokens": "4.0",
+                "total_calls": "20",
+                "total_tokens_used": "0",
+                "calls_throttled": "0",
+                "last_refill": "0",
+            },
+        )
 
         await registry.load_all(redis)
 

@@ -32,7 +32,8 @@ import asyncio
 import logging
 import random
 import time
-from typing import Any, Callable, Coroutine, TypeVar
+from collections.abc import Callable, Coroutine
+from typing import Any, TypeVar
 
 import httpx
 
@@ -60,18 +61,18 @@ class RateLimitState:
 
     def __init__(self) -> None:
         self.limit: int = 0
-        self.remaining: int = -1        # -1 = unknown
-        self.reset_at: float = 0.0      # Unix timestamp
+        self.remaining: int = -1  # -1 = unknown
+        self.reset_at: float = 0.0  # Unix timestamp
         self.used: int = 0
 
     def update(self, response: httpx.Response) -> None:
         """Parse rate-limit headers from an httpx Response."""
         h = response.headers
         try:
-            self.limit     = int(h.get("x-ratelimit-limit",     self.limit))
+            self.limit = int(h.get("x-ratelimit-limit", self.limit))
             self.remaining = int(h.get("x-ratelimit-remaining", self.remaining))
-            self.reset_at  = float(h.get("x-ratelimit-reset",   self.reset_at))
-            self.used      = int(h.get("x-ratelimit-used",      self.used))
+            self.reset_at = float(h.get("x-ratelimit-reset", self.reset_at))
+            self.used = int(h.get("x-ratelimit-used", self.used))
         except (ValueError, TypeError):
             pass
 
@@ -94,8 +95,7 @@ class RateLimitState:
         if self.remaining == -1:
             return "rate_limit=unknown"
         return (
-            f"rate_limit={self.remaining}/{self.limit} "
-            f"resets_in={self.seconds_until_reset():.0f}s"
+            f"rate_limit={self.remaining}/{self.limit} resets_in={self.seconds_until_reset():.0f}s"
         )
 
 
@@ -133,14 +133,16 @@ async def with_retry(
         except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
             last_exc = exc
             if attempt == max_attempts:
-                logger.error(
-                    "%s: network error after %d attempts: %s", operation, attempt, exc
-                )
+                logger.error("%s: network error after %d attempts: %s", operation, attempt, exc)
                 raise
             wait = _jitter(backoff_base * (2 ** (attempt - 1)))
             logger.warning(
                 "%s: network error (attempt %d/%d), retrying in %.1fs: %s",
-                operation, attempt, max_attempts, wait, exc,
+                operation,
+                attempt,
+                max_attempts,
+                wait,
+                exc,
             )
             await asyncio.sleep(wait)
             continue
@@ -157,7 +159,10 @@ async def with_retry(
             if attempt < max_attempts:
                 logger.warning(
                     "%s: rate limit exhausted, sleeping %.0fs until reset (attempt %d/%d)",
-                    operation, sleep_secs, attempt, max_attempts,
+                    operation,
+                    sleep_secs,
+                    attempt,
+                    max_attempts,
                 )
                 await asyncio.sleep(sleep_secs)
                 continue
@@ -170,7 +175,10 @@ async def with_retry(
             wait = retry_after if retry_after else _jitter(backoff_base * (2 ** (attempt - 1)))
             logger.warning(
                 "%s: 429 Too Many Requests (attempt %d/%d), retrying in %.1fs",
-                operation, attempt, max_attempts, wait,
+                operation,
+                attempt,
+                max_attempts,
+                wait,
             )
             await asyncio.sleep(wait)
             continue
@@ -180,7 +188,11 @@ async def with_retry(
             wait = _jitter(backoff_base * (2 ** (attempt - 1)))
             logger.warning(
                 "%s: HTTP %d (attempt %d/%d), retrying in %.1fs",
-                operation, status, attempt, max_attempts, wait,
+                operation,
+                status,
+                attempt,
+                max_attempts,
+                wait,
             )
             await asyncio.sleep(wait)
             continue
@@ -203,6 +215,7 @@ async def with_retry(
 
 # ── Private helpers ───────────────────────────────────────────────────────────
 
+
 def _jitter(seconds: float, jitter: float = 0.2) -> float:
     """Add ±jitter% random noise to a sleep duration to avoid thundering herd."""
     return seconds * (1 + random.uniform(-jitter, jitter))
@@ -220,6 +233,7 @@ def _parse_retry_after(response: httpx.Response) -> float | None:
     # HTTP-date format — try to parse it
     try:
         from email.utils import parsedate_to_datetime
+
         dt = parsedate_to_datetime(header)
         return max(0.0, dt.timestamp() - time.time())
     except Exception:
@@ -230,4 +244,5 @@ def _fmt_reset(ts: float) -> str:
     if ts == 0.0:
         return "unknown"
     import datetime
+
     return datetime.datetime.fromtimestamp(ts).isoformat(timespec="seconds")

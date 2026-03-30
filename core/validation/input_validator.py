@@ -74,8 +74,9 @@ import logging
 import re
 import unicodedata
 import urllib.parse
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -150,8 +151,7 @@ INJECTION_PATTERNS = [
 # from both TinkerError and ValueError for backwards compatibility) and
 # re-exported here so ``from core.validation.input_validator import ValidationError``
 # continues to work.
-from exceptions import ValidationError  # noqa: E402, F401  (intentional re-export)
-
+from exceptions import ValidationError  # noqa: E402  (intentional re-export)
 
 # ---------------------------------------------------------------------------
 # String sanitization
@@ -190,8 +190,8 @@ def sanitize_string(
     # Coerce to string
     try:
         text = str(value)
-    except Exception:
-        raise ValidationError(field, value, "cannot convert to string")
+    except Exception as err:
+        raise ValidationError(field, value, "cannot convert to string") from err
 
     # Remove null bytes and other dangerous control characters
     # (keep \n, \r, \t which are legitimate in multi-line text)
@@ -260,7 +260,7 @@ def _decode_encoded_payloads(text: str) -> list[str]:
     return decoded
 
 
-def check_prompt_injection(text: str, field: str = "input") -> Optional[str]:
+def check_prompt_injection(text: str, field: str = "input") -> str | None:
     """
     Detect potential prompt injection attempts in a string.
 
@@ -272,7 +272,7 @@ def check_prompt_injection(text: str, field: str = "input") -> Optional[str]:
     Note: This is a heuristic best-effort check, not a security guarantee.
     It prevents obvious injection attempts but may miss sophisticated ones.
     """
-    candidates = [text] + _decode_encoded_payloads(text)
+    candidates = [text, *_decode_encoded_payloads(text)]
 
     for candidate in candidates:
         lower = candidate.lower()
@@ -355,9 +355,7 @@ def validate_problem_statement(raw: Any) -> str:
     ------
     ValidationError : If the input is invalid.
     """
-    text = sanitize_string(
-        raw, max_length=MAX_PROBLEM_LENGTH, field="problem_statement"
-    )
+    text = sanitize_string(raw, max_length=MAX_PROBLEM_LENGTH, field="problem_statement")
 
     # Warn (but don't block) on suspected injection
     check_prompt_injection(text, "problem_statement")
@@ -389,9 +387,7 @@ def validate_task(raw: Any) -> dict:
 
     task_id = raw.get("id")
     if not task_id or not isinstance(task_id, str):
-        raise ValidationError(
-            "task.id", task_id, "task must have a non-empty string id"
-        )
+        raise ValidationError("task.id", task_id, "task must have a non-empty string id")
 
     # Sanitize string fields (non-destructive — keeps dict structure)
     safe = dict(raw)
@@ -413,7 +409,7 @@ def validate_task(raw: Any) -> dict:
             allow_empty=True,
         )
 
-    if "subsystem" in safe and safe["subsystem"]:
+    if safe.get("subsystem"):
         safe["subsystem"] = sanitize_string(
             safe["subsystem"],
             max_length=MAX_SUBSYSTEM_LENGTH,
@@ -421,9 +417,7 @@ def validate_task(raw: Any) -> dict:
             allow_empty=True,
         )
         # Subsystem names should be alphanumeric (slugs)
-        if safe["subsystem"] and not re.match(
-            r"^[a-zA-Z0-9_\-. ]+$", safe["subsystem"]
-        ):
+        if safe["subsystem"] and not re.match(r"^[a-zA-Z0-9_\-. ]+$", safe["subsystem"]):
             logger.warning(
                 "task.subsystem contains unexpected characters: '%s'", safe["subsystem"]
             )
@@ -526,19 +520,19 @@ def validate_file_path(
     # would point outside the base directory are caught by relative_to().
     try:
         candidate.relative_to(base)
-    except ValueError:
+    except ValueError as err:
         raise ValidationError(
             field,
             raw,
             f"Path traversal detected: '{raw_str}' would escape base dir '{base_dir}'",
-        )
+        ) from err
 
     return candidate
 
 
 def validate_ai_json(
     raw: Any,
-    expected_keys: Optional[list[str]] = None,
+    expected_keys: list[str] | None = None,
     field: str = "ai_output",
 ) -> dict:
     """
@@ -612,9 +606,7 @@ def validate_config_value(
     try:
         cast = value_type(value)
     except (TypeError, ValueError) as exc:
-        raise ValidationError(
-            name, value, f"Cannot cast to {value_type.__name__}: {exc}"
-        ) from exc
+        raise ValidationError(name, value, f"Cannot cast to {value_type.__name__}: {exc}") from exc
 
     if min_val is not None and cast < min_val:
         raise ValidationError(name, cast, f"Value {cast} is below minimum {min_val}")

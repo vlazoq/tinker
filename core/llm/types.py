@@ -30,16 +30,16 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Protocol as TypingProtocol
-
+from enum import StrEnum
+from typing import Any
+from typing import Protocol as TypingProtocol
 
 # ---------------------------------------------------------------------------
 # Agent roles
 # ---------------------------------------------------------------------------
 
 
-class AgentRole(str, Enum):
+class AgentRole(StrEnum):
     """
     The four AI agents that make up Tinker's thinking engine.
 
@@ -68,7 +68,7 @@ class AgentRole(str, Enum):
 # ---------------------------------------------------------------------------
 
 
-class Machine(str, Enum):
+class Machine(StrEnum):
     """
     The physical machines (computers) that run Ollama.
 
@@ -120,7 +120,7 @@ class RoutingStrategy(TypingProtocol):
         router = ModelRouter(routing_strategy=AlwaysServerStrategy())
     """
 
-    def route(self, request: "ModelRequest") -> Machine:
+    def route(self, request: ModelRequest) -> Machine:
         """Return the Machine that should handle this request."""
         ...
 
@@ -143,7 +143,7 @@ class DefaultRoutingStrategy:
     def __init__(self, role_map: dict[AgentRole, Machine] | None = None) -> None:
         self._map = role_map or dict(ROLE_MACHINE_MAP)
 
-    def route(self, request: "ModelRequest") -> Machine:
+    def route(self, request: ModelRequest) -> Machine:
         """Look up the machine by agent role, falling back to SERVER."""
         return self._map.get(request.agent_role, Machine.SERVER)
 
@@ -180,7 +180,7 @@ class TaskAwareRoutingStrategy:
         self._map = role_map or dict(ROLE_MACHINE_MAP)
         self._overrides = model_overrides or {}
 
-    def route(self, request: "ModelRequest") -> Machine:
+    def route(self, request: ModelRequest) -> Machine:
         """Check overrides first, then fall back to the role map."""
         if request.agent_role in self._overrides:
             return self._overrides[request.agent_role]
@@ -265,7 +265,7 @@ class MachineConfig:
             raise ValueError(f"connect_timeout must be > 0, got {self.connect_timeout}")
 
     @classmethod
-    def server_defaults(cls) -> "MachineConfig":
+    def server_defaults(cls) -> MachineConfig:
         """
         Build a MachineConfig for the main server using environment variables.
 
@@ -291,7 +291,7 @@ class MachineConfig:
         )
 
     @classmethod
-    def secondary_defaults(cls) -> "MachineConfig":
+    def secondary_defaults(cls) -> MachineConfig:
         """
         Build a MachineConfig for the secondary (lighter) machine.
 
@@ -397,9 +397,9 @@ class ModelRequest:
     # Optional task metadata — used by the routing strategy to pick the
     # best model for a given task.  Callers that don't care about per-task
     # routing can leave these as None and the default ROLE_MACHINE_MAP is used.
-    task_type: str | None = None        # e.g. "research", "implementation", "review"
-    task_id: str | None = None          # correlation ID for logging
-    task_description: str | None = None # short summary, used by adaptive routing
+    task_type: str | None = None  # e.g. "research", "implementation", "review"
+    task_id: str | None = None  # correlation ID for logging
+    task_description: str | None = None  # short summary, used by adaptive routing
 
     # Populated by the router before sending — callers don't set these
     resolved_model: str = ""

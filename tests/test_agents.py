@@ -39,15 +39,14 @@ from agents import (
     ArchitectAgent,
     CriticAgent,
     SynthesizerAgent,
-    _extract_knowledge_gaps,
-    _extract_candidate_tasks,
-    _extract_score,
-    _parse_architect_structured,
     _build_architect_prompts,
     _build_critic_prompts,
     _build_synthesizer_prompts,
+    _extract_candidate_tasks,
+    _extract_knowledge_gaps,
+    _extract_score,
+    _parse_architect_structured,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -214,7 +213,7 @@ class TestParseArchitectStructured:
             ],
             "confidence": 0.75,
         }
-        content, gaps, decisions, questions, candidates = _parse_architect_structured(d)
+        content, _gaps, decisions, questions, candidates = _parse_architect_structured(d)
         assert "Redis Caching Layer" in content
         assert "Use Redis for caching." in content
         assert questions == ["How to handle cache invalidation?"]
@@ -237,7 +236,7 @@ class TestParseArchitectStructured:
             "candidate_next_tasks": [],
             "confidence": 0.5,
         }
-        content, gaps, decisions, questions, candidates = _parse_architect_structured(d)
+        content, _gaps, decisions, _questions, _candidates = _parse_architect_structured(d)
         assert content  # must not be empty
         assert decisions == []
 
@@ -319,7 +318,7 @@ class TestBuildArchitectPrompts:
         mock_pb.for_architect_micro.side_effect = Exception("template not found")
 
         with patch("agents._shared._get_prompt_builder_cls", return_value=mock_pb):
-            system, user = _build_architect_prompts(
+            system, _user = _build_architect_prompts(
                 task_desc="Design auth",
                 subsystem="auth",
                 context_str="ctx",
@@ -340,7 +339,7 @@ class TestBuildCriticPrompts:
         mock_pb = MagicMock()
         mock_pb.for_critic_micro.return_value = ("sys", "usr")
         with patch("agents._shared._get_prompt_builder_cls", return_value=mock_pb):
-            system, user = _build_critic_prompts("task desc", "design content")
+            system, _user = _build_critic_prompts("task desc", "design content")
         assert system == "sys"
         mock_pb.for_critic_micro.assert_called_once()
 
@@ -375,7 +374,7 @@ class TestBuildSynthesizerPrompts:
         mock_pb = MagicMock()
         mock_pb.for_synthesizer_meso.return_value = ("sys", "usr")
         with patch("agents._shared._get_prompt_builder_cls", return_value=mock_pb):
-            system, user = _build_synthesizer_prompts(
+            system, _user = _build_synthesizer_prompts(
                 "meso",
                 subsystem="billing",
                 artifacts=[],
@@ -641,9 +640,7 @@ class TestCriticAgentCall:
 class TestSynthesizerAgentCall:
     @pytest.mark.asyncio
     async def test_meso_returns_expected_keys(self):
-        resp = _make_mock_response(
-            raw_text="Meso synthesis document.", total_tokens=300
-        )
+        resp = _make_mock_response(raw_text="Meso synthesis document.", total_tokens=300)
         agent = SynthesizerAgent(_make_router(resp))
         result = await agent.call(
             level="meso",
@@ -739,9 +736,7 @@ class TestMemoryAdaptorSemanticSearch:
         mock_mm.get_recent_artifacts = AsyncMock(return_value=[mock_artifact])
 
         adaptor = MemoryAdaptor(mock_mm)
-        items = await adaptor.semantic_search_session(
-            "design the caching layer", top_k=3
-        )
+        items = await adaptor.semantic_search_session("design the caching layer", top_k=3)
 
         mock_mm.get_recent_artifacts.assert_called_once()
         assert len(items) == 1

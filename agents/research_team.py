@@ -120,8 +120,7 @@ class ResearchTeam:
 
         # Launch all research tasks concurrently (bounded by semaphore)
         tasks = [
-            self._research_one(original, norm, task, timeout)
-            for original, norm in unique_gaps
+            self._research_one(original, norm, task, timeout) for original, norm in unique_gaps
         ]
         raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 

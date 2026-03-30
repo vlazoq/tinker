@@ -44,9 +44,9 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Callable, Optional
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ class EvalSet:
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_file(cls, path: str) -> "EvalSet":
+    def from_file(cls, path: str) -> EvalSet:
         """
         Load an EvalSet from a JSON file.
 
@@ -136,12 +136,13 @@ class EvalSet:
         -------
         EvalSet : The loaded eval set.
         """
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             raw = json.load(fh)
 
         if isinstance(raw, list):
             # Bare array of case dicts — derive name from filename
             import os
+
             name = os.path.splitext(os.path.basename(path))[0]
             case_dicts = raw
         else:
@@ -192,7 +193,7 @@ class EvalSet:
     # Filtering
     # ------------------------------------------------------------------
 
-    def filter_by_tag(self, tag: str) -> "EvalSet":
+    def filter_by_tag(self, tag: str) -> EvalSet:
         """
         Return a new EvalSet containing only cases that carry the given tag.
 
@@ -255,7 +256,7 @@ class EvalReport:
 
     eval_set_name: str
     results: list[EvalResult] = field(default_factory=list)
-    run_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    run_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # ------------------------------------------------------------------
     # Aggregate metrics
@@ -303,9 +304,7 @@ class EvalReport:
         """
         n = len(self.results)
         errors = sum(1 for r in self.results if r.error)
-        avg_latency = (
-            sum(r.latency_ms for r in self.results) / n if n else 0.0
-        )
+        avg_latency = sum(r.latency_ms for r in self.results) / n if n else 0.0
         return (
             f"EvalReport for '{self.eval_set_name}': {n} case(s) evaluated "
             f"at {self.run_at.isoformat()}. "
@@ -368,7 +367,7 @@ class OfflineEvaluator:
     def __init__(
         self,
         model_fn: Callable,
-        judge_fn: Optional[Callable] = None,
+        judge_fn: Callable | None = None,
         concurrency: int = 4,
     ) -> None:
         self._model_fn = model_fn
@@ -402,10 +401,7 @@ class OfflineEvaluator:
         EvalReport : Aggregate results for the run.
         """
         semaphore = asyncio.Semaphore(self._concurrency)
-        tasks = [
-            self._run_case(case, semaphore, timeout_per_case)
-            for case in eval_set.cases
-        ]
+        tasks = [self._run_case(case, semaphore, timeout_per_case) for case in eval_set.cases]
         results: list[EvalResult] = await asyncio.gather(*tasks)
         return EvalReport(eval_set_name=eval_set.name, results=list(results))
 
@@ -435,9 +431,7 @@ class OfflineEvaluator:
 
                 # Score the result
                 if self._judge_fn is not None:
-                    score = float(
-                        await self._judge_fn(case.task, case.expected_output, actual)
-                    )
+                    score = float(await self._judge_fn(case.task, case.expected_output, actual))
                     judge_name = getattr(self._judge_fn, "__name__", "judge_fn")
                 else:
                     score = self._score_result(case.expected_output, actual)
@@ -451,7 +445,7 @@ class OfflineEvaluator:
                     latency_ms=latency_ms,
                 )
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 latency_ms = (time.monotonic() - t0) * 1000.0
                 logger.warning("EvalCase %s timed out after %.1fs", case.id, timeout_per_case)
                 return EvalResult(
@@ -461,7 +455,7 @@ class OfflineEvaluator:
                     latency_ms=latency_ms,
                     error=f"Timed out after {timeout_per_case}s",
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 latency_ms = (time.monotonic() - t0) * 1000.0
                 logger.warning("EvalCase %s failed: %s", case.id, exc)
                 return EvalResult(

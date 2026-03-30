@@ -12,8 +12,8 @@ Or directly:
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
@@ -21,15 +21,15 @@ import logging
 import unittest
 
 from runtime.tasks import (
-    Task,
-    TaskType,
-    TaskStatus,
-    Subsystem,
-    TaskRegistry,
-    TaskGenerator,
-    PriorityScorer,
     DependencyResolver,
+    PriorityScorer,
+    Subsystem,
+    Task,
+    TaskGenerator,
     TaskQueue,
+    TaskRegistry,
+    TaskStatus,
+    TaskType,
 )
 
 logging.basicConfig(
@@ -204,9 +204,7 @@ class TestTaskGenerator(unittest.TestCase):
         self.gen = TaskGenerator()
 
     def test_basic_generation(self):
-        tasks = self.gen.from_architect_output(
-            ARCHITECT_OUTPUT, parent_task_id="parent-1"
-        )
+        tasks = self.gen.from_architect_output(ARCHITECT_OUTPUT, parent_task_id="parent-1")
         self.assertEqual(len(tasks), 4)
         for t in tasks:
             self.assertIsInstance(t, Task)
@@ -390,9 +388,7 @@ class TestTaskQueueLifecycle(unittest.TestCase):
         parent = Task(title="Seed task", status=TaskStatus.COMPLETE)
         self.reg.save(parent)
 
-        tasks = self.gen.from_architect_output(
-            ARCHITECT_OUTPUT, parent_task_id=parent.id
-        )
+        tasks = self.gen.from_architect_output(ARCHITECT_OUTPUT, parent_task_id=parent.id)
         log.info("Step 1: Generated %d tasks", len(tasks))
 
         # Inject a dependency between tasks to test blocking

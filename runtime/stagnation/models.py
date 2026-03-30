@@ -9,17 +9,16 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Dict, Optional, Set
-
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
 
 # ─────────────────────────────────────────────────────────────
 # Stagnation failure modes
 # ─────────────────────────────────────────────────────────────
 
 
-class StagnationType(str, Enum):
+class StagnationType(StrEnum):
     SEMANTIC_LOOP = "semantic_loop"
     SUBSYSTEM_FIXATION = "subsystem_fixation"
     CRITIQUE_COLLAPSE = "critique_collapse"
@@ -32,7 +31,7 @@ class StagnationType(str, Enum):
 # ─────────────────────────────────────────────────────────────
 
 
-class InterventionType(str, Enum):
+class InterventionType(StrEnum):
     FORCE_BRANCH = "force_branch"
     INJECT_CONTRADICTION = "inject_contradiction"
     ALTERNATIVE_FORCING = "alternative_forcing"
@@ -42,7 +41,7 @@ class InterventionType(str, Enum):
 
 
 # Canonical mapping: each failure mode → its primary intervention
-INTERVENTION_MAP: Dict[StagnationType, InterventionType] = {
+INTERVENTION_MAP: dict[StagnationType, InterventionType] = {
     StagnationType.SEMANTIC_LOOP: InterventionType.ALTERNATIVE_FORCING,
     StagnationType.SUBSYSTEM_FIXATION: InterventionType.FORCE_BRANCH,
     StagnationType.CRITIQUE_COLLAPSE: InterventionType.INJECT_CONTRADICTION,
@@ -62,9 +61,9 @@ class InterventionDirective:
     intervention_type: InterventionType
     stagnation_type: StagnationType
     severity: float  # 0.0 – 1.0 normalised score
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     directive_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def is_actionable(self) -> bool:
         return self.intervention_type != InterventionType.NO_ACTION
@@ -93,7 +92,7 @@ class StagnationEvent:
     detected_at: datetime
     loop_index: int
     directive: InterventionDirective
-    detector_evidence: Dict[str, Any] = field(default_factory=dict)
+    detector_evidence: dict[str, Any] = field(default_factory=dict)
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def to_dict(self) -> dict:
@@ -122,25 +121,25 @@ class MicroLoopContext:
     loop_index: int
 
     # Architect / general output text for semantic similarity checks
-    output_text: Optional[str] = None
+    output_text: str | None = None
 
     # Tag identifying which subsystem this loop focused on
-    subsystem_tag: Optional[str] = None
+    subsystem_tag: str | None = None
 
     # Critic confidence score for this loop (0.0 – 1.0)
-    critic_score: Optional[float] = None
+    critic_score: float | None = None
 
     # Set of source URLs the Researcher found this loop
-    research_urls: Optional[Set[str]] = None
+    research_urls: set[str] | None = None
 
     # Current task queue depth
-    queue_depth: Optional[int] = None
+    queue_depth: int | None = None
 
     # How many NEW tasks were generated this loop
-    tasks_generated: Optional[int] = None
+    tasks_generated: int | None = None
 
     # How many tasks were consumed (completed) this loop
-    tasks_consumed: Optional[int] = None
+    tasks_consumed: int | None = None
 
     # Free-form extras for future extension
-    extras: Dict[str, Any] = field(default_factory=dict)
+    extras: dict[str, Any] = field(default_factory=dict)

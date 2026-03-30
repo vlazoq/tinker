@@ -43,7 +43,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from .types import Event, EventType
 
@@ -201,7 +201,7 @@ class EventBus:
         async def _call(fn: EventHandler) -> None:
             try:
                 await fn(event)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.error(
                     "EventBus handler %s raised for event %s: %s",
                     getattr(fn, "__qualname__", repr(fn)),
@@ -217,9 +217,7 @@ class EventBus:
         if errors:
             raise errors[0]
 
-        logger.debug(
-            "EventBus: dispatched %s to %d handler(s)", event.type, len(all_handlers)
-        )
+        logger.debug("EventBus: dispatched %s to %d handler(s)", event.type, len(all_handlers))
         return len(all_handlers)
 
     # ------------------------------------------------------------------

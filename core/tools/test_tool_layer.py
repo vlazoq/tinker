@@ -22,9 +22,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 try:
     import httpx  # noqa: F401
 except ImportError:
-    from unittest.mock import MagicMock
     import sys
     import types
+    from unittest.mock import MagicMock
 
     _httpx = types.ModuleType("httpx")
     _httpx.AsyncClient = MagicMock
@@ -60,15 +60,14 @@ except ImportError:
 # Make the package importable when run from the repo root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.tools.base import ToolResult
-from core.tools.web_search import WebSearchTool
-from core.tools.web_scraper import WebScraperTool
 from core.tools.artifact_writer import ArtifactWriterTool
+from core.tools.base import ToolResult
 from core.tools.diagram_generator import DiagramGeneratorTool
 from core.tools.memory_query import MemoryQueryTool
 from core.tools.registry import ToolRegistry, build_default_registry
+from core.tools.web_scraper import WebScraperTool
+from core.tools.web_search import WebSearchTool
 from exceptions import ToolNotFoundError
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -87,9 +86,7 @@ def run(coro):
 
 class TestToolResult(unittest.TestCase):
     def test_to_dict_success(self):
-        r = ToolResult(
-            success=True, tool_name="foo", data={"key": "val"}, duration_ms=42.1
-        )
+        r = ToolResult(success=True, tool_name="foo", data={"key": "val"}, duration_ms=42.1)
         d = r.to_dict()
         self.assertTrue(d["success"])
         self.assertEqual(d["tool_name"], "foo")

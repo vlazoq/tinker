@@ -55,19 +55,20 @@ Sub-modules in this package
 # ---------------------------------------------------------------------------
 
 # The HTTP client and the errors it can raise
-from .client import OllamaClient, ModelClientError, ConnectionError, TimeoutError
+from .client import ConnectionError, ModelClientError, OllamaClient, TimeoutError
 
 # JSON extraction helpers (used by router, but useful to callers too)
-from .parsing import extract_json, build_json_instruction
+from .parsing import build_json_instruction, extract_json
+
+# Vendor-agnostic provider abstraction (Ollama, OpenAI, LM Studio, vLLM)
+from .providers import PROVIDER_PRESETS, ProviderConfig, build_client
 
 # The main entry-point most callers will use
 from .router import ModelRouter
 
-# Vendor-agnostic provider abstraction (Ollama, OpenAI, LM Studio, vLLM)
-from .providers import build_client, PROVIDER_PRESETS, ProviderConfig
-
 # All data-types that callers need when building requests or reading responses
 from .types import (
+    ROLE_MACHINE_MAP,  # lookup table: agent role → server machine
     AgentRole,  # which AI agent is asking (ARCHITECT, CRITIC, …)
     Machine,  # which physical server to send the request to
     MachineConfig,  # connection settings for one server
@@ -75,7 +76,6 @@ from .types import (
     ModelRequest,  # a fully-described request to the model
     ModelResponse,  # everything that came back from the model
     RetryConfig,  # settings for how to retry failed requests
-    ROLE_MACHINE_MAP,  # lookup table: agent role → server machine
 )
 
 # ---------------------------------------------------------------------------
@@ -85,22 +85,22 @@ from .types import (
 # and also tells linters / IDEs that these names are intentionally exported.
 
 __all__ = [
-    "ModelRouter",  # the main class callers use
-    "OllamaClient",  # the low-level HTTP client (advanced use)
+    "PROVIDER_PRESETS",  # known provider presets (ollama, openai, lm_studio, …)
+    "ROLE_MACHINE_MAP",  # dict mapping each AgentRole to its Machine
     "AgentRole",  # enum: ARCHITECT | RESEARCHER | SYNTHESIZER | CRITIC
+    "ConnectionError",  # raised when Ollama is unreachable
     "Machine",  # enum: SERVER | SECONDARY
     "MachineConfig",  # dataclass: URL, model name, timeouts, …
     "Message",  # dataclass: role + content text
+    "ModelClientError",  # base exception class
     "ModelRequest",  # dataclass: everything needed to make a request
     "ModelResponse",  # dataclass: everything that came back
-    "RetryConfig",  # dataclass: retry/backoff settings
-    "ROLE_MACHINE_MAP",  # dict mapping each AgentRole to its Machine
-    "ModelClientError",  # base exception class
-    "ConnectionError",  # raised when Ollama is unreachable
-    "TimeoutError",  # raised when a request takes too long
-    "extract_json",  # standalone helper to pull JSON out of raw text
-    "build_json_instruction",  # helper to add "respond in JSON" to a prompt
-    "build_client",  # factory: build OllamaClient for any provider
-    "PROVIDER_PRESETS",  # known provider presets (ollama, openai, lm_studio, …)
+    "ModelRouter",  # the main class callers use
+    "OllamaClient",  # the low-level HTTP client (advanced use)
     "ProviderConfig",  # dataclass: named provider settings
+    "RetryConfig",  # dataclass: retry/backoff settings
+    "TimeoutError",  # raised when a request takes too long
+    "build_client",  # factory: build OllamaClient for any provider
+    "build_json_instruction",  # helper to add "respond in JSON" to a prompt
+    "extract_json",  # standalone helper to pull JSON out of raw text
 ]

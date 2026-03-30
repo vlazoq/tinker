@@ -61,7 +61,7 @@ import time
 from typing import TYPE_CHECKING
 
 from .compat import coroutine_if_needed
-from .state import MacroLoopRecord, LoopStatus
+from .state import LoopStatus, MacroLoopRecord
 
 # Only imported by type checkers — not at runtime — to avoid a circular import.
 if TYPE_CHECKING:
@@ -71,9 +71,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("tinker.orchestrator.macro")
 
 
-async def run_macro_loop(
-    orch: "Orchestrator", trigger_iteration: int
-) -> MacroLoopRecord:
+async def run_macro_loop(orch: Orchestrator, trigger_iteration: int) -> MacroLoopRecord:
     """
     Execute a full architectural snapshot and commit it to version control.
 
@@ -186,19 +184,11 @@ async def run_macro_loop(
 
                 # Collect recent metrics from the orchestrator state
                 snap = PerformanceSnapshot(
-                    subsystem_scores=dict(
-                        getattr(orch.state, "subsystem_critic_scores", {})
-                    ),
-                    stagnation_events=list(
-                        getattr(orch.state, "recent_stagnation_events", [])
-                    ),
+                    subsystem_scores=dict(getattr(orch.state, "subsystem_critic_scores", {})),
+                    stagnation_events=list(getattr(orch.state, "recent_stagnation_events", [])),
                     dlq_entries=[],  # populated below if DLQ available
-                    error_counts=dict(
-                        getattr(orch.state, "error_counts", {})
-                    ),
-                    loop_durations=list(
-                        getattr(orch.state, "recent_loop_durations", [])
-                    ),
+                    error_counts=dict(getattr(orch.state, "error_counts", {})),
+                    loop_durations=list(getattr(orch.state, "recent_loop_durations", [])),
                 )
 
                 actions = orch._self_improvement.analyze(snap)
@@ -216,7 +206,8 @@ async def run_macro_loop(
 
                             current = _PB.get_global_project_instructions()
                             updated = orch._self_improvement.apply_prompt_adjustment(
-                                current, action,
+                                current,
+                                action,
                             )
                             _PB.set_global_project_instructions(updated)
                             logger.info(
@@ -236,16 +227,16 @@ async def run_macro_loop(
                         )
                         # Apply config adjustment (temperature tuning).
                         try:
-                            current_temp = getattr(
-                                orch.config, "temperature", 0.7
-                            )
+                            current_temp = getattr(orch.config, "temperature", 0.7)
                             new_temp = orch._self_improvement.apply_config_adjustment(
-                                current_temp, action,
+                                current_temp,
+                                action,
                             )
                             orch.config.temperature = new_temp
                             logger.info(
                                 "macro: temperature adjusted %.3f → %.3f",
-                                current_temp, new_temp,
+                                current_temp,
+                                new_temp,
                             )
                         except Exception as ca_exc:
                             logger.warning(
@@ -261,28 +252,24 @@ async def run_macro_loop(
                         # Enqueue the self-improvement task so the next
                         # micro loop picks it up.
                         try:
-                            await coroutine_if_needed(
-                                orch.task_engine.add_task
-                            )({
-                                "type": action.parameters.get(
-                                    "task_type", "self_improvement"
-                                ),
-                                "title": action.parameters.get(
-                                    "task_title", action.description
-                                ),
-                                "description": action.parameters.get(
-                                    "task_description", action.description
-                                ),
-                                "subsystem": "self_improvement",
-                                "priority": action.parameters.get(
-                                    "priority", "NORMAL"
-                                ),
-                                "metadata": {
-                                    "source": "self_improvement_engine",
-                                    "confidence": action.confidence,
-                                    "target": action.target,
-                                },
-                            })
+                            await coroutine_if_needed(orch.task_engine.add_task)(
+                                {
+                                    "type": action.parameters.get("task_type", "self_improvement"),
+                                    "title": action.parameters.get(
+                                        "task_title", action.description
+                                    ),
+                                    "description": action.parameters.get(
+                                        "task_description", action.description
+                                    ),
+                                    "subsystem": "self_improvement",
+                                    "priority": action.parameters.get("priority", "NORMAL"),
+                                    "metadata": {
+                                        "source": "self_improvement_engine",
+                                        "confidence": action.confidence,
+                                        "target": action.target,
+                                    },
+                                }
+                            )
                             logger.info(
                                 "macro: enqueued self-improvement task: %s",
                                 action.parameters.get("task_title", "?"),
@@ -298,7 +285,7 @@ async def run_macro_loop(
                     si_exc,
                 )
 
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         # One of the timed operations (document fetch, Synthesizer call, or
         # commit) took too long.  Record the error and return — do NOT raise.
         msg = f"Timeout in macro loop version={snapshot_version}: {exc}"

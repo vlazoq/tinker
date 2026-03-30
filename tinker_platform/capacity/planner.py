@@ -67,7 +67,6 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Deque, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -123,14 +122,14 @@ class CapacityPlanner:
         self._window_size = window_size
         self._tokens_per_second = max(tokens_per_second, 1.0)
         self._disk_hours_warning = disk_hours_warning
-        self._snapshots: Deque[CapacitySnapshot] = deque(maxlen=window_size)
+        self._snapshots: deque[CapacitySnapshot] = deque(maxlen=window_size)
         self._thresholds: dict[str, float] = {}
         self._start_time = time.monotonic()
         self._total_tokens = 0
         self._total_micro_tokens = 0
         self._total_meso_tokens = 0
         self._total_macro_tokens = 0
-        self._first_snapshot: Optional[CapacitySnapshot] = None
+        self._first_snapshot: CapacitySnapshot | None = None
 
     def record_tokens(
         self, micro_tokens: int = 0, meso_tokens: int = 0, macro_tokens: int = 0
@@ -172,9 +171,7 @@ class CapacityPlanner:
         total_mb = 0.0
         for path in (self._workspace_path, self._artifact_path):
             if path.exists():
-                size_bytes = sum(
-                    f.stat().st_size for f in path.rglob("*") if f.is_file()
-                )
+                size_bytes = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
                 total_mb += size_bytes / (1024 * 1024)
 
         # Actual partition free space
@@ -191,9 +188,7 @@ class CapacityPlanner:
             self._snapshots[-1].disk_mb = total_mb
             self._snapshots[-1].disk_free_gb = disk_free_gb
         else:
-            self._snapshots.append(
-                CapacitySnapshot(disk_mb=total_mb, disk_free_gb=disk_free_gb)
-            )
+            self._snapshots.append(CapacitySnapshot(disk_mb=total_mb, disk_free_gb=disk_free_gb))
 
     def record_artifact_count(self, total: int, archived: int = 0) -> None:
         """Record the current artifact count."""
@@ -246,9 +241,7 @@ class CapacityPlanner:
             current_mb = rpt.get("current_disk_mb", 0)
             max_mb = self._thresholds["disk_mb"]
             if current_mb > max_mb:
-                alerts.append(
-                    f"DISK EXCEEDED: {current_mb:.0f}MB > {max_mb:.0f}MB limit"
-                )
+                alerts.append(f"DISK EXCEEDED: {current_mb:.0f}MB > {max_mb:.0f}MB limit")
             elif current_mb > max_mb * 0.8:
                 alerts.append(
                     f"DISK WARNING: {current_mb:.0f}MB = {current_mb / max_mb * 100:.0f}% "
@@ -265,9 +258,7 @@ class CapacityPlanner:
             current_count = rpt.get("current_artifact_count", 0)
             max_count = int(self._thresholds["artifact_count"])
             if current_count > max_count:
-                alerts.append(
-                    f"ARTIFACT COUNT EXCEEDED: {current_count} > {max_count} limit"
-                )
+                alerts.append(f"ARTIFACT COUNT EXCEEDED: {current_count} > {max_count} limit")
             elif current_count > max_count * 0.8:
                 alerts.append(
                     f"ARTIFACT COUNT WARNING: {current_count} = "
@@ -322,9 +313,7 @@ class CapacityPlanner:
         elapsed_hours = (time.monotonic() - self._start_time) / 3600
         if elapsed_hours > 0.05:  # At least 3 minutes of data
             rpt["tokens_per_hour"] = round(self._total_tokens / elapsed_hours)
-            rpt["estimated_tokens_per_day"] = round(
-                self._total_tokens / elapsed_hours * 24
-            )
+            rpt["estimated_tokens_per_day"] = round(self._total_tokens / elapsed_hours * 24)
 
             # GPU time: total_tokens / tokens_per_second → seconds → hours
             gpu_seconds = self._total_tokens / self._tokens_per_second

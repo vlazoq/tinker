@@ -112,27 +112,25 @@ class GrubConfig:
 
     # ── Execution mode ─────────────────────────────────────────────────────────
     # CHANGE THIS to switch between A / B / C
-    execution_mode: str = field(
-        default_factory=lambda: os.getenv("GRUB_EXEC_MODE", "sequential")
-    )
+    execution_mode: str = field(default_factory=lambda: os.getenv("GRUB_EXEC_MODE", "sequential"))
 
     # ── Model assignments ──────────────────────────────────────────────────────
     models: dict[str, str] = field(default_factory=lambda: dict(_DEFAULT_MODELS))
-    ollama_urls: dict[str, str] = field(
-        default_factory=lambda: dict(_DEFAULT_OLLAMA_URLS)
-    )
+    ollama_urls: dict[str, str] = field(default_factory=lambda: dict(_DEFAULT_OLLAMA_URLS))
 
     # ── Per-minion LLM timeouts ──────────────────────────────────────────────
     # Timeout in seconds for each minion's LLM call.  Larger models and
     # complex tasks need more time; reviewers and testers can be faster.
     # Override individual values via grub_config.json or programmatically.
-    timeouts: dict[str, float] = field(default_factory=lambda: {
-        "coder": 180.0,      # 3 min — code generation is slow on 32B models
-        "reviewer": 90.0,    # 1.5 min — evaluation is faster
-        "tester": 120.0,     # 2 min — test writing + fixture setup
-        "debugger": 180.0,   # 3 min — root cause analysis needs time
-        "refactorer": 120.0, # 2 min — structural changes
-    })
+    timeouts: dict[str, float] = field(
+        default_factory=lambda: {
+            "coder": 180.0,  # 3 min — code generation is slow on 32B models
+            "reviewer": 90.0,  # 1.5 min — evaluation is faster
+            "tester": 120.0,  # 2 min — test writing + fixture setup
+            "debugger": 180.0,  # 3 min — root cause analysis needs time
+            "refactorer": 120.0,  # 2 min — structural changes
+        }
+    )
 
     # ── Quality control ────────────────────────────────────────────────────────
     quality_threshold: float = float(os.getenv("GRUB_QUALITY_THRESHOLD", "0.75"))
@@ -161,9 +159,7 @@ class GrubConfig:
     #
     # Set GRUB_CONTEXT_SUMMARIZATION=false to disable and revert to truncation.
     context_summarization_enabled: bool = field(
-        default_factory=lambda: os.getenv(
-            "GRUB_CONTEXT_SUMMARIZATION", "true"
-        ).lower() == "true"
+        default_factory=lambda: os.getenv("GRUB_CONTEXT_SUMMARIZATION", "true").lower() == "true"
     )
 
     # Text longer than this (in characters) triggers summarization.
@@ -216,11 +212,11 @@ class GrubConfig:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "GrubConfig":
+    def from_dict(cls, d: dict) -> GrubConfig:
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
     @classmethod
-    def load(cls, path: str | Path = "grub_config.json") -> "GrubConfig":
+    def load(cls, path: str | Path = "grub_config.json") -> GrubConfig:
         """
         Load config from a JSON file.
 
@@ -237,9 +233,7 @@ class GrubConfig:
                 data = json.loads(p.read_text())
                 return cls.from_dict(data)
             except Exception as exc:
-                print(
-                    f"[GrubConfig] Warning: could not load {path}: {exc} — using defaults"
-                )
+                print(f"[GrubConfig] Warning: could not load {path}: {exc} — using defaults")
         # Write defaults so the user can edit them
         cfg = cls()
         try:

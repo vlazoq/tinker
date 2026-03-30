@@ -56,7 +56,7 @@ import json
 import logging
 import secrets
 from contextvars import ContextVar
-from typing import Any, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Context variables for trace propagation
@@ -78,7 +78,7 @@ def generate_trace_id() -> str:
 
 
 def set_trace_context(
-    trace_id: Optional[str] = None,
+    trace_id: str | None = None,
     loop_level: str = "",
     task_id: str = "",
     subsystem: str = "",
@@ -178,11 +178,11 @@ class TraceContextFilter(logging.Filter):
         """
         # Read current values from ContextVars.  If not set, default to
         # empty string / zero so downstream code doesn't need null checks.
-        record.trace_id = _trace_id_var.get()          # type: ignore[attr-defined]
-        record.loop_level = _loop_level_var.get()      # type: ignore[attr-defined]
-        record.task_id = _task_id_var.get()             # type: ignore[attr-defined]
-        record.subsystem = _subsystem_var.get()         # type: ignore[attr-defined]
-        record.iteration = _iteration_var.get()         # type: ignore[attr-defined]
+        record.trace_id = _trace_id_var.get()  # type: ignore[attr-defined]
+        record.loop_level = _loop_level_var.get()  # type: ignore[attr-defined]
+        record.task_id = _task_id_var.get()  # type: ignore[attr-defined]
+        record.subsystem = _subsystem_var.get()  # type: ignore[attr-defined]
+        record.iteration = _iteration_var.get()  # type: ignore[attr-defined]
         return True
 
 
@@ -319,7 +319,7 @@ class HumanReadableFormatter(logging.Formatter):
 def setup_structured_logging(
     level: int = logging.INFO,
     json_output: bool = False,
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
 ) -> None:
     """
     Configure Tinker's root logger with structured (or human-readable) output.

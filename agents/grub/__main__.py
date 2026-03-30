@@ -78,9 +78,7 @@ def _parse_args():
         default=None,
         help="Run a single task directly (title string). For testing.",
     )
-    parser.add_argument(
-        "--artifact", default=None, help="Design artifact path for --run-task"
-    )
+    parser.add_argument("--artifact", default=None, help="Design artifact path for --run-task")
     return parser.parse_args()
 
 
@@ -94,6 +92,7 @@ async def _run_agent(args) -> None:
 async def _run_worker(args) -> None:
     """Start a queue worker (Mode C)."""
     import socket
+
     from agents.grub.agent import GrubAgent
     from agents.grub.loop import GrubQueue, run_queue_worker
 

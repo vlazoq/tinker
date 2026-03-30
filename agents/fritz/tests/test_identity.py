@@ -23,7 +23,6 @@ from agents.fritz.identity import (
     build_identity,
 )
 
-
 # ── IdentityMode ──────────────────────────────────────────────────────────────
 
 
@@ -202,9 +201,7 @@ class TestBuildAuthHeader:
 
 class TestBuildCloneUrlWithToken:
     def test_github_https(self):
-        url = build_clone_url_with_token(
-            "https://github.com", "acme", "widget", "ghp_tok"
-        )
+        url = build_clone_url_with_token("https://github.com", "acme", "widget", "ghp_tok")
         assert "ghp_tok@github.com" in url
         assert url.endswith("acme/widget.git")
 
@@ -216,9 +213,7 @@ class TestBuildCloneUrlWithToken:
         assert "/devops/platform.git" in url
 
     def test_scheme_preserved(self):
-        url = build_clone_url_with_token(
-            "https://github.com", "o", "r", "tok"
-        )
+        url = build_clone_url_with_token("https://github.com", "o", "r", "tok")
         assert url.startswith("https://")
 
     def test_path_contains_owner_and_repo(self):

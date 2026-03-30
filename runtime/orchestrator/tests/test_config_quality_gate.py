@@ -6,12 +6,10 @@ Tests for quality gate fields in OrchestratorConfig.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
-from runtime.orchestrator.config import OrchestratorConfig
 from exceptions import ConfigurationError
+from runtime.orchestrator.config import OrchestratorConfig
 
 
 class TestQualityGateDefaults:

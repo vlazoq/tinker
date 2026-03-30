@@ -66,9 +66,7 @@ class ActiveTaskPanel(Widget):
         self.query_one("#at-header", Static).update(header)
 
         if task is None:
-            self.query_one("#at-body", Static).update(
-                Text("  — idle —", style="dim italic")
-            )
+            self.query_one("#at-body", Static).update(Text("  — idle —", style="dim italic"))
             return
 
         tbl = Table.grid(padding=(0, 1))

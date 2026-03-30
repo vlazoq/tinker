@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 
 
@@ -28,9 +29,7 @@ def main() -> None:
         default=True,
         help="Run with synthetic mock Orchestrator (default)",
     )
-    parser.add_argument(
-        "--redis", metavar="URL", default=None, help="Redis URL for pub/sub mode"
-    )
+    parser.add_argument("--redis", metavar="URL", default=None, help="Redis URL for pub/sub mode")
     parser.add_argument(
         "--refresh",
         metavar="SEC",
@@ -38,9 +37,7 @@ def main() -> None:
         default=1.0,
         help="UI refresh interval (seconds)",
     )
-    parser.add_argument(
-        "--log-level", metavar="LEVEL", default="DEBUG", dest="log_level"
-    )
+    parser.add_argument("--log-level", metavar="LEVEL", default="DEBUG", dest="log_level")
     args = parser.parse_args()
 
     # ── stdlib log bridge ─────────────────────────────────────────
@@ -64,6 +61,7 @@ def main() -> None:
     # ── loguru sink (if loguru is installed) ──────────────────────
     try:
         from loguru import logger
+
         from .log_handler import loguru_sink
 
         logger.add(
@@ -90,10 +88,8 @@ def main() -> None:
                 await app.run_async()
             finally:
                 mock_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await mock_task
-                except asyncio.CancelledError:
-                    pass
 
         asyncio.run(_run_with_mock())
     else:

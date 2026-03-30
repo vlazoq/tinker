@@ -40,8 +40,8 @@ Keybindings
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import datetime
-from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -69,7 +69,6 @@ from .panels import (
 )
 from .state import LoopLevel, TinkerState, get_store
 from .subscriber import BaseSubscriber, QueueSubscriber
-
 
 # ──────────────────────────────────────────
 # Help overlay
@@ -165,16 +164,14 @@ class TinkerDashboard(App[None]):
 
     def __init__(
         self,
-        subscriber: Optional[BaseSubscriber] = None,
+        subscriber: BaseSubscriber | None = None,
         refresh_interval: float = 1.0,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
-        self._subscriber = subscriber or QueueSubscriber(
-            on_update=self._on_state_update
-        )
+        self._subscriber = subscriber or QueueSubscriber(on_update=self._on_state_update)
         self._refresh_interval = refresh_interval
-        self._sub_task: Optional[asyncio.Task] = None
+        self._sub_task: asyncio.Task | None = None
 
     # ── compose ─────────────────────────────
 
@@ -216,10 +213,8 @@ class TinkerDashboard(App[None]):
         self._subscriber.stop()
         if self._sub_task:
             self._sub_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._sub_task
-            except asyncio.CancelledError:
-                pass
 
     # ── state update pipeline ────────────────
 

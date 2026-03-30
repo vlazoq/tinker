@@ -44,9 +44,7 @@ class EmbeddingPipeline:
         async with self._lock:
             if self._model is not None:  # double-checked inside lock
                 return
-            logger.info(
-                "Loading embedding model '%s' on %s…", self.model_name, self.device
-            )
+            logger.info("Loading embedding model '%s' on %s…", self.model_name, self.device)
             loop = asyncio.get_running_loop()
             self._model = await loop.run_in_executor(None, self._load_model)
             logger.info("Embedding model loaded.")

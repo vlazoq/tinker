@@ -82,12 +82,15 @@ class StagnationMixin:
         if self.metrics is not None:
             self.metrics.on_stagnation(directive)
 
-        await self.emit_event(EventType.STAGNATION_DETECTED, {
-            "intervention_type": directive.intervention_type.value,
-            "stagnation_type": directive.stagnation_type.value,
-            "severity": directive.severity,
-            "subsystem": self.state.current_subsystem,
-        })
+        await self.emit_event(
+            EventType.STAGNATION_DETECTED,
+            {
+                "intervention_type": directive.intervention_type.value,
+                "stagnation_type": directive.stagnation_type.value,
+                "severity": directive.severity,
+                "subsystem": self.state.current_subsystem,
+            },
+        )
 
         logger.warning(
             "[Stagnation] %s directive triggered (type=%s, severity=%.2f)",
@@ -99,10 +102,7 @@ class StagnationMixin:
         itype = directive.intervention_type
 
         if itype == InterventionType.FORCE_BRANCH:
-            avoid = (
-                directive.metadata.get("avoid_subsystem")
-                or self.state.current_subsystem
-            )
+            avoid = directive.metadata.get("avoid_subsystem") or self.state.current_subsystem
             if avoid:
                 target = self.config.meso_trigger_count
                 self.state.subsystem_micro_counts[avoid] = target

@@ -53,8 +53,9 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any, AsyncIterator, TYPE_CHECKING
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 from infra.resilience.rate_limiter import TokenBucketRateLimiter
 
@@ -62,6 +63,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
     from core.mcp.config import MCPConfig
     from core.tools.registry import ToolRegistry
 
@@ -101,7 +103,7 @@ class MCPServer:
     registry : Tinker's ToolRegistry — all registered tools become MCP tools.
     """
 
-    def __init__(self, config: "MCPConfig", registry: "ToolRegistry") -> None:
+    def __init__(self, config: MCPConfig, registry: ToolRegistry) -> None:
         self._config = config
         self._registry = registry
         # Connected SSE clients — keyed by client_id.
@@ -117,7 +119,7 @@ class MCPServer:
         # requests are allowed (backwards-compatible with existing setups).
         self._auth_token: str = os.getenv("TINKER_MCP_TOKEN", "")
 
-    def mount(self, app: "FastAPI") -> None:
+    def mount(self, app: FastAPI) -> None:
         """
         Add MCP routes to an existing FastAPI application.
 
@@ -130,7 +132,7 @@ class MCPServer:
         app : The FastAPI application to add routes to.
         """
         from fastapi import Request
-        from fastapi.responses import StreamingResponse, JSONResponse
+        from fastapi.responses import JSONResponse, StreamingResponse
 
         path = self._config.server_path
 
@@ -171,16 +173,18 @@ class MCPServer:
                         try:
                             event = await asyncio.wait_for(queue.get(), timeout=30.0)
                             yield f"event: message\ndata: {json.dumps(event)}\n\n"
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             # ── Heartbeat ping ───────────────────────────────
                             # Send a proper SSE "ping" event with a JSON body
                             # containing the current UTC timestamp.  MCP clients
                             # (including Tinker's own MCPClient) can use this to
                             # detect server liveness — if no ping arrives within
                             # 90 seconds, the server is likely down.
-                            ping_data = json.dumps({
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            })
+                            ping_data = json.dumps(
+                                {
+                                    "timestamp": datetime.now(UTC).isoformat(),
+                                }
+                            )
                             yield f"event: ping\ndata: {ping_data}\n\n"
                 except asyncio.CancelledError:
                     pass
@@ -344,15 +348,17 @@ class MCPServer:
             try:
                 tool = self._registry.get_tool(name)
                 schema = tool.schema
-                tools.append({
-                    "name": schema.name,
-                    "description": schema.description,
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": schema.parameters.get("properties", {}),
-                        "required": schema.parameters.get("required", []),
-                    },
-                })
+                tools.append(
+                    {
+                        "name": schema.name,
+                        "description": schema.description,
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": schema.parameters.get("properties", {}),
+                            "required": schema.parameters.get("required", []),
+                        },
+                    }
+                )
             except Exception as exc:
                 logger.warning("MCP tools/list: skipping tool %s: %s", name, exc)
         return {"tools": tools}

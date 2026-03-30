@@ -6,14 +6,14 @@ Tests for TinkerBridge — SQLite integration between Tinker and Grub.
 
 import json
 import sqlite3
-import pytest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from agents.grub.feedback import TinkerBridge
-from agents.grub.contracts.task import GrubTask
-from agents.grub.contracts.result import MinionResult, ResultStatus
+import pytest
 
+from agents.grub.contracts.result import MinionResult, ResultStatus
+from agents.grub.contracts.task import GrubTask
+from agents.grub.feedback import TinkerBridge
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ def _make_tasks_db(path: Path) -> None:
             tags TEXT DEFAULT '[]'
         );
     """)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     con.execute(
         "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
@@ -160,9 +160,7 @@ class TestTinkerBridge:
 
         db_path = Path(bridge._tasks_db)
         con = _sq.connect(str(db_path))
-        rows = con.execute(
-            "SELECT title, type FROM tasks WHERE type='review'"
-        ).fetchall()
+        rows = con.execute("SELECT title, type FROM tasks WHERE type='review'").fetchall()
         con.close()
         assert len(rows) == 1
         assert "review" in rows[0][0].lower() or "Grub" in rows[0][0]
@@ -176,9 +174,7 @@ class TestTinkerBridge:
             summary="Billing module implemented",
             files_written=["billing/module.py"],
         )
-        task = GrubTask(
-            title="Impl billing", description="D", subsystem="billing", id="t1"
-        )
+        task = GrubTask(title="Impl billing", description="D", subsystem="billing", id="t1")
         path = bridge.write_implementation_note(result, task)
         assert path != ""
         assert Path(path).exists()

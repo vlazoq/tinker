@@ -55,7 +55,7 @@ objects.  This makes the code easier to test and reason about.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .schema import (
@@ -67,8 +67,8 @@ from .schema import (
     RejectedAlternative,
     Relationship,
     SubsystemSummary,
-    _to_dict,
     _from_dict_confidence,
+    _to_dict,
 )
 
 
@@ -122,26 +122,18 @@ def merge_update(state: ArchitectureState, update: dict[str, Any]) -> Architectu
     # `setdefault("components", {})` ensures the key exists even if it was
     # missing from older JSON files — then we pass the dict to _merge_components
     # which modifies it in-place (within the plain dict, not the dataclass).
-    _merge_components(
-        data.setdefault("components", {}), update.get("components", []), loop
-    )
+    _merge_components(data.setdefault("components", {}), update.get("components", []), loop)
     _merge_relationships(
         data.setdefault("relationships", {}), update.get("relationships", []), loop
     )
-    _merge_decisions(
-        data.setdefault("decisions", {}), update.get("decisions", []), loop
-    )
+    _merge_decisions(data.setdefault("decisions", {}), update.get("decisions", []), loop)
     _merge_rejected(
         data.setdefault("rejected_alternatives", {}),
         update.get("rejected_alternatives", []),
         loop,
     )
-    _merge_questions(
-        data.setdefault("open_questions", {}), update.get("open_questions", []), loop
-    )
-    _merge_subsystems(
-        data.setdefault("subsystems", {}), update.get("subsystems", []), loop
-    )
+    _merge_questions(data.setdefault("open_questions", {}), update.get("open_questions", []), loop)
+    _merge_subsystems(data.setdefault("subsystems", {}), update.get("subsystems", []), loop)
 
     # Update overall document confidence if the AI provides a new score.
     # We use absorb() so the confidence shifts gradually, not abruptly.
@@ -157,7 +149,7 @@ def merge_update(state: ArchitectureState, update: dict[str, Any]) -> Architectu
         data.setdefault("loop_notes", []).append(f"[loop {loop}] {update['loop_note']}")
 
     # Stamp the new updated_at time before converting back to typed objects
-    data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    data["updated_at"] = datetime.now(UTC).isoformat()
 
     # Convert the plain dict back into a proper typed ArchitectureState object
     return ArchitectureState._from_dict(data)
@@ -342,8 +334,7 @@ def _merge_relationships(col: dict, items: list, loop: int) -> None:
                 k
                 for k, v in col.items()
                 if f"{v.get('source_id', '')}{v.get('source_name', '')}::"
-                f"{v.get('target_id', '')}{v.get('target_name', '')}::{v.get('kind', '')}"
-                == sig
+                f"{v.get('target_id', '')}{v.get('target_name', '')}::{v.get('kind', '')}" == sig
             ),
             None,
         )
@@ -489,11 +480,7 @@ def _merge_questions(col: dict, items: list, loop: int) -> None:
 
         # Search for an existing question with the same text
         ek = next(
-            (
-                k
-                for k, v in col.items()
-                if v.get("question", "").lower() == text.lower()
-            ),
+            (k for k, v in col.items() if v.get("question", "").lower() == text.lower()),
             None,
         )
 

@@ -63,11 +63,12 @@ Usage
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 from .migrations import SQLiteMigrationRunner
 
@@ -135,9 +136,7 @@ class DeadLetterQueue:
                 "aiosqlite not available — DeadLetterQueue operating in memory-only mode"
             )
         except Exception as exc:
-            logger.warning(
-                "DeadLetterQueue failed to connect: %s — DLQ is disabled", exc
-            )
+            logger.warning("DeadLetterQueue failed to connect: %s — DLQ is disabled", exc)
 
     async def close(self) -> None:
         """Close the SQLite connection."""
@@ -154,8 +153,8 @@ class DeadLetterQueue:
         operation: str,
         payload: dict,
         error: str,
-        context: Optional[dict] = None,
-    ) -> Optional[str]:
+        context: dict | None = None,
+    ) -> str | None:
         """
         Add a failed operation to the dead letter queue.
 
@@ -173,13 +172,11 @@ class DeadLetterQueue:
         None : If the DLQ is disabled (aiosqlite unavailable).
         """
         if not self._conn:
-            logger.debug(
-                "DLQ disabled — dropping failed operation: %s (%s)", operation, error
-            )
+            logger.debug("DLQ disabled — dropping failed operation: %s (%s)", operation, error)
             return None
 
         item_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         async with self._lock:
             try:
@@ -227,7 +224,7 @@ class DeadLetterQueue:
         if not self._conn:
             return False
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         async with self._lock:
             try:
                 cursor = await self._conn.execute(
@@ -260,7 +257,7 @@ class DeadLetterQueue:
         if not self._conn:
             return False
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         async with self._lock:
             try:
                 cursor = await self._conn.execute(
@@ -282,7 +279,7 @@ class DeadLetterQueue:
         if not self._conn:
             return False
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         async with self._lock:
             try:
                 cursor = await self._conn.execute(
@@ -343,14 +340,12 @@ class DeadLetterQueue:
             logger.error("DLQ.pending_items failed: %s", exc)
             return []
 
-    async def get_item(self, item_id: str) -> Optional[dict]:
+    async def get_item(self, item_id: str) -> dict | None:
         """Retrieve a single DLQ item by ID."""
         if not self._conn:
             return None
         try:
-            cursor = await self._conn.execute(
-                "SELECT * FROM dlq_items WHERE id=?", (item_id,)
-            )
+            cursor = await self._conn.execute("SELECT * FROM dlq_items WHERE id=?", (item_id,))
             row = await cursor.fetchone()
             if not row:
                 return None
@@ -417,9 +412,7 @@ class DeadLetterQueue:
         # We use Python's time instead of SQLite date functions for portability.
         import datetime as dt
 
-        cutoff_dt = (
-            datetime.now(timezone.utc) - dt.timedelta(days=older_than_days)
-        ).isoformat()
+        cutoff_dt = (datetime.now(dt.UTC) - dt.timedelta(days=older_than_days)).isoformat()
         async with self._lock:
             try:
                 cursor = await self._conn.execute(
@@ -486,7 +479,7 @@ class DLQAutoReplayer:
         self._interval = interval
         self._batch_size = batch_size
         self._max_retries = max_retries
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """Start the background replay loop."""
@@ -505,10 +498,8 @@ class DLQAutoReplayer:
         """Cancel the background loop and wait for it to finish."""
         if self._task and not self._task.done():
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         self._task = None
         logger.info("DLQAutoReplayer stopped")
 

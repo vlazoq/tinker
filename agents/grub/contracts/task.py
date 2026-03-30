@@ -33,12 +33,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 
-class TaskPriority(str, Enum):
+class TaskPriority(StrEnum):
     """
     How urgently this task should be processed.
 
@@ -80,9 +80,7 @@ class GrubTask:
 
     # Auto-generated if not provided
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     # Optional context fields
     artifact_path: str = ""  # path to Tinker design doc
@@ -116,7 +114,7 @@ class GrubTask:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "GrubTask":
+    def from_dict(cls, d: dict) -> GrubTask:
         """Deserialise from a plain dict (when loading from SQLite)."""
         return cls(
             id=d["id"],

@@ -111,6 +111,7 @@ async def api_submit_review(review_id: str, request: Request):
     # This is the fast path when web UI and orchestrator share a process.
     try:
         from ui.web.app import app
+
         orch = getattr(app.state, "orchestrator", None)
         if orch is not None and hasattr(orch, "human_judge") and orch.human_judge is not None:
             orch.human_judge.resolve(review_id, response_data)
@@ -158,12 +159,14 @@ async def api_set_judge_mode(request: Request):
     # Try direct in-process update
     try:
         from ui.web.app import app
+
         orch = getattr(app.state, "orchestrator", None)
         if orch is not None:
             orch.config.judge_mode = mode
             # Create or remove HumanJudge based on new mode
             if mode != "llm" and orch.human_judge is None:
                 from agents.human_judge import HumanJudge
+
                 orch.human_judge = HumanJudge(orch.config, orch.state, orch.event_bus)
             elif mode == "llm":
                 orch.human_judge = None
@@ -197,6 +200,7 @@ async def api_request_review():
     # Try direct in-process update
     try:
         from ui.web.app import app
+
         orch = getattr(app.state, "orchestrator", None)
         if orch is not None:
             orch.state.human_review_requested = True
@@ -214,6 +218,7 @@ async def api_list_directives():
     """List all active sticky human directives."""
     try:
         from ui.web.app import app
+
         orch = getattr(app.state, "orchestrator", None)
         if orch is not None and hasattr(orch, "human_judge") and orch.human_judge is not None:
             return {
@@ -231,6 +236,7 @@ async def api_delete_directive(index: int):
     """Remove a sticky directive by index."""
     try:
         from ui.web.app import app
+
         orch = getattr(app.state, "orchestrator", None)
         if orch is not None and hasattr(orch, "human_judge") and orch.human_judge is not None:
             if orch.human_judge.clear_sticky_directive(index):
@@ -253,6 +259,7 @@ async def api_clear_all_directives():
     """Clear all sticky directives."""
     try:
         from ui.web.app import app
+
         orch = getattr(app.state, "orchestrator", None)
         if orch is not None and hasattr(orch, "human_judge") and orch.human_judge is not None:
             count = orch.human_judge.clear_all_sticky_directives()

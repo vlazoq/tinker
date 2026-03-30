@@ -35,10 +35,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
-
 
 # =============================================================================
 # Enumerations
@@ -48,7 +47,7 @@ from typing import Any
 # makes JSON serialisation trivial — no extra conversion needed.
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     """
     The *nature* of the work a task represents.
 
@@ -83,7 +82,7 @@ class TaskType(str, Enum):
     REVIEW = "review"  # Grub: review what was implemented
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """
     The lifecycle state of a task — where it currently sits in the pipeline.
 
@@ -122,7 +121,7 @@ class TaskStatus(str, Enum):
     SKIPPED = "skipped"
 
 
-class Subsystem(str, Enum):
+class Subsystem(StrEnum):
     """
     Which part of Tinker does this task primarily concern?
 
@@ -175,7 +174,7 @@ def _now() -> str:
     logic.  ISO-8601 strings also sort lexicographically, which means database
     ORDER BY on timestamp columns works correctly without parsing.
     """
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _new_id() -> str:
@@ -320,7 +319,7 @@ class Task:
 
     # ── Completion metrics ─────────────────────────────────────────────────────
     # Recorded by mark_complete() to track resource usage.
-    tokens_used: int = 0        # LLM tokens consumed while completing this task
+    tokens_used: int = 0  # LLM tokens consumed while completing this task
     duration_seconds: float = 0.0  # Wall-clock time taken to complete this task
 
     # =========================================================================
@@ -400,7 +399,7 @@ class Task:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Task":
+    def from_dict(cls, d: dict[str, Any]) -> Task:
         """Reconstruct a Task from a plain dictionary.
 
         This is the reverse of ``to_dict()``.  It handles two sources of

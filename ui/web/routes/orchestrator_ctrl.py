@@ -61,7 +61,10 @@ async def api_pause():
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
 
-    return {"ok": True, "message": "Pause requested. Orchestrator will pause after current micro loop."}
+    return {
+        "ok": True,
+        "message": "Pause requested. Orchestrator will pause after current micro loop.",
+    }
 
 
 @router.post("/api/resume")
@@ -83,6 +86,7 @@ async def api_mcp_status():
     # The MCP bridge is attached to the app state when main.py starts the webui.
     # We import app lazily to avoid circular imports.
     from ui.web.app import app
+
     bridge = getattr(app.state, "mcp_bridge", None)
     if bridge is None:
         return {"enabled": False, "message": "MCP not enabled or bridge not wired"}

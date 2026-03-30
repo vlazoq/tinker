@@ -5,12 +5,11 @@ Tests for core/events/bus.py and core/events/types.py.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from core.events import Event, EventBus, EventType
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -35,7 +34,7 @@ class TestEventDataclass:
     def test_auto_timestamp(self):
         e = make_event()
         assert isinstance(e.timestamp, datetime)
-        assert e.timestamp.tzinfo == timezone.utc
+        assert e.timestamp.tzinfo == UTC
 
     def test_payload_defaults_empty(self):
         e = make_event()

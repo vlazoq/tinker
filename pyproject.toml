@@ -113,6 +113,7 @@ include = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths    = [
+    "tests",
     "core",
     "runtime",
     "tinker_platform",
@@ -123,6 +124,7 @@ testpaths    = [
 ]
 addopts = "--tb=short --strict-markers"
 markers = [
+    "asyncio: async test (handled by pytest-asyncio)",
     "unit: fast unit tests with no external dependencies",
     "integration: tests that require Docker Compose services (redis, ollama)",
     "e2e: end-to-end tests using stub orchestrator",
@@ -186,7 +188,22 @@ select = [
 ignore = [
     "E501",   # line too long — handled by formatter
     "SIM108", # ternary operator — readability preference
+    "RUF001", # ambiguous unicode char in string — intentional (curly quotes, etc.)
+    "RUF002", # ambiguous unicode char in docstring — intentional (en-dash, etc.)
+    "RUF003", # ambiguous unicode char in comment — intentional
+    "RUF012", # mutable class variable without ClassVar — too noisy for dataclass-style code
+    "SIM105", # contextlib.suppress — try/except/pass is clearer in many cases
+    "RUF006", # dangling asyncio.Task — false positives on fire-and-forget patterns
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Mixin imports must come after base-class definitions
+"core/memory/manager.py" = ["E402"]
+"infra/architecture/manager.py" = ["E402"]
+# UI apps import after app-object creation (FastAPI / Gradio / Streamlit pattern)
+"ui/gradio/app.py" = ["E402"]
+"ui/streamlit/app.py" = ["E402"]
+"ui/web/app.py" = ["E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = [

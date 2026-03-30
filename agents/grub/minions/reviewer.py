@@ -24,11 +24,11 @@ from __future__ import annotations
 
 import time
 
-from .base import BaseMinion
-from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus
-from ..tools.file_ops import read_file
+from ..contracts.task import GrubTask
 from ..tools.code_analysis import summarise_file
+from ..tools.file_ops import read_file
+from .base import BaseMinion
 
 
 class ReviewerMinion(BaseMinion):
@@ -118,9 +118,7 @@ Below 5 means it needs to be rewritten.
                     )
                 except Exception:
                     stats_str = ""
-                code_sections.append(
-                    f"### File: {fpath} {stats_str}\n```python\n{content}\n```"
-                )
+                code_sections.append(f"### File: {fpath} {stats_str}\n```python\n{content}\n```")
             else:
                 code_sections.append(f"### File: {fpath}\n[Could not read: {content}]")
 
@@ -153,7 +151,8 @@ Below 5 means it needs to be rewritten.
 
         # ── 5. Call LLM ───────────────────────────────────────────────────────
         response = await self._llm(
-            prompt, temperature=0.1,
+            prompt,
+            temperature=0.1,
             timeout=self.config.timeouts.get(self.name, 120.0),
         )
 

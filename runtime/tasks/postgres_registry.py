@@ -110,11 +110,12 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any, Callable, Generator
+from typing import Any
 
 from .abstract_registry import AbstractTaskRegistry
-from .schema import Task, TaskStatus, Subsystem
+from .schema import Subsystem, Task, TaskStatus
 
 log = logging.getLogger(__name__)
 
@@ -230,7 +231,7 @@ _MIGRATIONS: list[tuple[int, str, list[str], list[str]]] = [
         1,
         "Initial schema: tasks table and indexes",
         # ── UP ────────────────────────────────────────────────────────────────
-        [_CREATE_TABLE] + _CREATE_INDEXES,
+        [_CREATE_TABLE, *_CREATE_INDEXES],
         # ── DOWN ──────────────────────────────────────────────────────────────
         # Executed in reverse order by rollback_migration().  Drops indexes
         # first (avoids constraint issues), then the table.
@@ -560,9 +561,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
             applied = {row["version"] for row in cur.fetchall()}
 
         # Apply unapplied migrations in ascending version order.
-        for version, description, statements, _down in sorted(
-            _MIGRATIONS, key=lambda m: m[0]
-        ):
+        for version, description, statements, _down in sorted(_MIGRATIONS, key=lambda m: m[0]):
             if version in applied:
                 continue
 
@@ -652,9 +651,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         # Verify the migration was actually applied.
         with self._conn() as conn:
             cur = self._cursor(conn)
-            cur.execute(
-                "SELECT 1 FROM schema_migrations WHERE version = %s", (version,)
-            )
+            cur.execute("SELECT 1 FROM schema_migrations WHERE version = %s", (version,))
             if cur.fetchone() is None:
                 raise RuntimeError(
                     f"Migration {version} ('{description}') has not been applied; "
@@ -862,7 +859,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
         """
         import datetime as _dt
 
-        now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        now = _dt.datetime.now(_dt.UTC).isoformat()
 
         with self._conn() as conn:
             cur = self._cursor(conn)
@@ -878,8 +875,7 @@ class PostgresTaskRegistry(AbstractTaskRegistry):
 
             task = Task.from_dict(_pg_row_to_dict(row))
             cur.execute(
-                "UPDATE tasks SET status = %s, updated_at = %s, started_at = %s "
-                "WHERE id = %s",
+                "UPDATE tasks SET status = %s, updated_at = %s, started_at = %s WHERE id = %s",
                 (TaskStatus.ACTIVE.value, now, now, task.id),
             )
 

@@ -14,12 +14,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.prompts import (
-    PromptBuilder,
-    PromptBuilderError,
-    validate_output,
     SCHEMA_REGISTRY,
     TEMPLATE_REGISTRY,
     VARIANT_REGISTRY,
+    PromptBuilder,
+    PromptBuilderError,
+    validate_output,
     validate_variant_combination,
 )
 from core.prompts.examples import (
@@ -27,7 +27,6 @@ from core.prompts.examples import (
     EXAMPLE_CRITIC_MICRO_OUTPUT,
     EXAMPLE_RESEARCHER_OUTPUT,
 )
-
 
 # ===========================================================================
 # Helpers
@@ -132,7 +131,7 @@ def test_builder_architect_micro_basic():
 
 
 def test_builder_with_variant():
-    system, user = PromptBuilder.for_architect_micro(
+    system, _user = PromptBuilder.for_architect_micro(
         architecture_state="...",
         task_description="Design TaskEngine.",
         variants=["socratic_architect"],
@@ -154,7 +153,7 @@ def test_builder_variant_incompatibility():
             },
             variants=["harder_critic", "devil_advocate_critic"],
         )
-        assert False, "Should have raised PromptBuilderError"
+        raise AssertionError("Should have raised PromptBuilderError")
     except PromptBuilderError as e:
         assert_in("incompatible", str(e).lower())
 
@@ -167,7 +166,7 @@ def test_builder_missing_context_raises():
             loop_level="micro",
             context={"architecture_state": "..."},  # missing task_description etc.
         )
-        assert False, "Should have raised PromptBuilderError"
+        raise AssertionError("Should have raised PromptBuilderError")
     except PromptBuilderError as e:
         assert_in("missing", str(e).lower())
 
@@ -186,7 +185,7 @@ def test_builder_wrong_variant_for_role():
             },
             variants=["harder_critic"],  # critic-only variant
         )
-        assert False, "Should have raised PromptBuilderError"
+        raise AssertionError("Should have raised PromptBuilderError")
     except PromptBuilderError as e:
         assert_in("not applicable", str(e).lower())
 
@@ -200,7 +199,7 @@ def test_builder_context_dict_serialized():
         "constraints": "...",
         "context": {"some": "dict"},  # should be auto-serialized
     }
-    system, user = b.build(role="architect", loop_level="micro", context=context)
+    _system, user = b.build(role="architect", loop_level="micro", context=context)
     assert_in('"some"', user)
 
 
@@ -266,8 +265,8 @@ def test_auto_repair_missing_artifact_id():
     repaired_id = result.data["artifact_id"]
     try:
         uuid.UUID(repaired_id)
-    except ValueError:
-        assert False, f"Repaired artifact_id '{repaired_id}' is not a valid UUID"
+    except ValueError as err:
+        raise AssertionError(f"Repaired artifact_id '{repaired_id}' is not a valid UUID") from err
 
 
 def test_auto_repair_confidence_clamp_high():
@@ -376,9 +375,7 @@ def test_variant_no_conflict():
 
 
 def test_variant_alternative_forcing_minimum_viable_conflict():
-    conflicts = validate_variant_combination(
-        ["alternative_forcing", "minimum_viable_design"]
-    )
+    conflicts = validate_variant_combination(["alternative_forcing", "minimum_viable_design"])
     assert_true(len(conflicts) > 0)
 
 

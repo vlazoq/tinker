@@ -28,7 +28,7 @@ logger = logging.getLogger("tinker.bootstrap.health")
 
 
 def asyncio_exception_handler(
-    loop: asyncio.AbstractEventLoop,  # noqa: ARG001
+    loop: asyncio.AbstractEventLoop,
     context: dict,
 ) -> None:
     """Log exceptions that escape asyncio background Tasks.
@@ -82,19 +82,21 @@ async def run_health_check() -> None:
     try:
         import aiohttp
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
                 f"{server_url.rstrip('/')}/api/tags",
                 timeout=aiohttp.ClientTimeout(total=5),
-            ) as resp:
-                if resp.status == 200:
-                    logger.info("Health check OK: Ollama reachable at %s", server_url)
-                else:
-                    logger.warning(
-                        "Health check WARN: Ollama at %s returned HTTP %d",
-                        server_url,
-                        resp.status,
-                    )
+            ) as resp,
+        ):
+            if resp.status == 200:
+                logger.info("Health check OK: Ollama reachable at %s", server_url)
+            else:
+                logger.warning(
+                    "Health check WARN: Ollama at %s returned HTTP %d",
+                    server_url,
+                    resp.status,
+                )
     except Exception as exc:
         logger.warning(
             "Health check WARN: Ollama NOT reachable at %s (%s)",

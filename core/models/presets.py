@@ -39,13 +39,14 @@ Environment variables
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import tempfile
 from dataclasses import asdict, dataclass, field
+from datetime import UTC
 from pathlib import Path
-from typing import Optional
 
 from .library import ModelLibrary
 
@@ -53,9 +54,7 @@ logger = logging.getLogger(__name__)
 
 _PRESETS_VERSION = 1
 _DEFAULT_PRESETS_FILE = Path(os.getenv("TINKER_PRESETS_FILE", "./tinker_presets.json"))
-_DEFAULT_ACTIVE_FILE = Path(
-    os.getenv("TINKER_ACTIVE_PRESET_FILE", "./tinker_active_preset.json")
-)
+_DEFAULT_ACTIVE_FILE = Path(os.getenv("TINKER_ACTIVE_PRESET_FILE", "./tinker_active_preset.json"))
 
 
 @dataclass
@@ -88,7 +87,7 @@ class ModelPreset:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ModelPreset":
+    def from_dict(cls, d: dict) -> ModelPreset:
         return cls(
             name=d["name"],
             display_name=d.get("display_name", d["name"].title()),
@@ -158,10 +157,8 @@ class PresetManager:
                 json.dump(data, f, indent=2)
             os.replace(tmp, str(path))
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
 
     def _seed_defaults(self) -> None:
@@ -222,7 +219,7 @@ class PresetManager:
     def all(self) -> list[ModelPreset]:
         return list(self._presets.values())
 
-    def get(self, name: str) -> Optional[ModelPreset]:
+    def get(self, name: str) -> ModelPreset | None:
         return self._presets.get(name)
 
     def add(self, preset: ModelPreset) -> None:
@@ -255,17 +252,17 @@ class PresetManager:
         """
         if name not in self._presets:
             raise KeyError(f"Unknown preset: '{name}'")
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         data = {
             "preset_name": name,
-            "activated_at": datetime.now(timezone.utc).isoformat(),
+            "activated_at": datetime.now(UTC).isoformat(),
         }
         self._atomic_write(self._active_path, data)
         logger.info("PresetManager: activated preset '%s'", name)
         return self._presets[name]
 
-    def active_name(self) -> Optional[str]:
+    def active_name(self) -> str | None:
         """Return the name of the currently active preset, or None."""
         if not self._active_path.exists():
             return None
@@ -275,7 +272,7 @@ class PresetManager:
         except Exception:
             return None
 
-    def active_preset(self) -> Optional[ModelPreset]:
+    def active_preset(self) -> ModelPreset | None:
         """Return the active ModelPreset object, or None."""
         name = self.active_name()
         return self._presets.get(name) if name else None

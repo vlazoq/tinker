@@ -29,7 +29,6 @@ import ast
 import re
 from pathlib import Path
 
-
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 ROOT = Path(__file__).parent.parent.parent.parent  # tinker/
@@ -64,9 +63,8 @@ def _module_assign_names(path: Path) -> set[str]:
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     names.add(target.id)
-        elif isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name):
-                names.add(node.target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
     return names
 
 
@@ -86,9 +84,12 @@ def _dict_keys_from_assign(path: Path, var_name: str) -> set[str]:
         if isinstance(node, ast.Assign):
             if any(isinstance(t, ast.Name) and t.id == var_name for t in node.targets):
                 value = node.value
-        elif isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name) and node.target.id == var_name:
-                value = node.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == var_name
+        ):
+            value = node.value
         if value is not None and isinstance(value, ast.Dict):
             keys: set[str] = set()
             for k in value.keys:
@@ -164,8 +165,7 @@ class TestCoreConstants:
         src = _src(WEBUI_CORE)
         # Functions may appear as def, not assignments
         defined_fns = {
-            m.group(1)
-            for m in re.finditer(r"^(?:async\s+)?def\s+(\w+)", src, re.MULTILINE)
+            m.group(1) for m in re.finditer(r"^(?:async\s+)?def\s+(\w+)", src, re.MULTILINE)
         }
         defined_all = assigns | defined_fns
         missing = self.REQUIRED_NAMES - defined_all
@@ -195,9 +195,7 @@ class TestCoreConstants:
         # in the FLAG_GROUPS assignment block.
         all_strings = _string_constants(WEBUI_CORE)
         uncovered = defaults - all_strings  # every default key must appear somewhere
-        assert not uncovered, (
-            f"FLAG_DEFAULTS keys absent from FLAG_GROUPS: {sorted(uncovered)}"
-        )
+        assert not uncovered, f"FLAG_DEFAULTS keys absent from FLAG_GROUPS: {sorted(uncovered)}"
 
     def test_flag_defaults_not_empty(self):
         defaults = _dict_keys_from_assign(WEBUI_CORE, "FLAG_DEFAULTS")
@@ -247,22 +245,18 @@ class TestSingleSourceOfTruth:
 
     def test_streamlit_app_imports_from_core(self):
         src = _src(STREAMLIT_APP)
-        assert (
-            "from ui.core import" in src
-            or "from ui import" in src
-            or "ui.core" in src
-        ), "ui/streamlit/app.py must import shared constants from ui.core"
+        assert "from ui.core import" in src or "from ui import" in src or "ui.core" in src, (
+            "ui/streamlit/app.py must import shared constants from ui.core"
+        )
 
     def test_streamlit_app_does_not_redefine_shared_names(self):
         self._check_no_redefinition(STREAMLIT_APP)
 
     def test_gradio_app_imports_from_core(self):
         src = _src(GRADIO_APP)
-        assert (
-            "from ui.core import" in src
-            or "from ui import" in src
-            or "ui.core" in src
-        ), "ui/gradio/app.py must import shared constants from ui.core"
+        assert "from ui.core import" in src or "from ui import" in src or "ui.core" in src, (
+            "ui/gradio/app.py must import shared constants from ui.core"
+        )
 
     def test_gradio_app_does_not_redefine_shared_names(self):
         self._check_no_redefinition(GRADIO_APP)

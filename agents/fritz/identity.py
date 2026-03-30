@@ -17,14 +17,14 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from .config import FritzConfig
 from .credentials import FritzCredentials
 
 
-class IdentityMode(str, Enum):
+class IdentityMode(StrEnum):
     BOT = "bot"
     DELEGATE = "delegate"
 
@@ -58,11 +58,15 @@ def apply_git_identity(identity: FritzIdentity, repo_path: str | Path) -> None:
     repo = Path(repo_path)
     subprocess.run(
         ["git", "config", "user.name", identity.git_name],
-        cwd=repo, check=True, capture_output=True
+        cwd=repo,
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "config", "user.email", identity.git_email],
-        cwd=repo, check=True, capture_output=True
+        cwd=repo,
+        check=True,
+        capture_output=True,
     )
 
 
@@ -78,6 +82,7 @@ def build_clone_url_with_token(base_url: str, owner: str, repo: str, token: str)
     Used when SSH is not configured.
     """
     from urllib.parse import urlparse, urlunparse
+
     parsed = urlparse(base_url)
     netloc = f"{token}@{parsed.netloc}" if parsed.netloc else token
     return urlunparse(parsed._replace(netloc=netloc, path=f"/{owner}/{repo}.git"))

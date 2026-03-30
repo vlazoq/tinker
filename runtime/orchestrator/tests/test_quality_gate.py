@@ -8,15 +8,13 @@ Uses a SimpleNamespace orchestrator mock and an AsyncMock alerter.
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from runtime.orchestrator.micro_loop import _maybe_fire_quality_gate
-from runtime.orchestrator.state import MicroLoopRecord, LoopStatus
-
+from runtime.orchestrator.state import MicroLoopRecord
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -90,7 +88,6 @@ class TestMaybeFireQualityGate:
     @pytest.mark.asyncio
     async def test_consecutive_failures_escalate_to_error(self):
         """After escalation_count consecutive failures, severity becomes ERROR."""
-        from infra.observability.alerting import AlertSeverity
 
         orch = make_orch(threshold=0.4, escalation_count=3)
         orch.__dict__["_quality_gate_fails"] = 2  # already 2 failures
@@ -107,7 +104,7 @@ class TestMaybeFireQualityGate:
             assert orch.__dict__["_quality_gate_fails"] == 3
 
             # Extract the coroutine passed to create_task and check severity
-            call_args = mock_create_task.call_args[0][0]
+            mock_create_task.call_args[0][0]
             # The coroutine is alerter.alert(...) — check alerter was called with ERROR
             # We can't await the coroutine here, but we verify the fail count escalated
             assert orch.__dict__["_quality_gate_fails"] == 3

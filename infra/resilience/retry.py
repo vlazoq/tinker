@@ -76,8 +76,9 @@ import asyncio
 import functools
 import logging
 import random
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
-from typing import Any, Callable, Coroutine, TypeVar
+from typing import Any, TypeVar
 
 from exceptions import TinkerError
 
@@ -164,9 +165,7 @@ class RetryConfig:
                 f"max_delay ({self.max_delay}) must be >= base_delay ({self.base_delay})"
             )
         if self.max_total_seconds is not None and self.max_total_seconds <= 0:
-            raise ValueError(
-                f"max_total_seconds must be > 0, got {self.max_total_seconds}"
-            )
+            raise ValueError(f"max_total_seconds must be > 0, got {self.max_total_seconds}")
 
 
 # Common pre-built configs ─────────────────────────────────────────────────
@@ -204,9 +203,12 @@ def _compute_delay(attempt: int, config: RetryConfig) -> float:
     return random.uniform(0, raw) if config.jitter else raw
 
 
+_DEFAULT_RETRY_CONFIG = RetryConfig()
+
+
 async def retry_async(
     fn: Callable[[], Coroutine[Any, Any, T]],
-    config: RetryConfig = RetryConfig(),
+    config: RetryConfig = _DEFAULT_RETRY_CONFIG,
 ) -> T:
     """
     Call the zero-argument async callable *fn*, retrying on ``TinkerError``.
@@ -316,7 +318,7 @@ async def retry_async(
 # ---------------------------------------------------------------------------
 
 
-def with_retry(config: RetryConfig = RetryConfig()):
+def with_retry(config: RetryConfig = _DEFAULT_RETRY_CONFIG):
     """
     Decorator: wrap an async function with the retry policy described by
     *config*.

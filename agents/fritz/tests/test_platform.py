@@ -6,8 +6,6 @@ Tests for platform detection and owner/repo parsing.
 
 from __future__ import annotations
 
-import pytest
-
 from agents.fritz.platform import GitPlatform, detect_platform, extract_owner_repo
 
 

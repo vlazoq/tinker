@@ -39,8 +39,8 @@ to craft the system-prompt addition that instructs the model to output JSON.
 from __future__ import annotations
 
 import json
-import re
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 

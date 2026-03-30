@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class SQLiteMigrationRunner:
                     with conn:  # transaction — auto-commits or rolls back
                         if sql and sql.strip() and not sql.strip().startswith("--"):
                             conn.executescript(sql)
-                        now = datetime.now(timezone.utc).isoformat()
+                        now = datetime.now(UTC).isoformat()
                         conn.execute(
                             f"INSERT INTO {self._migrations_table} (version, applied_at) VALUES (?, ?)",
                             (version, now),
@@ -124,9 +124,7 @@ class SQLiteMigrationRunner:
     def _current_version_conn(self, conn: sqlite3.Connection) -> int:
         """Return the highest applied version using an existing connection."""
         try:
-            row = conn.execute(
-                f"SELECT MAX(version) FROM {self._migrations_table}"
-            ).fetchone()
+            row = conn.execute(f"SELECT MAX(version) FROM {self._migrations_table}").fetchone()
             return row[0] if row and row[0] is not None else 0
         except sqlite3.OperationalError:
             # Table doesn't exist yet — no migrations applied

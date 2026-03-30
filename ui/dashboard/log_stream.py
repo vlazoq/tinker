@@ -48,9 +48,7 @@ class LogStreamPanel(Widget):
 
     def compose(self) -> ComposeResult:
         yield Static(" Live Logs  filter: INFO+", id="log-header")
-        yield RichLog(
-            id="log-richlog", highlight=False, markup=False, wrap=True, max_lines=500
-        )
+        yield RichLog(id="log-richlog", highlight=False, markup=False, wrap=True, max_lines=500)
 
     def on_mount(self) -> None:
         buf = get_log_buffer()

@@ -36,11 +36,11 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from core.tools.base import BaseTool, ToolResult, ToolSchema
+from core.tools.base import BaseTool, ToolSchema
 
 if TYPE_CHECKING:
     from core.mcp.config import MCPConfig
@@ -113,15 +113,15 @@ class RemoteMCPTool(BaseTool):
             data = r.json()
 
         if "error" in data:
-            raise RuntimeError(
-                f"Remote tool error: {data['error'].get('message', data['error'])}"
-            )
+            raise RuntimeError(f"Remote tool error: {data['error'].get('message', data['error'])}")
 
         result = data.get("result", {})
         # MCP tools/call returns {"content": [{"type": "text", "text": "..."}], "isError": bool}
         if result.get("isError"):
             content = result.get("content", [{}])
-            text = content[0].get("text", "Unknown tool error") if content else "Unknown tool error"
+            text = (
+                content[0].get("text", "Unknown tool error") if content else "Unknown tool error"
+            )
             raise RuntimeError(text)
 
         content = result.get("content", [{}])
@@ -152,7 +152,7 @@ class MCPClient:
     dashboards and automatic reconnection logic.
     """
 
-    def __init__(self, config: "MCPConfig") -> None:
+    def __init__(self, config: MCPConfig) -> None:
         self._config = config
 
         # ── Heartbeat tracking ───────────────────────────────────────────────
@@ -207,9 +207,7 @@ class MCPClient:
             # No servers configured; vacuously healthy (nothing to fail).
             return True
 
-        return all(
-            self.is_healthy(url) for url in self._config.client_server_urls
-        )
+        return all(self.is_healthy(url) for url in self._config.client_server_urls)
 
     async def fetch_all_tools(self) -> list[RemoteMCPTool]:
         """
@@ -237,16 +235,22 @@ class MCPClient:
                     break
                 except Exception as exc:
                     if attempt < max_attempts:
-                        delay = 2 ** attempt
+                        delay = 2**attempt
                         logger.warning(
                             "MCP client: attempt %d/%d to %s failed (%s) — retrying in %ds",
-                            attempt, max_attempts, url, exc, delay,
+                            attempt,
+                            max_attempts,
+                            url,
+                            exc,
+                            delay,
                         )
                         await asyncio.sleep(delay)
                     else:
                         logger.warning(
                             "MCP client: could not connect to %s after %d attempts (%s) — skipping",
-                            url, max_attempts, exc,
+                            url,
+                            max_attempts,
+                            exc,
                         )
         return all_tools
 
@@ -260,6 +264,7 @@ class MCPClient:
         messages_url = sse_url.replace("/sse", "/messages")
         # Extract a human-readable server name from the URL.
         from urllib.parse import urlparse
+
         parsed = urlparse(sse_url)
         server_name = parsed.netloc or sse_url
 

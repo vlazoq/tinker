@@ -43,7 +43,7 @@ import logging
 import os
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -63,12 +63,8 @@ class MemoryEntry:
     source_event: str  # which event triggered this memory
     confidence: float = 1.0  # 0.0–1.0, decays if contradicted
     reinforcement_count: int = 1  # how many times this was confirmed
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
-    last_reinforced_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    last_reinforced_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 @dataclass
@@ -76,13 +72,15 @@ class AutoMemoryState:
     """Persistent state for the auto-memory system."""
 
     entries: list[dict[str, Any]] = field(default_factory=list)
-    stats: dict[str, Any] = field(default_factory=lambda: {
-        "total_micro_loops_observed": 0,
-        "high_score_count": 0,
-        "low_score_count": 0,
-        "stagnation_count": 0,
-        "refinement_improvements": 0,
-    })
+    stats: dict[str, Any] = field(
+        default_factory=lambda: {
+            "total_micro_loops_observed": 0,
+            "high_score_count": 0,
+            "low_score_count": 0,
+            "stagnation_count": 0,
+            "refinement_improvements": 0,
+        }
+    )
     version: int = 1
 
 
@@ -99,13 +97,15 @@ class _ScoreTracker:
     def add(self, score: float | None, subsystem: str | None) -> None:
         if score is None:
             return
-        self._scores.append({
-            "score": score,
-            "subsystem": subsystem or "unknown",
-            "time": time.monotonic(),
-        })
+        self._scores.append(
+            {
+                "score": score,
+                "subsystem": subsystem or "unknown",
+                "time": time.monotonic(),
+            }
+        )
         if len(self._scores) > self._window * 2:
-            self._scores = self._scores[-self._window:]
+            self._scores = self._scores[-self._window :]
 
     def recent(self, n: int = 10) -> list[dict[str, Any]]:
         return self._scores[-n:]
@@ -194,32 +194,36 @@ class AutoMemory:
 
         if score is not None and score >= self._high_threshold:
             self._state.stats["high_score_count"] += 1
-            self._add_entry(MemoryEntry(
-                category="effective_pattern",
-                subsystem=subsystem,
-                content=(
-                    f"High critic score ({score:.2f}) achieved on subsystem "
-                    f"'{subsystem}' at micro loop iteration "
-                    f"{p.get('iteration', '?')}. "
-                    f"Tokens used: architect={p.get('architect_tokens', '?')}, "
-                    f"critic={p.get('critic_tokens', '?')}."
-                ),
-                source_event="micro_loop_completed",
-            ))
+            self._add_entry(
+                MemoryEntry(
+                    category="effective_pattern",
+                    subsystem=subsystem,
+                    content=(
+                        f"High critic score ({score:.2f}) achieved on subsystem "
+                        f"'{subsystem}' at micro loop iteration "
+                        f"{p.get('iteration', '?')}. "
+                        f"Tokens used: architect={p.get('architect_tokens', '?')}, "
+                        f"critic={p.get('critic_tokens', '?')}."
+                    ),
+                    source_event="micro_loop_completed",
+                )
+            )
 
         if score is not None and score <= self._low_threshold:
             self._state.stats["low_score_count"] += 1
-            self._add_entry(MemoryEntry(
-                category="pitfall",
-                subsystem=subsystem,
-                content=(
-                    f"Low critic score ({score:.2f}) on subsystem '{subsystem}' "
-                    f"at iteration {p.get('iteration', '?')}. "
-                    "Consider adjusting prompts or approach for this subsystem."
-                ),
-                source_event="micro_loop_completed",
-                confidence=0.7,
-            ))
+            self._add_entry(
+                MemoryEntry(
+                    category="pitfall",
+                    subsystem=subsystem,
+                    content=(
+                        f"Low critic score ({score:.2f}) on subsystem '{subsystem}' "
+                        f"at iteration {p.get('iteration', '?')}. "
+                        "Consider adjusting prompts or approach for this subsystem."
+                    ),
+                    source_event="micro_loop_completed",
+                    confidence=0.7,
+                )
+            )
 
         # Periodic save (every 10 loops)
         if self._state.stats["total_micro_loops_observed"] % 10 == 0:
@@ -230,29 +234,33 @@ class AutoMemory:
         p = event.payload
         error = p.get("error", "unknown error")
         subsystem = p.get("subsystem", "unknown")
-        self._add_entry(MemoryEntry(
-            category="pitfall",
-            subsystem=subsystem,
-            content=f"Micro loop failure on '{subsystem}': {error[:200]}",
-            source_event="micro_loop_failed",
-            confidence=0.6,
-        ))
+        self._add_entry(
+            MemoryEntry(
+                category="pitfall",
+                subsystem=subsystem,
+                content=f"Micro loop failure on '{subsystem}': {error[:200]}",
+                source_event="micro_loop_failed",
+                confidence=0.6,
+            )
+        )
 
     async def _on_stagnation(self, event: Any) -> None:
         """Record stagnation patterns and interventions."""
         p = event.payload
         self._state.stats["stagnation_count"] += 1
-        self._add_entry(MemoryEntry(
-            category="pitfall",
-            subsystem=p.get("subsystem", "unknown"),
-            content=(
-                f"Stagnation detected: {p.get('stagnation_type', '?')} "
-                f"(severity={p.get('severity', '?'):.2f}). "
-                f"Intervention: {p.get('intervention_type', '?')}."
-            ),
-            source_event="stagnation_detected",
-            confidence=0.9,
-        ))
+        self._add_entry(
+            MemoryEntry(
+                category="pitfall",
+                subsystem=p.get("subsystem", "unknown"),
+                content=(
+                    f"Stagnation detected: {p.get('stagnation_type', '?')} "
+                    f"(severity={p.get('severity', '?'):.2f}). "
+                    f"Intervention: {p.get('intervention_type', '?')}."
+                ),
+                source_event="stagnation_detected",
+                confidence=0.9,
+            )
+        )
         self._save_state()
 
     async def _on_meso_completed(self, event: Any) -> None:
@@ -261,29 +269,33 @@ class AutoMemory:
         subsystem = p.get("subsystem", "unknown")
         avg = self._tracker.subsystem_avg(subsystem)
         if avg is not None:
-            self._add_entry(MemoryEntry(
-                category="insight",
-                subsystem=subsystem,
-                content=(
-                    f"Meso synthesis completed for '{subsystem}'. "
-                    f"Average critic score over recent loops: {avg:.2f}."
-                ),
-                source_event="meso_loop_completed",
-            ))
+            self._add_entry(
+                MemoryEntry(
+                    category="insight",
+                    subsystem=subsystem,
+                    content=(
+                        f"Meso synthesis completed for '{subsystem}'. "
+                        f"Average critic score over recent loops: {avg:.2f}."
+                    ),
+                    source_event="meso_loop_completed",
+                )
+            )
             self._save_state()
 
     async def _on_macro_completed(self, event: Any) -> None:
         """Record macro snapshot events."""
         p = event.payload
-        self._add_entry(MemoryEntry(
-            category="decision",
-            subsystem="general",
-            content=(
-                f"Macro architectural snapshot #{p.get('iteration', '?')} committed"
-                f" (hash={p.get('commit_hash', '?')})."
-            ),
-            source_event="macro_loop_completed",
-        ))
+        self._add_entry(
+            MemoryEntry(
+                category="decision",
+                subsystem="general",
+                content=(
+                    f"Macro architectural snapshot #{p.get('iteration', '?')} committed"
+                    f" (hash={p.get('commit_hash', '?')})."
+                ),
+                source_event="macro_loop_completed",
+            )
+        )
         self._save_state()
         self._write_markdown_summary()
 
@@ -308,40 +320,46 @@ class AutoMemory:
 
         # Human reviews are the most valuable learning signal
         if score is not None and score >= self._high_threshold:
-            self._add_entry(MemoryEntry(
-                category="effective_pattern",
-                subsystem="general",
-                content=(
-                    f"Human judge gave high score ({score:.2f}). "
-                    "The approach was validated by human review."
-                ),
-                source_event="human_review_submitted",
-                confidence=1.0,  # Human feedback = highest confidence
-            ))
+            self._add_entry(
+                MemoryEntry(
+                    category="effective_pattern",
+                    subsystem="general",
+                    content=(
+                        f"Human judge gave high score ({score:.2f}). "
+                        "The approach was validated by human review."
+                    ),
+                    source_event="human_review_submitted",
+                    confidence=1.0,  # Human feedback = highest confidence
+                )
+            )
 
         if score is not None and score <= self._low_threshold:
-            self._add_entry(MemoryEntry(
-                category="pitfall",
-                subsystem="general",
-                content=(
-                    f"Human judge gave low score ({score:.2f}). "
-                    "The approach was rejected by human review."
-                ),
-                source_event="human_review_submitted",
-                confidence=1.0,
-            ))
+            self._add_entry(
+                MemoryEntry(
+                    category="pitfall",
+                    subsystem="general",
+                    content=(
+                        f"Human judge gave low score ({score:.2f}). "
+                        "The approach was rejected by human review."
+                    ),
+                    source_event="human_review_submitted",
+                    confidence=1.0,
+                )
+            )
 
         if has_directive:
-            self._add_entry(MemoryEntry(
-                category="decision",
-                subsystem="general",
-                content=(
-                    "Human judge provided a steering directive. "
-                    f"Sticky: {p.get('sticky', False)}."
-                ),
-                source_event="human_review_submitted",
-                confidence=1.0,
-            ))
+            self._add_entry(
+                MemoryEntry(
+                    category="decision",
+                    subsystem="general",
+                    content=(
+                        "Human judge provided a steering directive. "
+                        f"Sticky: {p.get('sticky', False)}."
+                    ),
+                    source_event="human_review_submitted",
+                    confidence=1.0,
+                )
+            )
 
         self._save_state()
 
@@ -375,7 +393,8 @@ class AutoMemory:
 
         if subsystem:
             entries = [
-                e for e in entries
+                e
+                for e in entries
                 if e.get("subsystem") == subsystem or e.get("subsystem") == "general"
             ]
 
@@ -430,10 +449,8 @@ class AutoMemory:
                 and self._similarity(existing.get("content", ""), entry.content) > 0.8
             ):
                 existing["reinforcement_count"] = existing.get("reinforcement_count", 1) + 1
-                existing["last_reinforced_at"] = datetime.now(timezone.utc).isoformat()
-                existing["confidence"] = min(
-                    1.0, existing.get("confidence", 0.5) + 0.05
-                )
+                existing["last_reinforced_at"] = datetime.now(UTC).isoformat()
+                existing["confidence"] = min(1.0, existing.get("confidence", 0.5) + 0.05)
                 return
 
         self._state.entries.append(entry_dict)
@@ -443,7 +460,7 @@ class AutoMemory:
             self._state.entries.sort(
                 key=lambda e: e.get("confidence", 0) * e.get("reinforcement_count", 1),
             )
-            self._state.entries = self._state.entries[-self._max_entries:]
+            self._state.entries = self._state.entries[-self._max_entries :]
 
     @staticmethod
     def _similarity(a: str, b: str) -> float:
@@ -475,6 +492,7 @@ class AutoMemory:
         """Persist state to disk atomically."""
         try:
             from utils.io import atomic_write
+
             atomic_write(
                 str(self._json_path),
                 json.dumps(asdict(self._state), indent=2, default=str),
@@ -544,6 +562,7 @@ class AutoMemory:
 
         try:
             from utils.io import atomic_write
+
             atomic_write(str(self._md_path), "\n".join(lines))
         except ImportError:
             self._md_path.write_text("\n".join(lines), encoding="utf-8")

@@ -27,11 +27,11 @@ import re
 import time
 from pathlib import Path
 
-from .base import BaseMinion
-from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus, TestSummary
-from ..tools.file_ops import read_file, write_file, ensure_dir
+from ..contracts.task import GrubTask
+from ..tools.file_ops import ensure_dir, read_file, write_file
 from ..tools.shell import run_tests
+from .base import BaseMinion
 
 
 class TesterMinion(BaseMinion):
@@ -94,16 +94,12 @@ Bad test names:
                 code_sections.append(f"### {fpath}\n```python\n{content}\n```")
 
         if not code_sections:
-            return self._make_failed_result(
-                task, "Could not read any implementation files"
-            )
+            return self._make_failed_result(task, "Could not read any implementation files")
 
         # ── Ask LLM to write tests ────────────────────────────────────────────
         prompt = (
             f"## Task\n{task.title}\n\n"
-            f"## Implementation Code\n"
-            + "\n\n".join(code_sections)
-            + "\n\n## Instructions\n"
+            f"## Implementation Code\n" + "\n\n".join(code_sections) + "\n\n## Instructions\n"
             "Write comprehensive pytest tests for the above code. "
             "Cover happy paths, edge cases, and error handling. "
             "Use mocking for any external dependencies. "
@@ -111,7 +107,8 @@ Bad test names:
         )
 
         response = await self._llm(
-            prompt, temperature=0.2,
+            prompt,
+            temperature=0.2,
             timeout=self.config.timeouts.get(self.name, 120.0),
         )
         if response.startswith("ERROR:"):
@@ -140,24 +137,18 @@ Bad test names:
         # Extract filepath from first line comment
         test_filepath = None
         if test_lines and "filepath:" in test_lines[0].lower():
-            test_filepath = (
-                test_lines[0].split("filepath:")[-1].strip().lstrip("#").strip()
-            )
+            test_filepath = test_lines[0].split("filepath:")[-1].strip().lstrip("#").strip()
             test_code = "\n".join(test_lines[1:]).strip()
 
         if not test_filepath:
             # Default test file path
             module_name = Path(files_to_test[0]).stem if files_to_test else "module"
-            test_filepath = str(
-                Path(self.config.output_dir) / "tests" / f"test_{module_name}.py"
-            )
+            test_filepath = str(Path(self.config.output_dir) / "tests" / f"test_{module_name}.py")
 
         ensure_dir(str(Path(test_filepath).parent))
         ok, written_path = write_file(test_filepath, test_code)
         if not ok:
-            return self._make_failed_result(
-                task, f"Could not write test file: {written_path}"
-            )
+            return self._make_failed_result(task, f"Could not write test file: {written_path}")
 
         self.logger.info("TesterMinion: wrote test file %s", written_path)
 
@@ -194,7 +185,8 @@ Bad test names:
                     "Output the corrected code as a fenced Python block."
                 )
                 fix_response = await self._llm(
-                    fix_prompt, temperature=0.1,
+                    fix_prompt,
+                    temperature=0.1,
                     timeout=self.config.timeouts.get(self.name, 120.0),
                 )
                 if not fix_response.startswith("ERROR:"):
@@ -209,9 +201,7 @@ Bad test names:
         if test_summary and test_summary.all_passed:
             score = 0.9
             status = ResultStatus.SUCCESS
-            summary = (
-                f"All {test_summary.passed} tests passed in {iteration} iteration(s)."
-            )
+            summary = f"All {test_summary.passed} tests passed in {iteration} iteration(s)."
         elif test_summary:
             score = test_summary.passed / max(test_summary.total, 1)
             status = ResultStatus.PARTIAL

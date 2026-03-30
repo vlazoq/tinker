@@ -25,28 +25,28 @@ methods see exactly what a real PostgreSQL cursor would return.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import contextlib
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from runtime.tasks.postgres_registry import (
-    PostgresTaskRegistry,
-    _pg_row_to_dict,
-    _task_to_row,
-    _is_transient,
     _COLUMNS,
     _CREATE_TABLE,
     _MIGRATIONS,
+    PostgresTaskRegistry,
+    _is_transient,
+    _pg_row_to_dict,
+    _task_to_row,
 )
-from runtime.tasks.schema import Task, TaskStatus, TaskType, Subsystem
-
+from runtime.tasks.schema import Subsystem, Task, TaskStatus, TaskType
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _make_task(
@@ -331,7 +331,7 @@ class TestByStatus:
 
         registry.by_status(TaskStatus.PENDING, TaskStatus.ACTIVE)
 
-        sql, params = cur.execute.call_args.args
+        sql, _params = cur.execute.call_args.args
         assert sql.count("%s") == 2  # one placeholder per status
 
 
@@ -436,8 +436,8 @@ class TestRegistryFactory:
     """Verify the factory produces the right backend type."""
 
     def test_factory_returns_sqlite_by_default(self):
-        from runtime.tasks.registry_factory import create_task_registry
         from runtime.tasks.registry import SQLiteTaskRegistry
+        from runtime.tasks.registry_factory import create_task_registry
 
         reg = create_task_registry("sqlite", db_path=":memory:")
         try:
@@ -562,7 +562,7 @@ class TestConnectionRetry:
 
     def test_succeeds_on_first_attempt_no_sleep(self):
         mock_conn = MagicMock()
-        registry, mock_pool = self._make_pool_registry([mock_conn])
+        registry, _mock_pool = self._make_pool_registry([mock_conn])
 
         with patch("runtime.tasks.postgres_registry.time.sleep") as mock_sleep:
             with registry._conn() as conn:
@@ -579,25 +579,27 @@ class TestConnectionRetry:
                 assert conn is mock_conn
             # Should have slept once (after first failure)
             mock_sleep.assert_called_once()
-            mock_pool.getconn.call_count == 2
+            assert mock_pool.getconn.call_count == 2
 
     def test_retries_use_exponential_backoff(self):
         """Sleep durations should double each attempt: base, base*2, base*4."""
         mock_conn = MagicMock()
         transient = Exception("connection refused")
         # Fail 3 times, succeed on 4th
-        registry, mock_pool = self._make_pool_registry(
+        registry, _mock_pool = self._make_pool_registry(
             [transient, transient, transient, mock_conn]
         )
         registry._retry_base_delay = 1.0
 
         sleep_calls = []
-        with patch(
-            "tasks.postgres_registry.time.sleep",
-            side_effect=lambda d: sleep_calls.append(d),
+        with (
+            patch(
+                "tasks.postgres_registry.time.sleep",
+                side_effect=lambda d: sleep_calls.append(d),
+            ),
+            registry._conn(),
         ):
-            with registry._conn():
-                pass
+            pass
 
         # 3 failures → 3 sleeps with durations 1.0, 2.0, 4.0
         assert len(sleep_calls) == 3
@@ -610,10 +612,12 @@ class TestConnectionRetry:
         )
         registry._max_retries = 2
 
-        with patch("runtime.tasks.postgres_registry.time.sleep"):
-            with pytest.raises(Exception, match="could not connect"):
-                with registry._conn():
-                    pass
+        with (
+            patch("runtime.tasks.postgres_registry.time.sleep"),
+            pytest.raises(Exception, match="could not connect"),
+            registry._conn(),
+        ):
+            pass
 
         # max_retries=2 means 3 total attempts (1 initial + 2 retries)
         assert mock_pool.getconn.call_count == 3
@@ -622,10 +626,12 @@ class TestConnectionRetry:
         permanent = Exception('relation "tasks" does not exist')
         registry, mock_pool = self._make_pool_registry([permanent])
 
-        with patch("runtime.tasks.postgres_registry.time.sleep") as mock_sleep:
-            with pytest.raises(Exception, match='relation "tasks"'):
-                with registry._conn():
-                    pass
+        with (
+            patch("runtime.tasks.postgres_registry.time.sleep") as mock_sleep,
+            pytest.raises(Exception, match='relation "tasks"'),
+            registry._conn(),
+        ):
+            pass
 
         # Only 1 attempt — no retry for permanent errors
         assert mock_pool.getconn.call_count == 1
@@ -635,9 +641,8 @@ class TestConnectionRetry:
         mock_conn = MagicMock()
         registry, mock_pool = self._make_pool_registry([mock_conn])
 
-        with patch("runtime.tasks.postgres_registry.time.sleep"):
-            with registry._conn():
-                pass
+        with patch("runtime.tasks.postgres_registry.time.sleep"), registry._conn():
+            pass
 
         mock_pool.putconn.assert_called_once_with(mock_conn)
 
@@ -645,21 +650,25 @@ class TestConnectionRetry:
         mock_conn = MagicMock()
         registry, mock_pool = self._make_pool_registry([mock_conn])
 
-        with patch("runtime.tasks.postgres_registry.time.sleep"):
-            with pytest.raises(RuntimeError):
-                with registry._conn() as _conn:
-                    raise RuntimeError("query failed")
+        with (
+            patch("runtime.tasks.postgres_registry.time.sleep"),
+            pytest.raises(RuntimeError),
+            registry._conn() as _conn,
+        ):
+            raise RuntimeError("query failed")
 
         mock_pool.putconn.assert_called_once_with(mock_conn)
 
     def test_rollback_called_on_query_exception(self):
         mock_conn = MagicMock()
-        registry, mock_pool = self._make_pool_registry([mock_conn])
+        registry, _mock_pool = self._make_pool_registry([mock_conn])
 
-        with patch("runtime.tasks.postgres_registry.time.sleep"):
-            with pytest.raises(RuntimeError):
-                with registry._conn() as _conn:
-                    raise RuntimeError("query failed")
+        with (
+            patch("runtime.tasks.postgres_registry.time.sleep"),
+            pytest.raises(RuntimeError),
+            registry._conn() as _conn,
+        ):
+            raise RuntimeError("query failed")
 
         mock_conn.rollback.assert_called_once()
 
@@ -720,10 +729,8 @@ class TestQueryTimeoutConfig:
 
         with patch.object(_pool, "ThreadedConnectionPool") as mock_pool_cls:
             mock_pool_cls.return_value = MagicMock()
-            try:
+            with contextlib.suppress(Exception):
                 PostgresTaskRegistry(dsn="postgresql://user:pw@localhost/db")
-            except Exception:
-                pass
 
             if mock_pool_cls.called:
                 _, kwargs = mock_pool_cls.call_args
@@ -777,8 +784,9 @@ class TestHealthCheck:
 
     def test_health_check_is_on_abstract_registry(self):
         """health_check must be declared in the abstract base class."""
-        from runtime.tasks.abstract_registry import AbstractTaskRegistry
         import inspect
+
+        from runtime.tasks.abstract_registry import AbstractTaskRegistry
 
         assert "health_check" in dict(inspect.getmembers(AbstractTaskRegistry))
 
@@ -917,11 +925,11 @@ class TestSchemaMigrations:
         assert versions == list(range(1, len(versions) + 1)), "Versions must start at 1"
 
     def test_migrations_have_non_empty_descriptions(self):
-        for version, description, statements, _down in _MIGRATIONS:
+        for version, description, _statements, _down in _MIGRATIONS:
             assert description.strip(), f"Migration {version} has empty description"
 
     def test_migrations_have_non_empty_sql_lists(self):
-        for version, description, statements, _down in _MIGRATIONS:
+        for version, _description, statements, _down in _MIGRATIONS:
             assert statements, f"Migration {version} has no SQL statements"
 
     def test_create_migrations_table_executed_on_init(self):
@@ -1095,7 +1103,7 @@ class TestSQLiteHealthCheck:
             bad = MagicMock()
             bad.to_dict.side_effect = RuntimeError("serialisation failure")
 
-            with pytest.raises(Exception):
+            with pytest.raises(Exception, match="serialisation failure"):
                 reg.save_batch([good, bad])
 
             # The good task must not have been committed
@@ -1156,9 +1164,7 @@ class TestAbstractRegistryInterface:
 
         abstract_methods = AbstractTaskRegistry.__abstractmethods__
         for method in self.REQUIRED_METHODS:
-            assert method in abstract_methods, (
-                f"AbstractTaskRegistry.{method} must be abstract"
-            )
+            assert method in abstract_methods, f"AbstractTaskRegistry.{method} must be abstract"
 
     def test_postgres_implements_all_required_methods(self):
         mock_conn = MagicMock()

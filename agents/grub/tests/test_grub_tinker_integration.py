@@ -47,19 +47,18 @@ import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from agents.grub.feedback import TinkerBridge
-from agents.grub.contracts.task import GrubTask
 from agents.grub.contracts.result import MinionResult, ResultStatus, TestSummary
+from agents.grub.contracts.task import GrubTask
+from agents.grub.feedback import TinkerBridge
 
 # _enrich_review_context is a module-level utility in the micro loop.
 # We import it directly so we can unit-test it in isolation.
 from runtime.orchestrator.micro_loop import _enrich_review_context
-
 
 # ===========================================================================
 # Shared fixtures
@@ -91,7 +90,7 @@ _FULL_SCHEMA = """
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _insert_task(
@@ -345,8 +344,7 @@ class TestEnrichReviewContext:
             "title": "Review Grub implementation",
             "metadata": json.dumps(
                 {
-                    "grub_task_result": grub_result
-                    or {"status": "success", "score": 0.8},
+                    "grub_task_result": grub_result or {"status": "success", "score": 0.8},
                     "source": "grub_feedback",
                 }
             ),
@@ -397,9 +395,7 @@ class TestEnrichReviewContext:
         task = {
             "id": "t1",
             "type": "review",
-            "metadata": json.dumps(
-                {"grub_task_result": {"status": "failed", "score": 0.1}}
-            ),
+            "metadata": json.dumps({"grub_task_result": {"status": "failed", "score": 0.1}}),
         }
         enriched = _enrich_review_context(task, {})
         assert "grub_implementation" in enriched
@@ -457,9 +453,7 @@ class TestFetchOrdering:
         con = sqlite3.connect(str(tasks_db))
         _insert_task(con, id="low-001", title="Low priority task", priority_score=0.2)
         _insert_task(con, id="high-001", title="High priority task", priority_score=0.9)
-        _insert_task(
-            con, id="mid-001", title="Medium priority task", priority_score=0.5
-        )
+        _insert_task(con, id="mid-001", title="Medium priority task", priority_score=0.5)
         con.commit()
         con.close()
 
@@ -551,9 +545,7 @@ class TestFailedResults:
         con.close()
         assert row[0] == "complete"
 
-    def test_failed_result_creates_review_task_so_tinker_can_decide(
-        self, bridge, tasks_db
-    ):
+    def test_failed_result_creates_review_task_so_tinker_can_decide(self, bridge, tasks_db):
         """Even on failure, Tinker gets a review task so it can decide to
         redesign or provide more context."""
         con = sqlite3.connect(str(tasks_db))
@@ -571,9 +563,7 @@ class TestFailedResults:
         bridge.report_result(result, tinker_task_id="t-fail")
 
         con = sqlite3.connect(str(tasks_db))
-        count = con.execute(
-            "SELECT COUNT(*) FROM tasks WHERE type='review'"
-        ).fetchone()[0]
+        count = con.execute("SELECT COUNT(*) FROM tasks WHERE type='review'").fetchone()[0]
         con.close()
         assert count == 1, "Tinker must always get a review task to close the loop"
 
@@ -667,9 +657,7 @@ class TestEdgeCases:
         bridge.report_result(result, tinker_task_id="t-001")
 
         con = sqlite3.connect(str(tasks_db))
-        count = con.execute(
-            "SELECT COUNT(*) FROM tasks WHERE type='review'"
-        ).fetchone()[0]
+        count = con.execute("SELECT COUNT(*) FROM tasks WHERE type='review'").fetchone()[0]
         con.close()
         # INSERT OR IGNORE in feedback.py prevents duplicates
         assert count == 1, (
@@ -795,9 +783,7 @@ class TestConcurrentWrites:
                     score=0.7 + idx * 0.01,
                     summary=f"Implemented task {idx}.",
                 )
-                ok_flags[idx] = bridge.report_result(
-                    r, tinker_task_id=f"conc-diff-{idx:03d}"
-                )
+                ok_flags[idx] = bridge.report_result(r, tinker_task_id=f"conc-diff-{idx:03d}")
             except Exception as exc:
                 errors.append(exc)
 
@@ -864,14 +850,10 @@ class TestConcurrentWrites:
         for t in threads:
             t.join(timeout=30)
 
-        assert not errors, (
-            f"Unexpected exceptions from {N_THREADS} concurrent reports: {errors}"
-        )
+        assert not errors, f"Unexpected exceptions from {N_THREADS} concurrent reports: {errors}"
 
         con = sqlite3.connect(str(tasks_db))
-        review_count = con.execute(
-            "SELECT COUNT(*) FROM tasks WHERE type='review'"
-        ).fetchone()[0]
+        review_count = con.execute("SELECT COUNT(*) FROM tasks WHERE type='review'").fetchone()[0]
         con.close()
 
         assert review_count == 1, (
@@ -920,9 +902,7 @@ class TestConcurrentWrites:
         assert not errors, f"Thread exceptions: {errors}"
 
         con = sqlite3.connect(str(tasks_db))
-        rows = con.execute(
-            "SELECT id, metadata FROM tasks WHERE type='review'"
-        ).fetchall()
+        rows = con.execute("SELECT id, metadata FROM tasks WHERE type='review'").fetchall()
         con.close()
 
         assert len(rows) == N, f"Expected {N} review tasks; got {len(rows)}"
@@ -1023,9 +1003,7 @@ class TestConcurrentFetchReport:
         assert not fetch_errors, f"Reader thread exceptions: {fetch_errors}"
         assert not report_errors, f"Writer thread exceptions: {report_errors}"
 
-    def test_completed_tasks_not_returned_after_concurrent_report(
-        self, tasks_db, tmp_path
-    ):
+    def test_completed_tasks_not_returned_after_concurrent_report(self, tasks_db, tmp_path):
         """
         After concurrent reports mark tasks as complete, subsequent fetches
         must not return those tasks — no stale reads from WAL snapshots.
@@ -1205,9 +1183,7 @@ class TestDatabasePersistence:
         bridge.report_result(result, tinker_task_id="persist-2")
 
         con2 = sqlite3.connect(str(tasks_db))
-        review = con2.execute(
-            "SELECT id, type, status FROM tasks WHERE type='review'"
-        ).fetchone()
+        review = con2.execute("SELECT id, type, status FROM tasks WHERE type='review'").fetchone()
         con2.close()
 
         assert review is not None, "Review task not found via fresh connection"
@@ -1254,9 +1230,7 @@ class TestDatabasePersistence:
         )
 
         con2 = sqlite3.connect(str(tasks_db))
-        review = con2.execute(
-            "SELECT COUNT(*) FROM tasks WHERE type='review'"
-        ).fetchone()[0]
+        review = con2.execute("SELECT COUNT(*) FROM tasks WHERE type='review'").fetchone()[0]
         con2.close()
         assert review == 1, "Review task written by bridge_a not visible to bridge_b"
 
@@ -1385,9 +1359,7 @@ class TestFailureModes:
                 status=ResultStatus.SUCCESS,
             )
             ok = bridge.report_result(result, tinker_task_id="ro-task")
-            assert ok is False, (
-                "report_result() must return False on a read-only DB, not raise"
-            )
+            assert ok is False, "report_result() must return False on a read-only DB, not raise"
         finally:
             # Restore write permission so pytest can clean up tmp_path
             db.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
@@ -1402,9 +1374,7 @@ class TestFailureModes:
 
         bridge = TinkerBridge(tinker_tasks_db=str(db))
         tasks = bridge.fetch_implementation_tasks()
-        assert tasks == [], (
-            "fetch_implementation_tasks() must return [] on a corrupted DB"
-        )
+        assert tasks == [], "fetch_implementation_tasks() must return [] on a corrupted DB"
 
     def test_report_to_corrupted_db_returns_false(self, tmp_path):
         """report_result() must return False when the DB file is corrupt."""
@@ -1602,6 +1572,5 @@ class TestSchemaCompleteness:
 
         missing = canonical_keys - stored_keys
         assert not missing, (
-            f"Fields present in MinionResult.to_dict() but missing after "
-            f"round-trip: {missing}"
+            f"Fields present in MinionResult.to_dict() but missing after round-trip: {missing}"
         )

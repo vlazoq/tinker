@@ -12,17 +12,16 @@ import pytest
 
 from core.validation.input_validator import (
     ValidationError,
-    sanitize_string,
     check_prompt_injection,
+    sanitize_string,
+    validate_ai_json,
     validate_batch,
+    validate_config_value,
+    validate_file_path,
     validate_problem_statement,
     validate_task,
     validate_url,
-    validate_file_path,
-    validate_ai_json,
-    validate_config_value,
 )
-
 
 # ---------------------------------------------------------------------------
 # sanitize_string
@@ -58,9 +57,7 @@ class TestSanitizeString:
 class TestCheckPromptInjection:
     def test_clean_input_passes(self):
         # Should not raise
-        check_prompt_injection(
-            "Design a microservice architecture for payments.", field="prompt"
-        )
+        check_prompt_injection("Design a microservice architecture for payments.", field="prompt")
 
     @pytest.mark.parametrize(
         "injection",
@@ -195,9 +192,7 @@ class TestValidateAiJson:
 
     def test_score_out_of_range_raises(self):
         # validate_ai_json checks keys, not value ranges — score range not enforced here
-        result = validate_ai_json(
-            {"content": "x", "score": 1.5}, expected_keys=["content"]
-        )
+        result = validate_ai_json({"content": "x", "score": 1.5}, expected_keys=["content"])
         assert result["score"] == 1.5
 
     def test_non_dict_raises(self):

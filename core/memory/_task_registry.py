@@ -7,7 +7,6 @@ Split from manager.py to keep each memory layer in its own focused module.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from .schemas import Task, TaskStatus
 
@@ -30,7 +29,7 @@ class TaskRegistryMixin:
         logger.debug("Stored task %s ('%s')", task.id, task.title)
         return task
 
-    async def get_task(self, task_id: str) -> Optional[Task]:
+    async def get_task(self, task_id: str) -> Task | None:
         """Retrieve a task by its UUID. Returns None if not found."""
         row = await self._sqlite.get_task(task_id)
         return Task.from_dict(row) if row else None
@@ -39,8 +38,8 @@ class TaskRegistryMixin:
         self,
         task_id: str,
         status: TaskStatus,
-        result: Optional[str] = None,
-        error: Optional[str] = None,
+        result: str | None = None,
+        error: str | None = None,
     ) -> None:
         """Update a task's status, result, and/or error in the Task Registry."""
         await self._sqlite.update_task_status(task_id, status.value, result, error)
@@ -54,7 +53,7 @@ class TaskRegistryMixin:
         return [Task.from_dict(r) for r in rows]
 
     async def get_session_tasks(
-        self, session_id: Optional[str] = None, limit: int = 200
+        self, session_id: str | None = None, limit: int = 200
     ) -> list[Task]:
         sid = session_id or self.session_id
         rows = await self._sqlite.get_tasks_by_session(sid, limit)

@@ -57,9 +57,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-import uuid
 import time
-from typing import TYPE_CHECKING, Any, Optional
+import uuid
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger("tinker.human_judge")
 
@@ -83,8 +83,8 @@ class HumanJudge:
 
     def __init__(
         self,
-        config: "OrchestratorConfig",
-        state: "OrchestratorState",
+        config: OrchestratorConfig,
+        state: OrchestratorState,
         event_bus: Any = None,
     ) -> None:
         self._config = config
@@ -126,13 +126,11 @@ class HumanJudge:
             if llm_score is not None and llm_score < self._config.hybrid_score_threshold:
                 return True
             # Review every N loops
-            if (
+            return bool(
                 self._config.hybrid_review_interval > 0
                 and iteration > 0
                 and iteration % self._config.hybrid_review_interval == 0
-            ):
-                return True
-            return False
+            )
 
         if mode == "on_demand":
             # Check if human manually requested a review
@@ -213,12 +211,15 @@ class HumanJudge:
         self._events[review_id] = event
 
         # Emit event if bus available
-        await self._emit("HUMAN_REVIEW_REQUESTED", {
-            "review_id": review_id,
-            "task_id": task.get("id", ""),
-            "llm_score": llm_critic_result.get("score") if llm_critic_result else None,
-            "mode": self._config.judge_mode,
-        })
+        await self._emit(
+            "HUMAN_REVIEW_REQUESTED",
+            {
+                "review_id": review_id,
+                "task_id": task.get("id", ""),
+                "llm_score": llm_critic_result.get("score") if llm_critic_result else None,
+                "mode": self._config.judge_mode,
+            },
+        )
 
         try:
             # Determine mode: CLI or API
@@ -226,7 +227,7 @@ class HumanJudge:
                 result = await self._cli_review(review_id, pending, event)
             else:
                 result = await self._api_wait(review_id, event)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "HumanJudge: timeout waiting for review (review_id=%s) — "
                 "falling back to LLM critic result",
@@ -264,23 +265,28 @@ class HumanJudge:
         directive = result.get("human_directive")
         is_sticky = result.get("sticky", False)
         if directive and is_sticky:
-            self.sticky_directives.append({
-                "directive": directive,
-                "added_at": time.time(),
-                "review_id": review_id,
-            })
+            self.sticky_directives.append(
+                {
+                    "directive": directive,
+                    "added_at": time.time(),
+                    "review_id": review_id,
+                }
+            )
             logger.info(
                 "HumanJudge: sticky directive added (review_id=%s): %s",
                 review_id,
                 directive[:80],
             )
 
-        await self._emit("HUMAN_REVIEW_SUBMITTED", {
-            "review_id": review_id,
-            "score": result.get("score"),
-            "has_directive": bool(directive),
-            "sticky": is_sticky,
-        })
+        await self._emit(
+            "HUMAN_REVIEW_SUBMITTED",
+            {
+                "review_id": review_id,
+                "score": result.get("score"),
+                "has_directive": bool(directive),
+                "sticky": is_sticky,
+            },
+        )
 
         return result
 
@@ -319,10 +325,7 @@ class HumanJudge:
         """Return all pending human reviews."""
         if not hasattr(self._state, "pending_reviews"):
             return []
-        return [
-            r for r in self._state.pending_reviews.values()
-            if r.get("status") == "pending"
-        ]
+        return [r for r in self._state.pending_reviews.values() if r.get("status") == "pending"]
 
     def get_active_directives(self) -> list[str]:
         """Return all active sticky directives for injection into context."""
@@ -382,18 +385,22 @@ class HumanJudge:
         ]
 
         if pending.get("llm_critic"):
-            lines.extend([
-                "-" * 70,
-                f"  LLM Critic Score: {pending['llm_critic']['score']}",
-                f"  LLM Critic Says : {pending['llm_critic']['content'][:500]}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "-" * 70,
+                    f"  LLM Critic Score: {pending['llm_critic']['score']}",
+                    f"  LLM Critic Says : {pending['llm_critic']['content'][:500]}",
+                    "",
+                ]
+            )
 
-        lines.extend([
-            "-" * 70,
-            "  Your review:",
-            "  Score (0.0-1.0): ",
-        ])
+        lines.extend(
+            [
+                "-" * 70,
+                "  Your review:",
+                "  Score (0.0-1.0): ",
+            ]
+        )
 
         sys.stdout.write("\n".join(lines))
         sys.stdout.flush()
@@ -489,6 +496,7 @@ class HumanJudge:
             return
         try:
             from core.events import Event, EventType
+
             # Map string to EventType (use CUSTOM for human-specific events)
             event_type = getattr(EventType, event_name, EventType.CUSTOM)
             await self._event_bus.publish(

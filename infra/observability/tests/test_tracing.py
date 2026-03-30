@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from infra.observability.tracing import Tracer, Span
+from infra.observability.tracing import Span, Tracer
 
 
 class TestSpan:
@@ -35,9 +35,8 @@ class TestSpan:
 class TestTracer:
     def test_start_trace_records_spans(self):
         tracer = Tracer()
-        with tracer.start_trace("my_trace") as trace:
-            with trace.span("step_1"):
-                time.sleep(0.005)
+        with tracer.start_trace("my_trace") as trace, trace.span("step_1"):
+            time.sleep(0.005)
         recent = tracer.recent_traces()
         assert len(recent) >= 1
         # recent_traces() returns serialised dicts, not Trace objects
@@ -59,9 +58,8 @@ class TestTracer:
     def test_performance_summary_with_completed_traces(self):
         tracer = Tracer()
         for _ in range(5):
-            with tracer.start_trace("loop_iteration") as trace:
-                with trace.span("work"):
-                    time.sleep(0.001)
+            with tracer.start_trace("loop_iteration") as trace, trace.span("work"):
+                time.sleep(0.001)
         # performance_summary() takes no arguments; returns {span_name: stats_dict}
         summary = tracer.performance_summary()
         assert "work" in summary
@@ -86,14 +84,14 @@ class TestTracer:
 class TestRecordTinkerException:
     """record_tinker_exception attaches TinkerError context to a Span."""
 
-    def _span(self, name: str = "op") -> "Span":
+    def _span(self, name: str = "op") -> Span:
         from infra.observability.tracing import Span
 
         return Span(name=name)
 
     def test_sets_error_field(self):
-        from infra.observability.tracing import record_tinker_exception
         from exceptions import ModelConnectionError
+        from infra.observability.tracing import record_tinker_exception
 
         span = self._span()
         exc = ModelConnectionError("connect failed")
@@ -102,16 +100,16 @@ class TestRecordTinkerException:
         assert "connect failed" in span.error
 
     def test_attaches_exc_type_attribute(self):
-        from infra.observability.tracing import record_tinker_exception
         from exceptions import ModelTimeoutError
+        from infra.observability.tracing import record_tinker_exception
 
         span = self._span()
         record_tinker_exception(ModelTimeoutError("timeout"), span)
         assert span.attributes.get("exc.type") == "ModelTimeoutError"
 
     def test_attaches_retryable_attribute(self):
-        from infra.observability.tracing import record_tinker_exception
         from exceptions import ModelConnectionError, ResponseParseError
+        from infra.observability.tracing import record_tinker_exception
 
         span_r = self._span()
         span_nr = self._span()
@@ -121,8 +119,8 @@ class TestRecordTinkerException:
         assert span_nr.attributes.get("exc.retryable") is False
 
     def test_context_dict_attached_as_prefixed_attrs(self):
-        from infra.observability.tracing import record_tinker_exception
         from exceptions import ModelConnectionError
+        from infra.observability.tracing import record_tinker_exception
 
         span = self._span()
         exc = ModelConnectionError("fail", context={"url": "http://x", "attempt": 2})
@@ -131,8 +129,8 @@ class TestRecordTinkerException:
         assert span.attributes.get("exc.attempt") == 2
 
     def test_empty_context_adds_no_exc_prefixed_attrs(self):
-        from infra.observability.tracing import record_tinker_exception
         from exceptions import TinkerError
+        from infra.observability.tracing import record_tinker_exception
 
         span = self._span()
         record_tinker_exception(TinkerError("plain"), span)
@@ -140,8 +138,7 @@ class TestRecordTinkerException:
         exc_ctx_keys = [
             k
             for k in span.attributes
-            if k.startswith("exc.")
-            and k not in ("exc.type", "exc.retryable", "exc.trace_id")
+            if k.startswith("exc.") and k not in ("exc.type", "exc.retryable", "exc.trace_id")
         ]
         assert exc_ctx_keys == []
 

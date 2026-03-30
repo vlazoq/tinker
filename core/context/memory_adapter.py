@@ -81,7 +81,7 @@ class MemoryAdaptor(_MemoryManagerProtocol):
 
     def __init__(
         self,
-        memory_manager: "MemoryManager",
+        memory_manager: MemoryManager,
         max_content_chars: int = 1_000,
     ) -> None:
         self._mm = memory_manager
@@ -108,9 +108,7 @@ class MemoryAdaptor(_MemoryManagerProtocol):
             logger.warning("MemoryAdaptor.get_arch_state_summary: %s", exc)
             return ""
 
-    async def semantic_search_session(
-        self, query: str, top_k: int = 5
-    ) -> list[MemoryItem]:
+    async def semantic_search_session(self, query: str, top_k: int = 5) -> list[MemoryItem]:
         """
         Return DuckDB session artifacts relevant to *query*.
 
@@ -141,9 +139,7 @@ class MemoryAdaptor(_MemoryManagerProtocol):
 
             if task_id:
                 try:
-                    artifacts = await self._mm.get_artifacts_by_task(
-                        task_id, limit=top_k
-                    )
+                    artifacts = await self._mm.get_artifacts_by_task(task_id, limit=top_k)
                     if artifacts:
                         return [
                             MemoryItem(
@@ -172,9 +168,7 @@ class MemoryAdaptor(_MemoryManagerProtocol):
             logger.warning("MemoryAdaptor.semantic_search_session: %s", exc)
             return []
 
-    async def semantic_search_archive(
-        self, query: str, top_k: int = 5
-    ) -> list[MemoryItem]:
+    async def semantic_search_archive(self, query: str, top_k: int = 5) -> list[MemoryItem]:
         """
         Search the ChromaDB research archive for notes relevant to *query*.
 

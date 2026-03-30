@@ -7,7 +7,6 @@ Verifies SLA definition, recording, percentile computation, and breach detection
 
 from __future__ import annotations
 
-
 from infra.observability.sla_tracker import (
     SLATracker,
     build_default_sla_tracker,

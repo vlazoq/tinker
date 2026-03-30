@@ -96,7 +96,7 @@ class TrinoConfig:
     table_name: str = "session_artifacts"
 
     @classmethod
-    def from_env(cls) -> "TrinoConfig":
+    def from_env(cls) -> TrinoConfig:
         """
         Build a TrinoConfig from ``TINKER_TRINO_*`` environment variables.
 
@@ -222,9 +222,7 @@ class TrinoSessionStore:
         finally:
             conn.close()
 
-    def _row_to_dict(
-        self, row: tuple, columns: list[str]
-    ) -> dict[str, Any]:
+    def _row_to_dict(self, row: tuple, columns: list[str]) -> dict[str, Any]:
         """
         Convert a Trino result row (tuple) into a dict with parsed metadata.
 
@@ -232,7 +230,7 @@ class TrinoSessionStore:
         helper parses it back into a Python dict and renames the field to
         ``metadata`` for consistency with the DuckDB adapter's output.
         """
-        record = dict(zip(columns, row))
+        record = dict(zip(columns, row, strict=False))
         if "metadata_json" in record:
             try:
                 record["metadata"] = json.loads(record.pop("metadata_json"))
@@ -293,9 +291,7 @@ class TrinoSessionStore:
                     created_at,
                 ),
             )
-            logger.debug(
-                "Stored artifact %s in Trino (type=%s)", artifact_id, artifact_type
-            )
+            logger.debug("Stored artifact %s in Trino (type=%s)", artifact_id, artifact_type)
         finally:
             conn.close()
 
@@ -372,9 +368,7 @@ class TrinoSessionStore:
         finally:
             conn.close()
 
-    def count_artifacts(
-        self, session_id: str = "", include_archived: bool = False
-    ) -> int:
+    def count_artifacts(self, session_id: str = "", include_archived: bool = False) -> int:
         """
         Count artifacts, optionally filtered by session.
 
@@ -437,9 +431,7 @@ class TrinoSessionStore:
         finally:
             conn.close()
 
-    def get_artifacts_by_task_id(
-        self, task_id: str, limit: int = 50
-    ) -> list[dict[str, Any]]:
+    def get_artifacts_by_task_id(self, task_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """
         Retrieve all artifacts produced by a specific task.
 

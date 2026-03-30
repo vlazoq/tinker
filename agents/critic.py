@@ -42,13 +42,13 @@ import logging
 import uuid
 
 from agents._shared import (
+    _CRITIC_REQUIRED_KEYS,
+    _build_critic_prompts,
     _current_trace_id,
+    _extract_score,
     _get_rate_limiter_registry,
     _get_retry_async,
     _validate_agent_response,
-    _extract_score,
-    _build_critic_prompts,
-    _CRITIC_REQUIRED_KEYS,
 )
 
 logger = logging.getLogger("tinker.agents")
@@ -101,11 +101,7 @@ class CriticAgent:
 
         # Propagate trace_id from the Architect's result so all three agents
         # in a single micro loop share the same correlation ID.
-        trace_id = (
-            architect_result.get("trace_id")
-            or task.get("trace_id")
-            or str(uuid.uuid4())
-        )
+        trace_id = architect_result.get("trace_id") or task.get("trace_id") or str(uuid.uuid4())
         _current_trace_id.set(trace_id)
         task_id = task.get("id", "?")
 
@@ -150,9 +146,7 @@ class CriticAgent:
 
         if resp.structured and isinstance(resp.structured, dict):
             try:
-                _validate_agent_response(
-                    resp.structured, _CRITIC_REQUIRED_KEYS, "Critic"
-                )
+                _validate_agent_response(resp.structured, _CRITIC_REQUIRED_KEYS, "Critic")
                 content = resp.structured.get("content", resp.raw_text)
                 score = float(resp.structured.get("score", 0.7))
                 flags = resp.structured.get("flags", [])

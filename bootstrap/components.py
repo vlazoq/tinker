@@ -54,7 +54,7 @@ def build_real_components(problem: str) -> dict:
     """
     # ── LLM / Model Router ───────────────────────────────────────────────────
     from core.llm.router import ModelRouter
-    from core.llm.types import MachineConfig, TaskAwareRoutingStrategy, AgentRole, Machine
+    from core.llm.types import AgentRole, Machine, MachineConfig, TaskAwareRoutingStrategy
 
     # Build a task-aware routing strategy that respects per-role overrides
     # from environment variables.  E.g. setting TINKER_RESEARCHER_MACHINE=secondary
@@ -68,7 +68,8 @@ def build_real_components(problem: str) -> dict:
             except ValueError:
                 logger.warning(
                     "Ignoring invalid TINKER_%s_MACHINE=%s (expected 'server' or 'secondary')",
-                    _role.value.upper(), _env,
+                    _role.value.upper(),
+                    _env,
                 )
 
     routing_strategy = TaskAwareRoutingStrategy(model_overrides=_role_overrides)
@@ -138,8 +139,8 @@ def build_real_components(problem: str) -> dict:
     )
 
     # ── Anti-Stagnation Monitor ───────────────────────────────────────────────
-    from runtime.stagnation.monitor import StagnationMonitor
     from runtime.stagnation.config import StagnationMonitorConfig
+    from runtime.stagnation.monitor import StagnationMonitor
 
     stagnation_monitor = StagnationMonitor(config=StagnationMonitorConfig())
 
@@ -211,7 +212,7 @@ def build_real_components(problem: str) -> dict:
     }
 
 
-def build_stub_components(problem: str) -> dict:  # noqa: ARG001 (problem unused — matches real signature)
+def build_stub_components(problem: str) -> dict:
     """Build stub (fake) components for smoke-testing without external services.
 
     Stubs implement the same interfaces as the real components but return

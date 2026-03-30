@@ -18,8 +18,8 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class RedisAdapter:
         # In-process fallback used when Redis is unavailable.
         # Maps  "<session_id>:<key>"  →  (value, expiry_monotonic_seconds)
         # expiry = None means the entry never expires.
-        self._fallback: dict[str, tuple[Any, Optional[float]]] = {}
+        self._fallback: dict[str, tuple[Any, float | None]] = {}
 
     @property
     def available(self) -> bool:
@@ -65,9 +65,7 @@ class RedisAdapter:
         try:
             import redis.asyncio as aioredis  # type: ignore
 
-            client = await aioredis.from_url(
-                self.url, encoding="utf-8", decode_responses=True
-            )
+            client = await aioredis.from_url(self.url, encoding="utf-8", decode_responses=True)
             await client.ping()  # verify reachability before accepting
             self._client = client
             logger.info("Redis connected at %s", self.url)
@@ -97,7 +95,7 @@ class RedisAdapter:
         session_id: str,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> None:
         effective_ttl = ttl if ttl is not None else self.default_ttl
         if not self._client:
@@ -113,7 +111,7 @@ class RedisAdapter:
         else:
             await self._client.set(self._key(session_id, key), payload)
 
-    async def get(self, session_id: str, key: str) -> Optional[Any]:
+    async def get(self, session_id: str, key: str) -> Any | None:
         if not self._client:
             # Fallback path: check in-process dict, evicting expired entries
             self._fallback_sweep()
@@ -140,7 +138,7 @@ class RedisAdapter:
         if not self._client:
             self._fallback_sweep()
             prefix = f"tinker:{session_id}:"
-            return [k[len(prefix):] for k in self._fallback if k.startswith(prefix)]
+            return [k[len(prefix) :] for k in self._fallback if k.startswith(prefix)]
         prefix = f"tinker:{session_id}:"
         raw_keys = await self._client.keys(f"{prefix}*")
         return [k[len(prefix) :] for k in raw_keys]
@@ -262,13 +260,13 @@ class DuckDBAdapter:
 
     # -- Read ---------------------------------------------------------------
 
-    async def get_artifact(self, artifact_id: str) -> Optional[dict]:
+    async def get_artifact(self, artifact_id: str) -> dict | None:
         def _get():
             rows = self._conn.execute(
                 "SELECT * FROM artifacts WHERE id = ?", [artifact_id]
             ).fetchall()
             cols = [d[0] for d in self._conn.description]
-            return [dict(zip(cols, r)) for r in rows]
+            return [dict(zip(cols, r, strict=False)) for r in rows]
 
         rows = await self._run(_get)
         return rows[0] if rows else None
@@ -276,7 +274,7 @@ class DuckDBAdapter:
     async def get_recent(
         self,
         session_id: str,
-        artifact_type: Optional[str] = None,
+        artifact_type: str | None = None,
         limit: int = 20,
         include_archived: bool = False,
     ) -> list[dict]:
@@ -291,10 +289,10 @@ class DuckDBAdapter:
             where = " AND ".join(clauses)
             rows = self._conn.execute(
                 f"SELECT * FROM artifacts WHERE {where} ORDER BY created_at DESC LIMIT ?",
-                params + [limit],
+                [*params, limit],
             ).fetchall()
             cols = [d[0] for d in self._conn.description]
-            return [dict(zip(cols, r)) for r in rows]
+            return [dict(zip(cols, r, strict=False)) for r in rows]
 
         return await self._run(_query)
 
@@ -322,7 +320,7 @@ class DuckDBAdapter:
                 [task_id, limit],
             ).fetchall()
             cols = [d[0] for d in self._conn.description]
-            return [dict(zip(cols, r)) for r in rows]
+            return [dict(zip(cols, r, strict=False)) for r in rows]
 
         return await self._run(_query)
 
@@ -366,13 +364,12 @@ class DuckDBAdapter:
                 WHERE _rn <= ?
                 ORDER BY created_at DESC
                 """,
-                task_ids + [limit_each],
+                [*task_ids, limit_each],
             ).fetchall()
             # Strip the synthetic _rn column; return same shape as other queries.
             all_cols = [d[0] for d in self._conn.description]
             return [
-                {col: row[i] for i, col in enumerate(all_cols) if col != "_rn"}
-                for row in rows
+                {col: row[i] for i, col in enumerate(all_cols) if col != "_rn"} for row in rows
             ]
 
         return await self._run(_query)
@@ -388,7 +385,7 @@ class DuckDBAdapter:
                 [session_id, older_than.isoformat(), limit],
             ).fetchall()
             cols = [d[0] for d in self._conn.description]
-            return [dict(zip(cols, r)) for r in rows]
+            return [dict(zip(cols, r, strict=False)) for r in rows]
 
         return await self._run(_query)
 
@@ -429,7 +426,8 @@ class _InMemoryChromaFallback:
         if not a or not b or len(a) != len(b):
             return 0.0
         import math
-        dot = sum(x * y for x, y in zip(a, b))
+
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         norm_a = math.sqrt(sum(x * x for x in a))
         norm_b = math.sqrt(sum(x * x for x in b))
         if norm_a == 0.0 or norm_b == 0.0:
@@ -444,7 +442,7 @@ class _InMemoryChromaFallback:
         metadatas: list[dict],
     ) -> None:
         """Insert or update documents (mirrors ChromaDB Collection.upsert)."""
-        for doc_id, doc, emb, meta in zip(ids, documents, embeddings, metadatas):
+        for doc_id, doc, emb, meta in zip(ids, documents, embeddings, metadatas, strict=False):
             self._store[doc_id] = {
                 "id": doc_id,
                 "document": doc,
@@ -456,8 +454,8 @@ class _InMemoryChromaFallback:
         self,
         query_embeddings: list[list[float]],
         n_results: int = 5,
-        include: Optional[list[str]] = None,
-        where: Optional[dict] = None,
+        include: list[str] | None = None,
+        where: dict | None = None,
     ) -> dict:
         """
         Brute-force cosine similarity search (mirrors ChromaDB Collection.query).
@@ -488,7 +486,7 @@ class _InMemoryChromaFallback:
     def get(
         self,
         ids: list[str],
-        include: Optional[list[str]] = None,
+        include: list[str] | None = None,
     ) -> dict:
         """Retrieve documents by ID (mirrors ChromaDB Collection.get)."""
         found_ids = []
@@ -547,9 +545,7 @@ class ChromaAdapter:
     async def connect(self) -> None:
         try:
             loop = asyncio.get_running_loop()
-            self._client, self._collection = await loop.run_in_executor(
-                None, self._open
-            )
+            self._client, self._collection = await loop.run_in_executor(None, self._open)
             logger.info(
                 "ChromaDB connected at %s (collection: %s)",
                 self.path,
@@ -604,7 +600,7 @@ class ChromaAdapter:
         self,
         embedding: list[float],
         n_results: int = 5,
-        where: Optional[dict] = None,
+        where: dict | None = None,
     ) -> list[dict]:
         def _q():
             kwargs: dict[str, Any] = dict(
@@ -629,11 +625,9 @@ class ChromaAdapter:
             )
         return out
 
-    async def get_by_id(self, doc_id: str) -> Optional[dict]:
+    async def get_by_id(self, doc_id: str) -> dict | None:
         def _get():
-            return self._collection.get(
-                ids=[doc_id], include=["documents", "metadatas"]
-            )
+            return self._collection.get(ids=[doc_id], include=["documents", "metadatas"])
 
         result = await self._run(_get)
         if not result["ids"]:
@@ -738,8 +732,7 @@ class SQLiteAdapter:
                 if "database is locked" not in str(exc):
                     raise  # Not a lock error — re-raise immediately
                 logger.warning(
-                    "[SQLiteAdapter] Database locked on write attempt %d/%d. "
-                    "Retrying in %.0fms…",
+                    "[SQLiteAdapter] Database locked on write attempt %d/%d. Retrying in %.0fms…",
                     attempt + 1,
                     len(self._LOCK_RETRY_DELAYS),
                     delay * 1000,
@@ -771,10 +764,10 @@ class SQLiteAdapter:
         self,
         task_id: str,
         status: str,
-        result: Optional[str] = None,
-        error: Optional[str] = None,
+        result: str | None = None,
+        error: str | None = None,
     ) -> None:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         completed_at = now if status in ("completed", "failed", "archived") else None
 
         async def _do_write():
@@ -790,10 +783,8 @@ class SQLiteAdapter:
 
     # -- Read ---------------------------------------------------------------
 
-    async def get_task(self, task_id: str) -> Optional[dict]:
-        async with self._conn.execute(
-            "SELECT * FROM tasks WHERE id = ?", [task_id]
-        ) as cur:
+    async def get_task(self, task_id: str) -> dict | None:
+        async with self._conn.execute("SELECT * FROM tasks WHERE id = ?", [task_id]) as cur:
             row = await cur.fetchone()
             return dict(row) if row else None
 
@@ -804,9 +795,7 @@ class SQLiteAdapter:
         ) as cur:
             return [dict(r) for r in await cur.fetchall()]
 
-    async def get_tasks_by_session(
-        self, session_id: str, limit: int = 200
-    ) -> list[dict]:
+    async def get_tasks_by_session(self, session_id: str, limit: int = 200) -> list[dict]:
         async with self._conn.execute(
             "SELECT * FROM tasks WHERE session_id = ? ORDER BY created_at ASC LIMIT ?",
             [session_id, limit],

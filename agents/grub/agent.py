@@ -30,16 +30,15 @@ STATUS: FULLY IMPLEMENTED
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from typing import Optional
 
 from .config import GrubConfig
-from .registry import MinionRegistry
-from .feedback import TinkerBridge
-from .loop import PipelineRunner, GrubQueue
-from .loop import run_sequential, run_parallel, run_queue_worker
-from .contracts.task import GrubTask
 from .contracts.result import MinionResult
+from .contracts.task import GrubTask
+from .feedback import TinkerBridge
+from .loop import GrubQueue, PipelineRunner, run_parallel, run_queue_worker, run_sequential
+from .registry import MinionRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +62,8 @@ class GrubAgent:
 
     def __init__(
         self,
-        config: Optional[GrubConfig] = None,
-        registry: Optional[MinionRegistry] = None,
+        config: GrubConfig | None = None,
+        registry: MinionRegistry | None = None,
     ) -> None:
         self.config = config or GrubConfig()
         self.registry = registry or MinionRegistry(self.config)
@@ -77,7 +76,7 @@ class GrubAgent:
         self._shutdown = False
 
     @classmethod
-    def from_config(cls, config_path: str = "grub_config.json") -> "GrubAgent":
+    def from_config(cls, config_path: str = "grub_config.json") -> GrubAgent:
         """
         Create a GrubAgent by loading config from a JSON file.
 
@@ -128,7 +127,7 @@ class GrubAgent:
             results = await self.run_tasks(tasks)
 
             # Report each result back to Tinker
-            for task, result in zip(tasks, results):
+            for task, result in zip(tasks, results, strict=False):
                 self.bridge.report_result(result, task.tinker_task_id)
                 self.bridge.write_implementation_note(result, task)
 
@@ -208,8 +207,7 @@ class GrubAgent:
 
         else:
             raise ValueError(
-                f"Unknown execution_mode '{mode}'. "
-                "Valid values: 'sequential', 'parallel', 'queue'"
+                f"Unknown execution_mode '{mode}'. Valid values: 'sequential', 'parallel', 'queue'"
             )
 
     def apply_model_overrides(self, overrides: dict[str, str]) -> None:
@@ -237,7 +235,9 @@ class GrubAgent:
                 self.config.models[minion_name] = model_tag
                 logger.info(
                     "GrubAgent: minion '%s' model overridden %s → %s",
-                    minion_name, old, model_tag,
+                    minion_name,
+                    old,
+                    model_tag,
                 )
             else:
                 logger.warning(
@@ -282,9 +282,7 @@ class GrubAgent:
                 # SIGTERM does not exist on Windows — skip it silently.
                 sigterm = getattr(signal, "SIGTERM", None)
                 if sigterm is not None:
-                    try:
+                    with contextlib.suppress(OSError, ValueError):
                         signal.signal(sigterm, _handler)
-                    except (OSError, ValueError):
-                        pass
             else:
                 logger.warning("GrubAgent: could not install signal handlers")

@@ -1,6 +1,7 @@
 """Entry point: python -m tinker.ui.gradio"""
 
 import os
+
 from .app import build_app
 
 if __name__ == "__main__":

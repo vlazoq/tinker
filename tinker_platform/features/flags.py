@@ -50,8 +50,8 @@ import json
 import logging
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ class FeatureFlags:
 
     def __init__(
         self,
-        config_file: Optional[str] = None,
+        config_file: str | None = None,
         reload_interval: float = 30.0,
     ) -> None:
         self._defaults = dict(_DEFAULTS)
@@ -180,9 +180,7 @@ class FeatureFlags:
         self._overrides[flag_lower] = enabled
 
         if old_val != enabled:
-            logger.info(
-                "Feature flag '%s' changed: %s → %s", flag_lower, old_val, enabled
-            )
+            logger.info("Feature flag '%s' changed: %s → %s", flag_lower, old_val, enabled)
             self._notify_callbacks(flag_lower, enabled)
 
     def on_change(self, flag: str, callback: Callable[[str, bool], None]) -> None:
@@ -243,9 +241,7 @@ class FeatureFlags:
                     self._config_file,
                 )
         except Exception as exc:
-            logger.warning(
-                "Could not load feature flags from '%s': %s", self._config_file, exc
-            )
+            logger.warning("Could not load feature flags from '%s': %s", self._config_file, exc)
 
     def _maybe_reload(self) -> None:
         """Reload the config file if enough time has elapsed."""

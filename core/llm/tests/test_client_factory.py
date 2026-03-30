@@ -4,8 +4,6 @@ Tests for core/llm/client_factory.py.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from core.llm.client_factory import create_router

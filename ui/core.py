@@ -13,11 +13,12 @@ all three UI variants pick it up automatically.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +31,7 @@ DLQ_DB = Path(os.getenv("TINKER_DLQ_PATH", BASE_DIR / "tinker_dlq.sqlite"))
 AUDIT_DB = Path(os.getenv("TINKER_AUDIT_LOG_PATH", BASE_DIR / "tinker_audit.sqlite"))
 BACKUP_DIR = Path(os.getenv("TINKER_BACKUP_DIR", BASE_DIR / "tinker_backups"))
 FLAGS_FILE = Path(os.getenv("TINKER_FLAGS_FILE", BASE_DIR / "tinker_flags.json"))
-CONFIG_FILE = Path(
-    os.getenv("TINKER_WEBUI_CONFIG", BASE_DIR / "tinker_webui_config.json")
-)
+CONFIG_FILE = Path(os.getenv("TINKER_WEBUI_CONFIG", BASE_DIR / "tinker_webui_config.json"))
 STATE_FILE = Path(os.getenv("TINKER_STATE_PATH", BASE_DIR / "tinker_state.json"))
 HEALTH_URL = os.getenv("TINKER_HEALTH_URL", "http://localhost:8081")
 GRUB_QUEUE_DB = Path(os.getenv("GRUB_QUEUE_DB", BASE_DIR / "grub_queue.sqlite"))
@@ -420,7 +419,7 @@ def load_config() -> dict:
 
 
 def save_config(data: dict) -> None:
-    data["_saved_at"] = datetime.now(timezone.utc).isoformat()
+    data["_saved_at"] = datetime.now(UTC).isoformat()
     CONFIG_FILE.write_text(json.dumps(data, indent=2))
 
 
@@ -430,12 +429,8 @@ def save_config(data: dict) -> None:
 def load_flags() -> dict[str, bool]:
     flags = dict(FLAG_DEFAULTS)
     if FLAGS_FILE.exists():
-        try:
-            flags.update(
-                {k: bool(v) for k, v in json.loads(FLAGS_FILE.read_text()).items()}
-            )
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            flags.update({k: bool(v) for k, v in json.loads(FLAGS_FILE.read_text()).items()})
     for key in list(flags):
         env = os.getenv(f"TINKER_FLAG_{key.upper()}")
         if env is not None:
@@ -462,9 +457,7 @@ def load_state() -> dict:
 def _dlq_stats_sync() -> dict:
     """Read DLQ counts from SQLite — used as fallback when health server is offline."""
     stats = {"pending": 0, "resolved": 0, "discarded": 0, "total": 0}
-    for row in db_query_sync(
-        DLQ_DB, "SELECT status, COUNT(*) n FROM dlq_items GROUP BY status"
-    ):
+    for row in db_query_sync(DLQ_DB, "SELECT status, COUNT(*) n FROM dlq_items GROUP BY status"):
         stats[row["status"]] = row["n"]
         stats["total"] += row["n"]
     return stats
@@ -565,10 +558,8 @@ def list_backups() -> list[dict]:
         manifest: dict = {}
         mp = d / "manifest.json"
         if mp.exists():
-            try:
+            with contextlib.suppress(Exception):
                 manifest = json.loads(mp.read_text())
-            except Exception:
-                pass
         total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
         result.append(
             {
@@ -583,7 +574,7 @@ def list_backups() -> list[dict]:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def new_id() -> str:
@@ -685,10 +676,8 @@ def fetch_fritz_status_sync() -> dict:
 
     config: dict = {}
     if FRITZ_CONFIG_FILE.exists():
-        try:
+        with contextlib.suppress(Exception):
             config = json.loads(FRITZ_CONFIG_FILE.read_text())
-        except Exception:
-            pass
 
     push_policy = config.get("push_policy", {})
 

@@ -11,7 +11,6 @@ import pytest
 from services import ServiceRegistry, ServiceRequest, ServiceResponse
 from services.protocol import ServiceInterface
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

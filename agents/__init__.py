@@ -29,53 +29,53 @@ runtime substitution of custom implementations.
 
 from __future__ import annotations
 
-# ── Concrete agent classes ────────────────────────────────────────────────────
-from agents.architect import ArchitectAgent
-from agents.critic import CriticAgent
-from agents.synthesizer import SynthesizerAgent
-
-# ── Structural protocols (interfaces) ────────────────────────────────────────
-from agents.protocols import ArchitectStrategy, CriticStrategy, SynthesizerStrategy
-from agents.fritz.protocol import VCSAgentProtocol
-
 # ── Shared internals re-exported for backward compatibility ──────────────────
 # These are imported directly by tests/test_agents.py, core/tools/web_search.py,
 # and core/llm/client.py.  The leading underscore signals that these are
 # implementation details — new code should not depend on them directly.
 from agents._shared import (
-    _current_trace_id,
-    _extract_knowledge_gaps,
-    _extract_candidate_tasks,
-    _extract_score,
-    _parse_architect_structured,
     _build_architect_prompts,
     _build_critic_prompts,
     _build_synthesizer_prompts,
+    _current_trace_id,
+    _extract_candidate_tasks,
+    _extract_knowledge_gaps,
+    _extract_score,
     _get_prompt_builder_cls,
-    _get_retry_async,
     _get_rate_limiter_registry,
+    _get_retry_async,
+    _parse_architect_structured,
 )
+
+# ── Concrete agent classes ────────────────────────────────────────────────────
+from agents.architect import ArchitectAgent
+from agents.critic import CriticAgent
+from agents.fritz.protocol import VCSAgentProtocol
+
+# ── Structural protocols (interfaces) ────────────────────────────────────────
+from agents.protocols import ArchitectStrategy, CriticStrategy, SynthesizerStrategy
+from agents.synthesizer import SynthesizerAgent
 
 __all__ = [
     # Public: concrete agent classes
     "ArchitectAgent",
-    "CriticAgent",
-    "SynthesizerAgent",
     # Public: protocol / interface types
     "ArchitectStrategy",
+    "CriticAgent",
     "CriticStrategy",
+    "SynthesizerAgent",
     "SynthesizerStrategy",
     "VCSAgentProtocol",
-    # Semi-public: re-exported internals (backward compat)
-    "_current_trace_id",
-    "_extract_knowledge_gaps",
-    "_extract_candidate_tasks",
-    "_extract_score",
-    "_parse_architect_structured",
     "_build_architect_prompts",
     "_build_critic_prompts",
     "_build_synthesizer_prompts",
+    # Semi-public: re-exported internals (backward compat)
+    "_current_trace_id",
+    "_extract_candidate_tasks",
+    "_extract_knowledge_gaps",
+    "_extract_score",
     "_get_prompt_builder_cls",
-    "_get_retry_async",
     "_get_rate_limiter_registry",
+    "_get_retry_async",
+    "_parse_architect_structured",
 ]

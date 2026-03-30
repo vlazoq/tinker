@@ -259,9 +259,7 @@ class FritzGitea:
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="close_pr", error=str(exc))
 
-    async def request_review(
-        self, pr_number: int, reviewers: list[str]
-    ) -> FritzRemoteResult:
+    async def request_review(self, pr_number: int, reviewers: list[str]) -> FritzRemoteResult:
         try:
             data = await self._post(
                 f"/repos/{self._owner}/{self._repo}/pulls/{pr_number}/requested_reviewers",
@@ -283,9 +281,7 @@ class FritzGitea:
 
     # ── Branches ──────────────────────────────────────────────────────────────
 
-    async def create_branch(
-        self, name: str, from_branch: str = "main"
-    ) -> FritzRemoteResult:
+    async def create_branch(self, name: str, from_branch: str = "main") -> FritzRemoteResult:
         try:
             data = await self._post(
                 f"/repos/{self._owner}/{self._repo}/branches",
@@ -297,16 +293,12 @@ class FritzGitea:
 
     async def delete_branch(self, name: str) -> FritzRemoteResult:
         try:
-            ok = await self._delete(
-                f"/repos/{self._owner}/{self._repo}/branches/{name}"
-            )
+            ok = await self._delete(f"/repos/{self._owner}/{self._repo}/branches/{name}")
             return FritzRemoteResult(ok=ok, operation="delete_branch")
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="delete_branch", error=str(exc))
 
-    async def set_branch_protection(
-        self, branch: str, rules: dict[str, Any]
-    ) -> FritzRemoteResult:
+    async def set_branch_protection(self, branch: str, rules: dict[str, Any]) -> FritzRemoteResult:
         """
         Set branch protection rules.
         rules dict mirrors Gitea's BranchProtection API payload.
@@ -378,18 +370,14 @@ class FritzGitea:
 
     async def remove_collaborator(self, username: str) -> FritzRemoteResult:
         try:
-            ok = await self._delete(
-                f"/repos/{self._owner}/{self._repo}/collaborators/{username}"
-            )
+            ok = await self._delete(f"/repos/{self._owner}/{self._repo}/collaborators/{username}")
             return FritzRemoteResult(ok=ok, operation="remove_collaborator")
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="remove_collaborator", error=str(exc))
 
     async def list_collaborators(self) -> FritzRemoteResult:
         try:
-            data = await self._get(
-                f"/repos/{self._owner}/{self._repo}/collaborators"
-            )
+            data = await self._get(f"/repos/{self._owner}/{self._repo}/collaborators")
             return FritzRemoteResult(
                 ok=True,
                 operation="list_collaborators",
@@ -413,9 +401,7 @@ class FritzGitea:
         if assignees:
             payload["assignees"] = assignees
         try:
-            data = await self._post(
-                f"/repos/{self._owner}/{self._repo}/issues", payload
-            )
+            data = await self._post(f"/repos/{self._owner}/{self._repo}/issues", payload)
             return FritzRemoteResult(
                 ok=True,
                 operation="create_issue",
@@ -479,9 +465,7 @@ class FritzGitea:
 
     async def delete_webhook(self, hook_id: int) -> FritzRemoteResult:
         try:
-            ok = await self._delete(
-                f"/repos/{self._owner}/{self._repo}/hooks/{hook_id}"
-            )
+            ok = await self._delete(f"/repos/{self._owner}/{self._repo}/hooks/{hook_id}")
             return FritzRemoteResult(ok=ok, operation="delete_webhook")
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="delete_webhook", error=str(exc))

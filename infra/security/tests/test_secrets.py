@@ -9,6 +9,7 @@ caching, and error paths.
 from __future__ import annotations
 
 import os
+
 import pytest
 
 from infra.security.secrets import SecretManager, check_file_permissions, get_secret
@@ -46,9 +47,7 @@ class TestSecretManagerEnvBackend:
     async def test_get_with_default(self):
         os.environ.pop("MISSING_SECRET_ABC", None)
         mgr = SecretManager(backend="env")
-        assert (
-            await mgr.get("MISSING_SECRET_ABC", default="default_val") == "default_val"
-        )
+        assert await mgr.get("MISSING_SECRET_ABC", default="default_val") == "default_val"
 
     @pytest.mark.asyncio
     async def test_caches_value(self):

@@ -10,11 +10,11 @@ gitea_ops) without requiring the user to specify the platform manually.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from urllib.parse import urlparse
 
 
-class GitPlatform(str, Enum):
+class GitPlatform(StrEnum):
     GITHUB = "github"
     GITEA = "gitea"
     GITLAB = "gitlab"

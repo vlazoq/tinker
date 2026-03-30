@@ -30,7 +30,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import uuid
 from contextvars import ContextVar
 from typing import Any
 
@@ -72,22 +71,18 @@ def _get_prompt_builder_cls():
 
         return PromptBuilder
     except Exception as exc:
-        logger.debug(
-            "agents: PromptBuilder not available — using inline prompts: %s", exc
-        )
+        logger.debug("agents: PromptBuilder not available — using inline prompts: %s", exc)
         return None
 
 
 def _get_retry_async():
     """Return (retry_async, CONSERVATIVE) or (None, None) if unavailable."""
     try:
-        from infra.resilience.retry import retry_async, CONSERVATIVE
+        from infra.resilience.retry import CONSERVATIVE, retry_async
 
         return retry_async, CONSERVATIVE
     except Exception as exc:
-        logger.debug(
-            "agents: resilience.retry not available — calls are not retried: %s", exc
-        )
+        logger.debug("agents: resilience.retry not available — calls are not retried: %s", exc)
         return None, None
 
 
@@ -109,9 +104,7 @@ def _get_rate_limiter_registry():
 
         _rate_limiter_registry = build_default_rate_limiters()
     except Exception as exc:
-        logger.debug(
-            "agents: rate_limiter not available — token tracking disabled: %s", exc
-        )
+        logger.debug("agents: rate_limiter not available — token tracking disabled: %s", exc)
         _rate_limiter_registry = None
     return _rate_limiter_registry
 
@@ -203,12 +196,14 @@ def _extract_knowledge_gaps(text: str) -> list[str]:
     gaps = []
     for line in text.splitlines():
         line = line.strip("- •*").strip()
-        if any(
-            kw in line.lower()
-            for kw in ("gap", "unknown", "unclear", "need to research", "investigate")
+        if (
+            any(
+                kw in line.lower()
+                for kw in ("gap", "unknown", "unclear", "need to research", "investigate")
+            )
+            and 10 < len(line) < 300
         ):
-            if 10 < len(line) < 300:
-                gaps.append(line)
+            gaps.append(line)
     return gaps[:5]
 
 
@@ -276,9 +271,7 @@ def _parse_architect_structured(d: dict) -> tuple[str, list, list, list, list]:
         summary = design.get("summary", "")
         components_txt = ""
         for comp in design.get("components", [])[:5]:
-            components_txt += (
-                f"\n- {comp.get('name', '?')}: {comp.get('responsibility', '')}"
-            )
+            components_txt += f"\n- {comp.get('name', '?')}: {comp.get('responsibility', '')}"
         trade_offs = design.get("trade_offs", {})
         trade_offs_txt = (
             f"\nGains: {trade_offs.get('gains', [])}"
@@ -450,8 +443,7 @@ def _build_synthesizer_prompts(
             return system, user
         except Exception as exc:
             logger.debug(
-                "agents: PromptBuilder.for_synthesizer_meso failed (%s) — "
-                "using inline fallback",
+                "agents: PromptBuilder.for_synthesizer_meso failed (%s) — using inline fallback",
                 exc,
             )
 

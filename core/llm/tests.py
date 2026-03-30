@@ -41,6 +41,7 @@ logger = logging.getLogger("tinker.tests")
 
 # ── local imports ─────────────────────────────────────────────────────────────
 from core.llm import (  # noqa: E402
+    ROLE_MACHINE_MAP,
     AgentRole,
     Machine,
     MachineConfig,
@@ -48,12 +49,10 @@ from core.llm import (  # noqa: E402
     ModelRequest,
     ModelRouter,
     RetryConfig,
-    ROLE_MACHINE_MAP,
-    extract_json,
     build_json_instruction,
+    extract_json,
 )
 from core.llm.context import count_tokens, enforce_context_limit  # noqa: E402
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. UNIT TESTS  (no network required)
@@ -80,7 +79,7 @@ class TestJsonExtraction(unittest.TestCase):
         self.assertEqual(strat, "direct")
 
     def test_direct_array(self):
-        obj, strat = self._extract("[1, 2, 3]")
+        obj, _strat = self._extract("[1, 2, 3]")
         self.assertEqual(obj, [1, 2, 3])
 
     def test_fenced_json(self):
@@ -91,17 +90,17 @@ class TestJsonExtraction(unittest.TestCase):
 
     def test_fenced_no_lang(self):
         text = '```\n{"x": true}\n```'
-        obj, strat = self._extract(text)
+        obj, _strat = self._extract(text)
         self.assertEqual(obj, {"x": True})
 
     def test_preamble_with_json(self):
         text = 'Here is the JSON you requested:\n\n{"result": "ok"}'
-        obj, strat = self._extract(text)
+        obj, _strat = self._extract(text)
         self.assertEqual(obj, {"result": "ok"})
 
     def test_json_with_trailing_text(self):
         text = '{"done": true}\n\nHope that helps!'
-        obj, strat = self._extract(text)
+        obj, _strat = self._extract(text)
         self.assertEqual(obj, {"done": True})
 
     def test_nested_json(self):
@@ -139,11 +138,9 @@ class TestContextEnforcement(unittest.TestCase):
             self._make("assistant", "old " * 200),
         ] * 10  # lots of old history
         last_msg = self._make("user", "newest question")
-        all_msgs = [system] + old_msgs + [last_msg]
+        all_msgs = [system, *old_msgs, last_msg]
 
-        result = enforce_context_limit(
-            all_msgs, context_window=1024, max_output_tokens=256
-        )
+        result = enforce_context_limit(all_msgs, context_window=1024, max_output_tokens=256)
         # System and last message must survive
         self.assertEqual(result[0].role, "system")
         self.assertEqual(result[-1].content, "newest question")
@@ -222,9 +219,7 @@ class TestRouterMocked(unittest.IsolatedAsyncioTestCase):
 
     async def test_critic_routes_to_secondary(self):
         self._patch_client(Machine.SECONDARY, "Score: 7/10")
-        resp = await self.router.complete_text(
-            AgentRole.CRITIC, "Evaluate this design."
-        )
+        resp = await self.router.complete_text(AgentRole.CRITIC, "Evaluate this design.")
         self.assertEqual(resp.machine, Machine.SECONDARY)
         self.assertEqual(resp.raw_text, "Score: 7/10")
 
@@ -349,9 +344,7 @@ async def run_integration_tests(
 
     # ── 3. JSON completions ──────────────────────────────────────────────
     print("\n── JSON completions")
-    json_prompt = (
-        'Return a JSON object with keys: "status" (string "ok"), "value" (integer 42).'
-    )
+    json_prompt = 'Return a JSON object with keys: "status" (string "ok"), "value" (integer 42).'
     for role in (AgentRole.ARCHITECT, AgentRole.CRITIC):
         machine = ROLE_MACHINE_MAP[role]
         if not health.get(machine, False):
@@ -417,9 +410,7 @@ async def run_integration_tests(
                 Message("assistant", "Noted, your favourite number is 7."),
                 Message("user", "What is my favourite number?"),
             ]
-            resp = await router.complete(
-                ModelRequest(AgentRole.ARCHITECT, msgs, temperature=0.0)
-            )
+            resp = await router.complete(ModelRequest(AgentRole.ARCHITECT, msgs, temperature=0.0))
             ok = "7" in resp.raw_text
             record("Multi-turn memory", ok, f"response: {resp.raw_text[:80]!r}")
         except Exception as exc:
@@ -451,9 +442,7 @@ def main():
     parser.add_argument(
         "--unit-only", action="store_true", help="Only run unit tests (no network)"
     )
-    parser.add_argument(
-        "--integration", action="store_true", help="Run live integration tests"
-    )
+    parser.add_argument("--integration", action="store_true", help="Run live integration tests")
     parser.add_argument(
         "--server-url", default=os.getenv("TINKER_SERVER_URL", "http://localhost:11434")
     )
@@ -461,9 +450,7 @@ def main():
         "--secondary-url",
         default=os.getenv("TINKER_SECONDARY_URL", "http://secondary:11434"),
     )
-    parser.add_argument(
-        "--server-model", default=os.getenv("TINKER_SERVER_MODEL", "qwen3:7b")
-    )
+    parser.add_argument("--server-model", default=os.getenv("TINKER_SERVER_MODEL", "qwen3:7b"))
     parser.add_argument(
         "--secondary-model", default=os.getenv("TINKER_SECONDARY_MODEL", "phi3:mini")
     )

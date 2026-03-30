@@ -14,7 +14,6 @@ import pytest
 
 from infra.resilience.migrations import SQLiteMigrationRunner
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -91,10 +90,12 @@ class TestMigrate:
         assert runner.current_version() == 1
 
         # Now add a second migration
-        applied = runner.migrate([
-            (1, "CREATE TABLE alpha (x INTEGER);"),
-            (2, "CREATE TABLE beta (x INTEGER);"),
-        ])
+        applied = runner.migrate(
+            [
+                (1, "CREATE TABLE alpha (x INTEGER);"),
+                (2, "CREATE TABLE beta (x INTEGER);"),
+            ]
+        )
         assert applied == 1  # only v2 was pending
         assert runner.current_version() == 2
 
@@ -105,14 +106,18 @@ class TestMigrate:
 
     def test_migrate_creates_tracking_entries(self, runner, db_path):
         """Each applied migration should have a row in schema_migrations."""
-        runner.migrate([
-            (1, "CREATE TABLE t1 (x INTEGER);"),
-            (2, "CREATE TABLE t2 (x INTEGER);"),
-        ])
+        runner.migrate(
+            [
+                (1, "CREATE TABLE t1 (x INTEGER);"),
+                (2, "CREATE TABLE t2 (x INTEGER);"),
+            ]
+        )
 
         conn = sqlite3.connect(db_path)
         try:
-            rows = conn.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
+            rows = conn.execute(
+                "SELECT version FROM schema_migrations ORDER BY version"
+            ).fetchall()
             versions = [row[0] for row in rows]
             assert versions == [1, 2]
         finally:
@@ -136,11 +141,13 @@ class TestCurrentVersion:
 
     def test_current_version_returns_highest_applied(self, runner):
         """current_version() returns the highest version in schema_migrations."""
-        runner.migrate([
-            (1, "CREATE TABLE a (id INTEGER);"),
-            (3, "CREATE TABLE b (id INTEGER);"),
-            (7, "CREATE TABLE c (id INTEGER);"),
-        ])
+        runner.migrate(
+            [
+                (1, "CREATE TABLE a (id INTEGER);"),
+                (3, "CREATE TABLE b (id INTEGER);"),
+                (7, "CREATE TABLE c (id INTEGER);"),
+            ]
+        )
         assert runner.current_version() == 7
 
     def test_current_version_stable_between_calls(self, runner):

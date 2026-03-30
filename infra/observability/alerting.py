@@ -61,7 +61,7 @@ import enum
 import json
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -129,8 +129,8 @@ class AlertManager:
 
     def __init__(
         self,
-        slack_webhook_url: Optional[str] = None,
-        webhook_url: Optional[str] = None,
+        slack_webhook_url: str | None = None,
+        webhook_url: str | None = None,
         min_severity: AlertSeverity = AlertSeverity.WARNING,
     ) -> None:
         self._slack_url = slack_webhook_url
@@ -146,7 +146,7 @@ class AlertManager:
         title: str,
         message: str,
         severity: AlertSeverity = AlertSeverity.WARNING,
-        context: Optional[dict] = None,
+        context: dict | None = None,
     ) -> bool:
         """
         Send an alert through all configured channels.
@@ -198,13 +198,9 @@ class AlertManager:
         # Send to configured channels (fire and forget — don't crash on failure)
         tasks = []
         if self._slack_url:
-            tasks.append(
-                self._send_slack(title, message, severity, context, alert_type)
-            )
+            tasks.append(self._send_slack(title, message, severity, context, alert_type))
         if self._webhook_url:
-            tasks.append(
-                self._send_webhook(title, message, severity, context, alert_type)
-            )
+            tasks.append(self._send_webhook(title, message, severity, context, alert_type))
 
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -223,7 +219,7 @@ class AlertManager:
         title: str,
         message: str,
         severity: AlertSeverity,
-        context: Optional[dict],
+        context: dict | None,
         alert_type: AlertType,
     ) -> None:
         """Send a formatted message to a Slack incoming webhook."""
@@ -255,7 +251,7 @@ class AlertManager:
         title: str,
         message: str,
         severity: AlertSeverity,
-        context: Optional[dict],
+        context: dict | None,
         alert_type: AlertType,
     ) -> None:
         """Send a generic JSON alert to a webhook endpoint."""
@@ -275,15 +271,17 @@ class AlertManager:
         try:
             import aiohttp
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.post(
                     url,
                     data=json.dumps(payload),
                     headers={"Content-Type": "application/json"},
                     timeout=aiohttp.ClientTimeout(total=10),
-                ) as resp:
-                    if resp.status >= 400:
-                        logger.warning("Alert webhook returned HTTP %d", resp.status)
+                ) as resp,
+            ):
+                if resp.status >= 400:
+                    logger.warning("Alert webhook returned HTTP %d", resp.status)
         except ImportError:
             logger.debug("aiohttp not available — alert not sent to webhook")
         except Exception as exc:
@@ -293,9 +291,7 @@ class AlertManager:
     # Convenience callbacks for wiring to other components
     # ------------------------------------------------------------------
 
-    def on_circuit_state_change(
-        self, breaker: Any, old_state: Any, new_state: Any
-    ) -> None:
+    def on_circuit_state_change(self, breaker: Any, old_state: Any, new_state: Any) -> None:
         """
         Callback to wire to CircuitBreaker.on_state_change.
 

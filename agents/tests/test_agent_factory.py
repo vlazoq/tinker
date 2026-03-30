@@ -9,11 +9,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from agents.agent_factory import (
+    _AGENT_REGISTRY,
+    _ensure_registry,
     create_agent,
     create_all_agents,
     register_agent,
-    _AGENT_REGISTRY,
-    _ensure_registry,
 )
 from core.llm.types import AgentRole
 
@@ -78,7 +78,7 @@ class TestCreateAllAgents:
         values = list(agents.values())
         # No two entries should be the same object
         for i, a in enumerate(values):
-            for b in values[i + 1:]:
+            for b in values[i + 1 :]:
                 assert a is not b
 
 

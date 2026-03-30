@@ -7,6 +7,7 @@ the watchdog without touching detection logic.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 
@@ -30,7 +31,9 @@ class SemanticLoopConfig:
         if self.window_size < 2:
             raise ValueError(f"window_size must be >= 2, got {self.window_size}")
         if not 0.0 < self.similarity_threshold <= 1.0:
-            raise ValueError(f"similarity_threshold must be in (0, 1], got {self.similarity_threshold}")
+            raise ValueError(
+                f"similarity_threshold must be in (0, 1], got {self.similarity_threshold}"
+            )
         if self.min_breach_count < 1:
             raise ValueError(f"min_breach_count must be >= 1, got {self.min_breach_count}")
 
@@ -78,15 +81,9 @@ class StagnationMonitorConfig:
     """Root configuration object passed to StagnationMonitor."""
 
     semantic_loop: SemanticLoopConfig = field(default_factory=SemanticLoopConfig)
-    subsystem_fixation: SubsystemFixationConfig = field(
-        default_factory=SubsystemFixationConfig
-    )
-    critique_collapse: CritiqueCollapseConfig = field(
-        default_factory=CritiqueCollapseConfig
-    )
-    research_saturation: ResearchSaturationConfig = field(
-        default_factory=ResearchSaturationConfig
-    )
+    subsystem_fixation: SubsystemFixationConfig = field(default_factory=SubsystemFixationConfig)
+    critique_collapse: CritiqueCollapseConfig = field(default_factory=CritiqueCollapseConfig)
+    research_saturation: ResearchSaturationConfig = field(default_factory=ResearchSaturationConfig)
     task_starvation: TaskStarvationConfig = field(default_factory=TaskStarvationConfig)
 
     # Maximum stagnation events to keep in the in-memory log
@@ -96,7 +93,7 @@ class StagnationMonitorConfig:
     run_all_detectors: bool = True
 
     @classmethod
-    def from_dict(cls, d: dict) -> "StagnationMonitorConfig":
+    def from_dict(cls, d: dict) -> StagnationMonitorConfig:
         """Shallow-merge a dict of overrides into the default config."""
         cfg = cls()
         sections = {

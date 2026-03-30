@@ -74,10 +74,9 @@ Quick-start example
 
 # Pull Orchestrator up to the top level of the package so callers don't need
 # to know it lives in orchestrator/orchestrator.py.
-from .orchestrator import Orchestrator
-
 # Pull OrchestratorConfig up too — callers nearly always need both together.
 from .config import OrchestratorConfig
+from .orchestrator import Orchestrator
 
 # __all__ is the official "public surface" of this package.
 # Static analysis tools, documentation generators, and "from runtime.orchestrator import *"

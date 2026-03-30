@@ -18,11 +18,13 @@ If the Orchestrator goes away, the subscriber switches StateStore to
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 from .state import (
     ArchitectOutput,
@@ -47,7 +49,7 @@ log = logging.getLogger("tinker.dashboard.subscriber")
 # ──────────────────────────────────────────
 
 
-def _dt(s: Optional[str]) -> Optional[datetime]:
+def _dt(s: str | None) -> datetime | None:
     if not s:
         return None
     try:
@@ -56,21 +58,19 @@ def _dt(s: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def _deserialise_patch(raw: Dict[str, Any]) -> Dict[str, Any]:
+def _deserialise_patch(raw: dict[str, Any]) -> dict[str, Any]:
     """
     Convert the raw JSON dict coming from the Orchestrator into typed
     dataclass instances that StateStore can store directly.
     """
-    patch: Dict[str, Any] = {}
+    patch: dict[str, Any] = {}
 
     if "connected" in raw:
         patch["connected"] = bool(raw["connected"])
 
     if "loop_level" in raw:
-        try:
+        with contextlib.suppress(ValueError):
             patch["loop_level"] = LoopLevel(raw["loop_level"])
-        except ValueError:
-            pass
 
     for counter in ("micro_count", "meso_count", "macro_count"):
         if counter in raw:
@@ -205,7 +205,7 @@ def _deserialise_patch(raw: Dict[str, Any]) -> Dict[str, Any]:
 class BaseSubscriber(ABC):
     """Subscribes to Orchestrator events and feeds StateStore."""
 
-    def __init__(self, on_update: Optional[Callable] = None) -> None:
+    def __init__(self, on_update: Callable | None = None) -> None:
         self._store = get_store()
         self._running = False
         self._on_update = on_update  # optional callback after each patch
@@ -218,7 +218,7 @@ class BaseSubscriber(ABC):
     def stop(self) -> None:
         self._running = False
 
-    def _apply(self, raw: Dict[str, Any]) -> None:
+    def _apply(self, raw: dict[str, Any]) -> None:
         patch = _deserialise_patch(raw)
         self._store.apply_patch(patch)
         if self._on_update:
@@ -238,7 +238,7 @@ def get_shared_queue() -> asyncio.Queue:
     return _shared_queue
 
 
-def publish_state(patch: Dict[str, Any]) -> None:
+def publish_state(patch: dict[str, Any]) -> None:
     """
     Convenience helper for the Orchestrator.
     Call this synchronously from any thread; it is safe.
@@ -256,9 +256,7 @@ class QueueSubscriber(BaseSubscriber):
     runtime.
     """
 
-    def __init__(
-        self, on_update: Optional[Callable] = None, timeout: float = 5.0
-    ) -> None:
+    def __init__(self, on_update: Callable | None = None, timeout: float = 5.0) -> None:
         super().__init__(on_update)
         self._timeout = timeout
 
@@ -272,7 +270,7 @@ class QueueSubscriber(BaseSubscriber):
                 raw = await asyncio.wait_for(_shared_queue.get(), timeout=self._timeout)
                 self._apply(raw)
                 self._store.mark_connected()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # No update for a while — still "connected" unless we
                 # explicitly hear otherwise; do nothing.
                 pass
@@ -307,7 +305,7 @@ class RedisSubscriber(BaseSubscriber):
         self,
         redis_url: str = "redis://localhost:6379",
         channel: str = REDIS_CHANNEL,
-        on_update: Optional[Callable] = None,
+        on_update: Callable | None = None,
     ) -> None:
         super().__init__(on_update)
         self._redis_url = redis_url

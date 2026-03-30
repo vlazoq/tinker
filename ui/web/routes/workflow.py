@@ -42,11 +42,11 @@ def _build_mermaid(state: dict) -> str:
     lines.append('    ARCHITECT --> CRITIC["🔍 Critic / Judge"]')
     lines.append('    CRITIC --> |"score >= threshold"| SYNTH["✨ Synthesizer"]')
     lines.append('    CRITIC --> |"score < threshold"| REFINE["🔧 Refine"]')
-    lines.append('    REFINE --> ARCHITECT')
+    lines.append("    REFINE --> ARCHITECT")
     lines.append('    SYNTH --> STAG{"🔎 Stagnation?"}')
-    lines.append('    STAG --> |No| MESO')
+    lines.append("    STAG --> |No| MESO")
     lines.append('    STAG --> |Yes| INTERVENE["⚠️ Intervention"]')
-    lines.append('    INTERVENE --> MESO')
+    lines.append("    INTERVENE --> MESO")
 
     # External integrations
     lines.append('    MICRO -.-> RESEARCH["🌐 Research"]')
@@ -60,16 +60,16 @@ def _build_mermaid(state: dict) -> str:
     current_level = loops.get("current_level", "")
 
     if current_level == "micro":
-        lines.append('    style MICRO fill:#4CAF50,color:#fff,stroke:#333')
+        lines.append("    style MICRO fill:#4CAF50,color:#fff,stroke:#333")
     elif current_level == "meso":
-        lines.append('    style MESO fill:#4CAF50,color:#fff,stroke:#333')
+        lines.append("    style MESO fill:#4CAF50,color:#fff,stroke:#333")
     elif current_level == "macro":
-        lines.append('    style MACRO fill:#4CAF50,color:#fff,stroke:#333')
+        lines.append("    style MACRO fill:#4CAF50,color:#fff,stroke:#333")
 
     # Highlight stagnation if detected
     stag_events = loops.get("stagnation_events", 0)
     if stag_events and int(stag_events) > 0:
-        lines.append('    style STAG fill:#FF9800,color:#fff,stroke:#333')
+        lines.append("    style STAG fill:#FF9800,color:#fff,stroke:#333")
 
     return "\n".join(lines)
 
@@ -128,7 +128,7 @@ async def get_task_graph():
             node_name = f"T{node_idx}"
             lines.append(f'    {node_name}["{label}"]')
             style = status_styles.get(status, "fill:#607D8B,color:#fff")
-            lines.append(f'    style {node_name} {style}')
+            lines.append(f"    style {node_name} {style}")
             node_idx += 1
 
     return {"mermaid": "\n".join(lines), "task_count": node_idx}

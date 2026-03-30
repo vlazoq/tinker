@@ -58,11 +58,14 @@ class LifecycleMixin:
             try:
                 # Auto-memory listens on the bus; give it a final flush signal
                 from core.events import Event, EventType
-                await self.event_bus.publish(Event(
-                    type=EventType.SYSTEM_STOPPING,
-                    source="orchestrator",
-                    payload={"flush": True},
-                ))
+
+                await self.event_bus.publish(
+                    Event(
+                        type=EventType.SYSTEM_STOPPING,
+                        source="orchestrator",
+                        payload={"flush": True},
+                    )
+                )
             except Exception as exc:
                 logger.debug("Event bus flush notification failed: %s", exc)
 
@@ -71,9 +74,7 @@ class LifecycleMixin:
                 await self._dlq_replayer.stop()
                 logger.info("DLQ auto-replayer stopped")
             except Exception as exc:
-                logger.warning(
-                    "DLQ auto-replayer stop failed (non-fatal): %s", exc
-                )
+                logger.warning("DLQ auto-replayer stop failed (non-fatal): %s", exc)
 
         self.state.status = LoopStatus.SHUTDOWN
         self._try_write_snapshot()

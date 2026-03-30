@@ -7,7 +7,6 @@ Split from manager.py to keep each memory layer in its own focused module.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from .schemas import ResearchNote
 
@@ -21,11 +20,11 @@ class ResearchArchiveMixin:
         self,
         content: str,
         topic: str,
-        tags: Optional[list[str]] = None,
+        tags: list[str] | None = None,
         source: str = "tinker-internal",
-        task_id: Optional[str] = None,
-        metadata: Optional[dict] = None,
-        session_id: Optional[str] = None,
+        task_id: str | None = None,
+        metadata: dict | None = None,
+        session_id: str | None = None,
     ) -> ResearchNote:
         """
         Embed and store a research note in the Research Archive (ChromaDB).
@@ -57,8 +56,8 @@ class ResearchArchiveMixin:
         self,
         query: str,
         n_results: int = 5,
-        filter_topic: Optional[str] = None,
-        filter_session: Optional[str] = None,
+        filter_topic: str | None = None,
+        filter_session: str | None = None,
     ) -> list[ResearchNote]:
         """
         Semantic search over the Research Archive.
@@ -83,19 +82,14 @@ class ResearchArchiveMixin:
             n_results=n_results,
             where=where if where else None,
         )
-        return [
-            ResearchNote.from_chroma(r["id"], r["document"], r["metadata"])
-            for r in results
-        ]
+        return [ResearchNote.from_chroma(r["id"], r["document"], r["metadata"]) for r in results]
 
-    async def get_research(self, note_id: str) -> Optional[ResearchNote]:
+    async def get_research(self, note_id: str) -> ResearchNote | None:
         """Retrieve a specific research note by its ID."""
         result = await self._chroma.get_by_id(note_id)
         if not result:
             return None
-        return ResearchNote.from_chroma(
-            result["id"], result["document"], result["metadata"]
-        )
+        return ResearchNote.from_chroma(result["id"], result["document"], result["metadata"])
 
     async def count_research_notes(self) -> int:
         return await self._chroma.count()

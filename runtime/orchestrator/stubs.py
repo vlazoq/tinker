@@ -16,8 +16,7 @@ import asyncio
 import random
 import time
 import uuid
-from typing import Any, Optional
-
+from typing import Any
 
 # ── Task Engine ───────────────────────────────────────────────────────────────
 
@@ -42,7 +41,7 @@ class StubTaskEngine:
         for _ in range(initial_tasks):
             self._queue.append(self._make_task())
 
-    def _make_task(self, parent_id: Optional[str] = None) -> dict:
+    def _make_task(self, parent_id: str | None = None) -> dict:
         subsystem = random.choice(self.SUBSYSTEMS)
         return {
             "id": str(uuid.uuid4()),
@@ -54,7 +53,7 @@ class StubTaskEngine:
             "created_at": time.time(),
         }
 
-    async def select_task(self) -> Optional[dict]:
+    async def select_task(self) -> dict | None:
         if not self._queue:
             # Always have something to do
             self._queue.append(self._make_task())
@@ -203,7 +202,7 @@ class StubMemoryManager:
         task_id: str | None = None,
         metadata: dict | None = None,
         **kwargs,
-    ) -> "StubArtifact":
+    ) -> StubArtifact:
         """
         Accept both the old dict-based call and the new keyword-arg call that
         matches the real MemoryManager signature.
@@ -220,9 +219,7 @@ class StubMemoryManager:
             record["task_id"] = task_id
             record["metadata"] = metadata or {}
             if artifact_type is not None:
-                record["artifact_type"] = getattr(
-                    artifact_type, "value", str(artifact_type)
-                )
+                record["artifact_type"] = getattr(artifact_type, "value", str(artifact_type))
             # Hoist subsystem to the top level so get_artifacts() can filter on it.
             # The real MemoryManager stores subsystem in metadata but exposes it
             # as a top-level field when returning artifacts.
@@ -232,9 +229,7 @@ class StubMemoryManager:
         return StubArtifact(artifact_id)
 
     async def get_artifacts(self, subsystem: str, limit: int = 10) -> list[dict]:
-        matching = [
-            a for a in self._artifacts.values() if a.get("subsystem") == subsystem
-        ]
+        matching = [a for a in self._artifacts.values() if a.get("subsystem") == subsystem]
         return sorted(matching, key=lambda a: a["stored_at"], reverse=True)[:limit]
 
     async def store_document(self, document: dict) -> str:

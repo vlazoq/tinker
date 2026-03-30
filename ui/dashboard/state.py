@@ -8,26 +8,26 @@ before being handed to the UI.  Nothing in here depends on Textual or Rich.
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional
-
+from enum import StrEnum
+from typing import Any
 
 # ──────────────────────────────────────────
 # Enumerations
 # ──────────────────────────────────────────
 
 
-class LoopLevel(str, Enum):
+class LoopLevel(StrEnum):
     MICRO = "micro"
     MESO = "meso"
     MACRO = "macro"
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     PENDING = "pending"
     ACTIVE = "active"
     COMPLETE = "complete"
@@ -35,7 +35,7 @@ class TaskStatus(str, Enum):
     SKIPPED = "skipped"
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     DESIGN = "design"
     CRITIQUE = "critique"
     REFINE = "refine"
@@ -57,10 +57,10 @@ class TaskInfo:
     description: str
     status: TaskStatus
     created_at: datetime = field(default_factory=datetime.utcnow)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    result_summary: Optional[str] = None
-    full_content: Optional[str] = None  # for detail view
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    result_summary: str | None = None
+    full_content: str | None = None  # for detail view
 
 
 @dataclass
@@ -68,7 +68,7 @@ class ArchitectOutput:
     summary: str
     full_content: str
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    task_id: Optional[str] = None
+    task_id: str | None = None
 
 
 @dataclass
@@ -77,13 +77,13 @@ class CriticOutput:
     top_objection: str
     full_content: str
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    task_id: Optional[str] = None
+    task_id: str | None = None
 
 
 @dataclass
 class ArchitectureState:
     version: str
-    last_commit_time: Optional[datetime]
+    last_commit_time: datetime | None
     summary: str
     full_content: str
 
@@ -100,7 +100,7 @@ class StagnationStatus:
     is_stagnant: bool
     stagnation_score: float  # 0.0 – 1.0
     monitor_status: str = "nominal"
-    recent_events: List[StagnationEvent] = field(default_factory=list)
+    recent_events: list[StagnationEvent] = field(default_factory=list)
 
 
 @dataclass
@@ -116,14 +116,14 @@ class ModelMetrics:
     p99_latency_ms: float
     error_rate: float  # 0.0 – 1.0
     total_calls: int
-    recent_errors: List[str] = field(default_factory=list)
+    recent_errors: list[str] = field(default_factory=list)
 
 
 @dataclass
 class QueueStats:
     total_depth: int
-    by_status: Dict[str, int] = field(default_factory=dict)
-    by_type: Dict[str, int] = field(default_factory=dict)
+    by_status: dict[str, int] = field(default_factory=dict)
+    by_type: dict[str, int] = field(default_factory=dict)
 
 
 # ──────────────────────────────────────────
@@ -135,7 +135,7 @@ class QueueStats:
 class TinkerState:
     # ── connection ──────────────────────────
     connected: bool = False
-    last_update: Optional[datetime] = None
+    last_update: datetime | None = None
 
     # ── loop counters ────────────────────────
     loop_level: LoopLevel = LoopLevel.MICRO
@@ -144,24 +144,20 @@ class TinkerState:
     macro_count: int = 0
 
     # ── active work ──────────────────────────
-    active_task: Optional[TaskInfo] = None
-    last_architect: Optional[ArchitectOutput] = None
-    last_critic: Optional[CriticOutput] = None
+    active_task: TaskInfo | None = None
+    last_architect: ArchitectOutput | None = None
+    last_critic: CriticOutput | None = None
 
     # ── queue ────────────────────────────────
     queue_stats: QueueStats = field(default_factory=lambda: QueueStats(total_depth=0))
-    recent_tasks: List[TaskInfo] = field(default_factory=list)
+    recent_tasks: list[TaskInfo] = field(default_factory=list)
 
     # ── architecture ─────────────────────────
-    arch_state: Optional[ArchitectureState] = None
+    arch_state: ArchitectureState | None = None
 
     # ── health ───────────────────────────────
-    stagnation: StagnationStatus = field(
-        default_factory=lambda: StagnationStatus(False, 0.0)
-    )
-    model_metrics: ModelMetrics = field(
-        default_factory=lambda: ModelMetrics(0.0, 0.0, 0.0, 0)
-    )
+    stagnation: StagnationStatus = field(default_factory=lambda: StagnationStatus(False, 0.0))
+    model_metrics: ModelMetrics = field(default_factory=lambda: ModelMetrics(0.0, 0.0, 0.0, 0))
 
     # ── memory ───────────────────────────────
     memory_stats: MemoryStats = field(default_factory=lambda: MemoryStats(0, 0, 0))
@@ -182,11 +178,11 @@ class StateStore:
     def __init__(self) -> None:
         self._state = TinkerState()
         self._lock = threading.Lock()
-        self._listeners: List[Any] = []  # asyncio.Queue objects
+        self._listeners: list[Any] = []  # asyncio.Queue objects
 
     # ── writer (subscriber thread) ───────────
 
-    def apply_patch(self, patch: Dict[str, Any]) -> None:
+    def apply_patch(self, patch: dict[str, Any]) -> None:
         """Merge a flat dict of top-level field updates into state."""
         with self._lock:
             for key, value in patch.items():
@@ -216,10 +212,8 @@ class StateStore:
     def _notify_listeners(self) -> None:
         snap = self.snapshot()
         for q in self._listeners:
-            try:
+            with contextlib.suppress(Exception):
                 q.put_nowait(snap)
-            except Exception:
-                pass
 
 
 # Singleton used by the rest of the dashboard
