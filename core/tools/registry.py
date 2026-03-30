@@ -754,6 +754,7 @@ def build_default_registry(
     from .artifact_writer import ArtifactWriterTool
     from .diagram_generator import DiagramGeneratorTool
     from .memory_query import MemoryQueryTool
+    from .webhook import WebhookTool
 
     # Build keyword args for WebSearchTool — only pass searxng_url if provided,
     # otherwise let the tool use its own default from the environment.
@@ -782,6 +783,9 @@ def build_default_registry(
     # it falls back to a stub that warns but doesn't crash.
     memory_tool = MemoryQueryTool(memory_manager=memory_manager)
 
+    # WebhookTool sends HTTP POST to local automation endpoints (n8n, etc.).
+    webhook_tool = WebhookTool()
+
     # Create the registry and register all tools in one shot.
     registry = ToolRegistry()
     registry.register_many(
@@ -790,5 +794,6 @@ def build_default_registry(
         writer_tool,
         diagram_tool,
         memory_tool,
+        webhook_tool,
     )
     return registry

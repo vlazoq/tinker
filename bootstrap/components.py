@@ -165,6 +165,15 @@ def build_real_components(problem: str) -> dict:
     )
     auto_memory.attach(event_bus)
 
+    # ── Webhook Dispatcher (n8n / local automation integration) ──────────────
+    from core.tools.webhook import WebhookDispatcher
+
+    webhook_dispatcher = WebhookDispatcher(
+        timeout=float(os.getenv("TINKER_WEBHOOK_TIMEOUT", "10")),
+        max_concurrent=int(os.getenv("TINKER_WEBHOOK_MAX_CONCURRENT", "5")),
+    )
+    webhook_dispatcher.attach(event_bus)
+
     return {
         "router": router,
         "memory_manager": memory_manager,
