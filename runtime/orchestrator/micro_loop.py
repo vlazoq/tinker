@@ -760,6 +760,14 @@ async def _route_researcher(
     # Limit the number of gaps to process.
     gaps_to_process = knowledge_gaps[: cfg.max_researcher_calls_per_loop]
 
+    # Read configurable research depth from config
+    num_results = getattr(cfg, "research_num_results", 10)
+    max_scrape = getattr(cfg, "research_max_scrape", 5)
+    max_content_chars = getattr(cfg, "research_max_content_chars", 8000)
+
+    # ── Enhanced path: use ResearchEnhancer if available ────────────────
+    enhancer = getattr(orch, "research_enhancer", None)
+
     # ── Parallel path: use ResearchTeam if available ────────────────────
     if getattr(orch, "research_team", None) is not None:
         try:
@@ -786,7 +794,7 @@ async def _route_researcher(
             research_results = []
             calls_made = 0
 
-    # ── Sequential fallback: original behaviour ─────────────────────────
+    # ── Sequential fallback (with optional enhancement) ────────────────
     if calls_made == 0:
         # Deduplicate gaps — normalise and skip already-seen queries.
         if not hasattr(orch, "_research_cache"):
@@ -806,22 +814,56 @@ async def _route_researcher(
                 continue
 
             try:
-                result = await asyncio.wait_for(
-                    coroutine_if_needed(orch.tool_layer.research)(query=gap),
-                    timeout=cfg.tool_timeout,
-                )
+                if enhancer is not None:
+                    # Enhanced pipeline: query rewriting → memory-first →
+                    # search + deep scrape → summarize → iterate
+                    async def _research_fn(*, query, max_scrape=max_scrape,
+                                           max_content_chars=max_content_chars):
+                        return await coroutine_if_needed(orch.tool_layer.research)(
+                            query=query,
+                            max_results=num_results,
+                            max_scrape=max_scrape,
+                            max_content_chars=max_content_chars,
+                        )
+
+                    result = await asyncio.wait_for(
+                        enhancer.enhanced_research(
+                            gap=gap,
+                            research_fn=_research_fn,
+                            max_results=num_results,
+                            max_scrape=max_scrape,
+                            max_content_chars=max_content_chars,
+                        ),
+                        timeout=cfg.tool_timeout * 3,  # more time for enhanced pipeline
+                    )
+                else:
+                    # Basic pipeline: direct search + scrape
+                    result = await asyncio.wait_for(
+                        coroutine_if_needed(orch.tool_layer.research)(
+                            query=gap,
+                            max_results=num_results,
+                            max_scrape=max_scrape,
+                            max_content_chars=max_content_chars,
+                        ),
+                        timeout=cfg.tool_timeout,
+                    )
+
                 research_results.append({"gap": gap, "result": result})
                 calls_made += 1
 
                 # Cache the result for deduplication within this session
                 orch._research_cache[norm] = result
 
+                from_memory = result.get("from_memory", False) if isinstance(result, dict) else False
                 logger.debug(
-                    "researcher: gap=%r resolved (%d chars)", gap, len(str(result))
+                    "researcher: gap=%r resolved (%d chars, from_memory=%s)",
+                    gap, len(str(result)), from_memory,
                 )
 
-                # Auto-archive research to memory for cross-session reuse.
-                await _archive_research(orch, task, gap, result)
+                # Auto-archive research to memory for cross-session reuse
+                # (skip if result came from memory — it's already there)
+                if not from_memory:
+                    await _archive_research(orch, task, gap, result)
 
             except asyncio.TimeoutError:
                 logger.warning("researcher: timeout on gap=%r — skipping", gap)

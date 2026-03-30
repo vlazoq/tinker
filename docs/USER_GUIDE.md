@@ -671,7 +671,63 @@ npm install -g @mermaid-js/mermaid-cli   # install once
 
 ---
 
-## 14. Custom Tools (Plugin Pattern)
+## 14. Research Enhancements
+
+Tinker's research pipeline goes beyond basic "search + scrape" with four
+LLM-powered enhancements that use the Judge model (small, fast, 2-3B):
+
+### Query Rewriting
+
+Vague knowledge gaps like "CQRS patterns" are rewritten into precise queries
+like "CQRS event sourcing implementation patterns distributed systems 2024".
+The Judge model generates 1-2 optimized search queries per gap.
+
+### Memory-First Lookup
+
+Before hitting the web, Tinker checks ChromaDB for previously archived
+research. If a high-confidence match exists (score >= 0.7), the web search
+is skipped entirely — saving time and reducing redundant scraping.
+
+### Content Summarization
+
+Instead of blindly truncating at N characters, scraped content is summarized
+by the Judge model. This preserves key technical details while removing
+boilerplate, navigation text, and ads.
+
+### Iterative Deepening
+
+After initial research, the Judge model assesses quality. If the results are
+insufficient, it generates a refined query and the system searches again.
+Up to 2 rounds by default (configurable).
+
+### Configurable Research Depth
+
+Control how deep research goes via the Web UI Config page or environment:
+
+| Setting | Default | Description |
+|---|---|---|
+| `research_num_results` | 10 | Search results per query (1-50+) |
+| `research_max_scrape` | 5 | URLs to deep-scrape per query |
+| `research_max_content_chars` | 8000 | Max chars of combined content |
+
+For deep-dive research, increase `research_num_results` to 30-50 in the
+Config tab. The search tool supports up to 50 results by default, and the
+ceiling itself is configurable via `TINKER_SEARCH_MAX_RESULTS`.
+
+### Disabling Enhancements
+
+Each enhancement can be toggled independently:
+
+```bash
+export TINKER_RESEARCH_QUERY_REWRITE=false    # disable query rewriting
+export TINKER_RESEARCH_MEMORY_FIRST=false     # disable memory-first lookup
+export TINKER_RESEARCH_SUMMARIZE=false        # disable LLM summarization
+export TINKER_RESEARCH_ITERATIVE_ROUNDS=0     # disable iterative deepening
+```
+
+---
+
+## 15. Custom Tools (Plugin Pattern)
 
 Tinker uses a simple plugin pattern — subclass `BaseTool`, implement `schema`
 and `_execute()`, and register in the `ToolRegistry`.
@@ -726,7 +782,7 @@ now call it, and the registry handles timing, error catching, and concurrency.
 
 ---
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 ### "Connection refused" to Ollama
 
@@ -811,7 +867,7 @@ rm -rf tinker_workspace/ tinker_artifacts/ tinker_diagrams/ chroma_db/
 
 ---
 
-## 16. FAQ
+## 17. FAQ
 
 **Q: How long should I let Tinker run?**
 A: For a simple system (URL shortener, todo app), 30–60 minutes produces a

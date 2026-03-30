@@ -80,6 +80,7 @@ class WebSearchTool(BaseTool):
         self,
         searxng_url: str = SEARXNG_URL,
         default_results: int = 10,
+        max_results: int = 50,
         timeout: float = 15.0,
     ) -> None:
         """
@@ -92,8 +93,10 @@ class WebSearchTool(BaseTool):
 
             default_results:
                 How many results to return if the caller doesn't specify.
-                Not currently used to override the caller's num_results argument,
-                but stored here for potential future use.
+
+            max_results:
+                Hard ceiling on num_results.  Configurable so operators can
+                increase for deep-research scenarios (default 50).
 
             timeout:
                 How many seconds to wait for SearXNG to respond before giving up.
@@ -103,6 +106,7 @@ class WebSearchTool(BaseTool):
         # without accidentally creating double slashes (http://host:8080//search).
         self._url = searxng_url.rstrip("/")
         self._default_results = default_results
+        self._max_results = max_results
         self._timeout = timeout
 
     # ------------------------------------------------------------------
@@ -133,10 +137,10 @@ class WebSearchTool(BaseTool):
                     },
                     "num_results": {
                         "type": "integer",
-                        "description": "Number of results to return (1-20). Default 10.",
-                        "default": 10,
+                        "description": f"Number of results to return (1-{self._max_results}). Default {self._default_results}.",
+                        "default": self._default_results,
                         "minimum": 1,
-                        "maximum": 20,
+                        "maximum": self._max_results,
                     },
                     "categories": {
                         "type": "array",
@@ -167,7 +171,7 @@ class WebSearchTool(BaseTool):
     async def _execute(  # type: ignore[override]
         self,
         query: str,
-        num_results: int = 10,
+        num_results: int | None = None,
         categories: list[str] | None = None,
         language: str = "en",
         **_: Any,  # absorb any extra kwargs the caller passes; we don't use them
@@ -198,6 +202,11 @@ class WebSearchTool(BaseTool):
             A list of dicts, each with keys: title, url, snippet, engine, score.
             The list is already sorted by relevance (SearXNG does the ranking).
         """
+        # Apply configurable defaults and ceiling
+        if num_results is None:
+            num_results = self._default_results
+        num_results = max(1, min(num_results, self._max_results))
+
         # Default to "general" category if the caller didn't specify any.
         if categories is None:
             categories = ["general"]

@@ -99,6 +99,8 @@ def build_real_components(problem: str) -> dict:
         artifact_output_dir=os.getenv("TINKER_ARTIFACT_DIR", "./tinker_artifacts"),
         diagram_output_dir=os.getenv("TINKER_DIAGRAM_DIR", "./tinker_diagrams"),
         memory_manager=memory_manager,
+        search_default_results=int(os.getenv("TINKER_SEARCH_DEFAULT_RESULTS", "10")),
+        search_max_results=int(os.getenv("TINKER_SEARCH_MAX_RESULTS", "50")),
     )
 
     # ── Task Engine ───────────────────────────────────────────────────────────
@@ -165,6 +167,20 @@ def build_real_components(problem: str) -> dict:
     )
     auto_memory.attach(event_bus)
 
+    # ── Research Enhancer (query rewriting, memory-first, summarization) ────
+    from core.tools.research_enhancer import ResearchEnhancer
+
+    research_enhancer = ResearchEnhancer(
+        router=router,
+        memory_manager=memory_manager,
+        query_rewrite=os.getenv("TINKER_RESEARCH_QUERY_REWRITE", "true").lower() == "true",
+        memory_first=os.getenv("TINKER_RESEARCH_MEMORY_FIRST", "true").lower() == "true",
+        summarize=os.getenv("TINKER_RESEARCH_SUMMARIZE", "true").lower() == "true",
+        iterative_max_rounds=int(os.getenv("TINKER_RESEARCH_ITERATIVE_ROUNDS", "2")),
+        summarize_threshold=int(os.getenv("TINKER_RESEARCH_SUMMARIZE_THRESHOLD", "3000")),
+        memory_min_score=float(os.getenv("TINKER_RESEARCH_MEMORY_MIN_SCORE", "0.7")),
+    )
+
     # ── Webhook Dispatcher (n8n / local automation integration) ──────────────
     from core.tools.webhook import WebhookDispatcher
 
@@ -187,6 +203,7 @@ def build_real_components(problem: str) -> dict:
         "stagnation_monitor": stagnation_monitor,
         "event_bus": event_bus,
         "research_team": research_team,
+        "research_enhancer": research_enhancer,
     }
 
 
