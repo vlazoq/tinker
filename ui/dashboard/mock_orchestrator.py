@@ -20,7 +20,7 @@ import random
 import uuid
 from datetime import datetime, timedelta
 
-from .log_handler import get_log_buffer, LogRecord
+from .log_handler import LogRecord, get_log_buffer
 from .state import (
     ArchitectOutput,
     ArchitectureState,
@@ -291,9 +291,7 @@ async def run_mock(tick: float = 1.5) -> None:
                     "status": t.status.value,
                     "created_at": t.created_at.isoformat(),
                     "started_at": t.started_at.isoformat() if t.started_at else None,
-                    "completed_at": t.completed_at.isoformat()
-                    if t.completed_at
-                    else None,
+                    "completed_at": t.completed_at.isoformat() if t.completed_at else None,
                     "result_summary": t.result_summary,
                 }
                 for t in recent_tasks[-5:]

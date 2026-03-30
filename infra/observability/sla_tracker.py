@@ -49,7 +49,6 @@ from __future__ import annotations
 import logging
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +70,7 @@ class SLADefinition:
     name: str
     p95_seconds: float = 60.0
     p99_seconds: float = 120.0
-    max_seconds: Optional[float] = None
+    max_seconds: float | None = None
     window_size: int = 200  # Keep last 200 measurements
 
 
@@ -152,7 +151,7 @@ class SLATracker:
 
     def __init__(self, alert_on_breach=None) -> None:
         self._definitions: dict[str, SLADefinition] = {}
-        self._measurements: dict[str, Deque[float]] = {}
+        self._measurements: dict[str, deque[float]] = {}
         self._breach_count: dict[str, int] = {}
         self._alert_on_breach = alert_on_breach
 
@@ -161,7 +160,7 @@ class SLATracker:
         name: str,
         p95_seconds: float = 60.0,
         p99_seconds: float = 120.0,
-        max_seconds: Optional[float] = None,
+        max_seconds: float | None = None,
         window_size: int = 200,
     ) -> None:
         """
@@ -187,11 +186,9 @@ class SLATracker:
         )
         self._measurements[name] = deque(maxlen=window_size)
         self._breach_count[name] = 0
-        logger.debug(
-            "SLA defined: %s (p95=%.1fs, p99=%.1fs)", name, p95_seconds, p99_seconds
-        )
+        logger.debug("SLA defined: %s (p95=%.1fs, p99=%.1fs)", name, p95_seconds, p99_seconds)
 
-    def record(self, name: str, duration_seconds: float) -> Optional[SLAReport]:
+    def record(self, name: str, duration_seconds: float) -> SLAReport | None:
         """
         Record a loop duration measurement.
 
@@ -215,9 +212,7 @@ class SLATracker:
         self._measurements[name].append(duration_seconds)
 
         # Check hard maximum breach
-        max_breach = (
-            sla_def.max_seconds is not None and duration_seconds > sla_def.max_seconds
-        )
+        max_breach = sla_def.max_seconds is not None and duration_seconds > sla_def.max_seconds
 
         if max_breach:
             self._breach_count[name] += 1
@@ -262,9 +257,7 @@ class SLATracker:
         n = len(data)
 
         if n == 0:
-            return SLAReport(
-                name=name, sla_p95=sla_def.p95_seconds, sla_p99=sla_def.p99_seconds
-            )
+            return SLAReport(name=name, sla_p95=sla_def.p95_seconds, sla_p99=sla_def.p99_seconds)
 
         p50 = _percentile(data, 50)
         p95 = _percentile(data, 95)
@@ -286,9 +279,7 @@ class SLATracker:
             sla_p99=sla_def.p99_seconds,
             p95_breach=p95 > sla_def.p95_seconds,
             p99_breach=p99 > sla_def.p99_seconds,
-            max_breach=(
-                sla_def.max_seconds is not None and max_val > sla_def.max_seconds
-            ),
+            max_breach=(sla_def.max_seconds is not None and max_val > sla_def.max_seconds),
             breach_count=breach_count,
         )
 
@@ -314,9 +305,7 @@ def build_default_sla_tracker(alert_on_breach=None) -> SLATracker:
     tracker.define("meso_loop", p95_seconds=180.0, p99_seconds=300.0, max_seconds=600.0)
 
     # Macro loop: reads all memory — can be very slow
-    tracker.define(
-        "macro_loop", p95_seconds=300.0, p99_seconds=600.0, max_seconds=1800.0
-    )
+    tracker.define("macro_loop", p95_seconds=300.0, p99_seconds=600.0, max_seconds=1800.0)
 
     # Context assembly: memory retrieval — should be fast
     tracker.define("context_assembly", p95_seconds=15.0, p99_seconds=30.0)

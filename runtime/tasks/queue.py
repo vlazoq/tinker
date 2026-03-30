@@ -41,12 +41,12 @@ from __future__ import annotations
 
 import logging
 import random
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from .resolver import DependencyResolver
 from .schema import Task, TaskStatus
 from .scorer import PriorityScorer
-from .resolver import DependencyResolver
 
 # Only imported for type hints (avoids circular imports at runtime)
 if TYPE_CHECKING:
@@ -61,7 +61,7 @@ def _now_str() -> str:
     Kept as a module-level helper so it can be called from static methods
     without needing ``self``.
     """
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # =============================================================================
@@ -98,7 +98,7 @@ class TaskQueue:
 
     def __init__(
         self,
-        registry: "TaskRegistry",
+        registry: TaskRegistry,
         scorer: PriorityScorer | None = None,
         resolver: DependencyResolver | None = None,
         exploration_min_pct: float = 0.05,
@@ -435,7 +435,7 @@ class TaskQueue:
         ----------
         tasks : The list of PENDING tasks to update.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for task in tasks:
             try:
                 # Parse the created_at ISO string back into a datetime
@@ -444,7 +444,7 @@ class TaskQueue:
                 # If the timestamp has no timezone info (e.g. from old data),
                 # assume it was UTC so the subtraction works correctly.
                 if created.tzinfo is None:
-                    created = created.replace(tzinfo=timezone.utc)
+                    created = created.replace(tzinfo=UTC)
 
                 # Calculate how many hours the task has been waiting
                 delta_h = (now - created).total_seconds() / 3600.0

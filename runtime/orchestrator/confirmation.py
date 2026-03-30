@@ -62,7 +62,7 @@ import asyncio
 import logging
 import sys
 import uuid
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +84,8 @@ class ConfirmationGate:
 
     def __init__(
         self,
-        config: "OrchestratorConfig",
-        state: "OrchestratorState",
+        config: OrchestratorConfig,
+        state: OrchestratorState,
     ) -> None:
         self._config = config
         self._state = state
@@ -181,9 +181,7 @@ class ConfirmationGate:
         bool : True if the request_id was found and resolved, False if unknown.
         """
         if request_id not in self._state.pending_confirmations:
-            logger.warning(
-                "ConfirmationGate.resolve: unknown request_id '%s'", request_id
-            )
+            logger.warning("ConfirmationGate.resolve: unknown request_id '%s'", request_id)
             return False
 
         # Write the decision so the waiting coroutine can read it.
@@ -230,9 +228,7 @@ class ConfirmationGate:
 
         timeout = self._config.confirm_timeout_seconds
         if timeout > 0:
-            prompt_lines.append(
-                f"\n  Auto-approves in {timeout:.0f}s if no response."
-            )
+            prompt_lines.append(f"\n  Auto-approves in {timeout:.0f}s if no response.")
         prompt_lines.append("\n  Approve? [y/N] ")
 
         sys.stdout.write("\n".join(prompt_lines))
@@ -252,7 +248,7 @@ class ConfirmationGate:
                 )
             else:
                 answer = await asyncio.to_thread(_read_stdin)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             sys.stdout.write("\n  [Timed out — auto-approving]\n\n")
             sys.stdout.flush()
             return True  # auto-approve on timeout
@@ -277,8 +273,7 @@ class ConfirmationGate:
         timeout = self._config.confirm_timeout_seconds or None  # None = wait forever
 
         logger.info(
-            "ConfirmationGate: waiting for API response for '%s' "
-            "(timeout=%.0fs, request_id=%s)",
+            "ConfirmationGate: waiting for API response for '%s' (timeout=%.0fs, request_id=%s)",
             action,
             self._config.confirm_timeout_seconds,
             request_id,
@@ -289,10 +284,9 @@ class ConfirmationGate:
                 await asyncio.wait_for(event.wait(), timeout=timeout)
             else:
                 await event.wait()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
-                "ConfirmationGate: timeout waiting for '%s' (request_id=%s) — "
-                "auto-approving",
+                "ConfirmationGate: timeout waiting for '%s' (request_id=%s) — auto-approving",
                 action,
                 request_id,
             )

@@ -64,28 +64,30 @@ except ImportError:  # pragma: no cover
     aiohttp = None  # type: ignore[assignment]
     _AIOHTTP_AVAILABLE = False
 
-from .types import MachineConfig, Message, RetryConfig
-
 # Import the typed exception hierarchy from the central exceptions module.
 # All model-client exceptions live in exceptions.py so the full error surface
 # is visible from one place.  We re-export the names that callers of THIS
 # module typically import so existing ``from core.llm.client import ...`` code
 # continues to work without changes.
+import builtins
+
 from exceptions import (
     ModelClientError,
     ModelConnectionError,
     ModelNotFoundError,
-    ModelTimeoutError,
     ModelRateLimitError,
     ModelServerError,
+    ModelTimeoutError,
     ResponseParseError,
 )
+
+from .types import MachineConfig, Message, RetryConfig
 
 # Backwards-compatibility aliases: older code that did
 #   from core.llm.client import ConnectionError, TimeoutError, RateLimitError, ServerError
 # still works — these names are intentional re-exports, NOT new definitions.
-ConnectionError = ModelConnectionError  # noqa: A001  (intentional shadowing alias)
-TimeoutError = ModelTimeoutError  # noqa: A001
+ConnectionError = ModelConnectionError
+TimeoutError = ModelTimeoutError
 RateLimitError = ModelRateLimitError
 ServerError = ModelServerError
 
@@ -134,7 +136,7 @@ class OllamaClient:
         self,
         config: MachineConfig,
         retry: RetryConfig | None = None,
-        circuit_breaker: "CircuitBreaker | None" = None,
+        circuit_breaker: CircuitBreaker | None = None,
     ) -> None:
         """
         Create an OllamaClient.
@@ -212,7 +214,7 @@ class OllamaClient:
             await self._session.close()
             self._session = None
 
-    async def __aenter__(self) -> "OllamaClient":
+    async def __aenter__(self) -> OllamaClient:
         """Support the ``async with OllamaClient(...) as client:`` pattern."""
         return self
 
@@ -272,17 +274,22 @@ class OllamaClient:
         """
         try:
             from .types import Message as _Msg
+
             dummy = [_Msg(role="user", content=" ")]
             await asyncio.wait_for(
                 self.chat(messages=dummy, max_tokens=1, temperature=0.0),
                 timeout=timeout,
             )
-            logger.info("Warmup complete for model=%s @ %s", self.config.model, self.config.base_url)
+            logger.info(
+                "Warmup complete for model=%s @ %s", self.config.model, self.config.base_url
+            )
             return True
         except Exception as exc:
             logger.warning(
                 "Warmup skipped for model=%s @ %s: %s",
-                self.config.model, self.config.base_url, exc,
+                self.config.model,
+                self.config.base_url,
+                exc,
             )
             return False
 
@@ -330,9 +337,7 @@ class OllamaClient:
         # the idle timer, so active sessions never trigger an unload.
         payload: dict[str, Any] = {
             "model": model,
-            "messages": [
-                m.to_dict() for m in messages
-            ],  # list of {"role":…,"content":…}
+            "messages": [m.to_dict() for m in messages],  # list of {"role":…,"content":…}
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": stream,
@@ -455,9 +460,10 @@ class OllamaClient:
         # request.  We attach the current trace_id (from contextvars) and a
         # per-request UUID so each attempt can be uniquely identified.
         import uuid as _uuid
-        from contextvars import copy_context as _copy_ctx
+
         try:
             from agents import _current_trace_id as _tid_var
+
             _trace_id = _tid_var.get("") or str(_uuid.uuid4())
         except Exception:
             _trace_id = str(_uuid.uuid4())
@@ -500,7 +506,11 @@ class OllamaClient:
                         f"Model not found on {url}. Ensure the model is "
                         f"pulled in Ollama (run 'ollama pull <model>'): "
                         f"{body[:200]}",
-                        context={"url": url, "status": 404, "model": payload.get("model", "unknown")},
+                        context={
+                            "url": url,
+                            "status": 404,
+                            "model": payload.get("model", "unknown"),
+                        },
                     )
 
                 if resp.status in self.retry.retryable_status_codes:
@@ -550,7 +560,7 @@ class OllamaClient:
                 f"Cannot connect to {url}: {exc}",
                 context={"url": url},
             ) from exc
-        except asyncio.TimeoutError as exc:
+        except builtins.TimeoutError as exc:
             # Either the connect timeout or the total request timeout fired
             raise ModelTimeoutError(
                 f"Request to {url} timed out",
@@ -623,8 +633,6 @@ class OllamaClient:
             }
 
         return {
-            "choices": [
-                {"message": {"role": "assistant", "content": full_content}}
-            ],
+            "choices": [{"message": {"role": "assistant", "content": full_content}}],
             "usage": usage,
         }

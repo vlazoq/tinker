@@ -164,9 +164,7 @@ class FritzGitHub:
                 error="gh CLI not found. Install it from https://cli.github.com",
             )
         except Exception as exc:
-            return FritzRemoteResult(
-                ok=False, operation=" ".join(args[:3]), error=str(exc)
-            )
+            return FritzRemoteResult(ok=False, operation=" ".join(args[:3]), error=str(exc))
 
     # ── Pull Requests ─────────────────────────────────────────────────────────
 
@@ -210,9 +208,7 @@ class FritzGitHub:
     ) -> FritzRemoteResult:
         """Merge a pull request."""
         merge_methods = {"squash": "squash", "merge": "merge", "rebase": "rebase"}
-        payload: dict[str, Any] = {
-            "merge_method": merge_methods.get(method, "squash")
-        }
+        payload: dict[str, Any] = {"merge_method": merge_methods.get(method, "squash")}
         if commit_title:
             payload["commit_title"] = commit_title
         if commit_message:
@@ -237,9 +233,7 @@ class FritzGitHub:
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="close_pr", error=str(exc))
 
-    async def request_review(
-        self, pr_number: int, reviewers: list[str]
-    ) -> FritzRemoteResult:
+    async def request_review(self, pr_number: int, reviewers: list[str]) -> FritzRemoteResult:
         try:
             data = await self._post(
                 f"/repos/{self._owner}/{self._repo}/pulls/{pr_number}/requested_reviewers",
@@ -261,9 +255,7 @@ class FritzGitHub:
 
     async def get_pr(self, pr_number: int) -> FritzRemoteResult:
         try:
-            data = await self._get(
-                f"/repos/{self._owner}/{self._repo}/pulls/{pr_number}"
-            )
+            data = await self._get(f"/repos/{self._owner}/{self._repo}/pulls/{pr_number}")
             return FritzRemoteResult(ok=True, operation="get_pr", data=data)
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="get_pr", error=str(exc))
@@ -311,9 +303,7 @@ class FritzGitHub:
 
     # ── Branches ──────────────────────────────────────────────────────────────
 
-    async def create_branch(
-        self, name: str, from_branch: str = "main"
-    ) -> FritzRemoteResult:
+    async def create_branch(self, name: str, from_branch: str = "main") -> FritzRemoteResult:
         """Create a remote branch from an existing ref."""
         try:
             # Get SHA of the base branch
@@ -331,16 +321,12 @@ class FritzGitHub:
 
     async def delete_branch(self, name: str) -> FritzRemoteResult:
         try:
-            ok = await self._delete(
-                f"/repos/{self._owner}/{self._repo}/git/refs/heads/{name}"
-            )
+            ok = await self._delete(f"/repos/{self._owner}/{self._repo}/git/refs/heads/{name}")
             return FritzRemoteResult(ok=ok, operation="delete_branch")
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="delete_branch", error=str(exc))
 
-    async def set_branch_protection(
-        self, branch: str, rules: dict[str, Any]
-    ) -> FritzRemoteResult:
+    async def set_branch_protection(self, branch: str, rules: dict[str, Any]) -> FritzRemoteResult:
         """
         Apply branch protection rules.
         rules dict mirrors the GitHub branch protection API payload.
@@ -386,9 +372,7 @@ class FritzGitHub:
 
     # ── Collaborators & Permissions ───────────────────────────────────────────
 
-    async def add_collaborator(
-        self, username: str, permission: str = "push"
-    ) -> FritzRemoteResult:
+    async def add_collaborator(self, username: str, permission: str = "push") -> FritzRemoteResult:
         """
         Add a collaborator with the given permission level.
         permission: pull | triage | push | maintain | admin
@@ -404,19 +388,17 @@ class FritzGitHub:
 
     async def remove_collaborator(self, username: str) -> FritzRemoteResult:
         try:
-            ok = await self._delete(
-                f"/repos/{self._owner}/{self._repo}/collaborators/{username}"
-            )
+            ok = await self._delete(f"/repos/{self._owner}/{self._repo}/collaborators/{username}")
             return FritzRemoteResult(ok=ok, operation="remove_collaborator")
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="remove_collaborator", error=str(exc))
 
     async def list_collaborators(self) -> FritzRemoteResult:
         try:
-            data = await self._get(
-                f"/repos/{self._owner}/{self._repo}/collaborators"
+            data = await self._get(f"/repos/{self._owner}/{self._repo}/collaborators")
+            return FritzRemoteResult(
+                ok=True, operation="list_collaborators", data={"collaborators": data}
             )
-            return FritzRemoteResult(ok=True, operation="list_collaborators", data={"collaborators": data})
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="list_collaborators", error=str(exc))
 
@@ -435,9 +417,7 @@ class FritzGitHub:
         if assignees:
             payload["assignees"] = assignees
         try:
-            data = await self._post(
-                f"/repos/{self._owner}/{self._repo}/issues", payload
-            )
+            data = await self._post(f"/repos/{self._owner}/{self._repo}/issues", payload)
             return FritzRemoteResult(
                 ok=True,
                 operation="create_issue",
@@ -541,9 +521,7 @@ class FritzGitHub:
 
     async def update_repo_settings(self, **settings: Any) -> FritzRemoteResult:
         try:
-            data = await self._patch(
-                f"/repos/{self._owner}/{self._repo}", settings
-            )
+            data = await self._patch(f"/repos/{self._owner}/{self._repo}", settings)
             return FritzRemoteResult(ok=True, operation="update_repo_settings", data=data)
         except Exception as exc:
             return FritzRemoteResult(ok=False, operation="update_repo_settings", error=str(exc))

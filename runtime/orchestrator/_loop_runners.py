@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 
 from core.events import EventType
-from .state import LoopLevel, LoopStatus
-from .micro_loop import run_micro_loop, MicroLoopError
-from .meso_loop import run_meso_loop
+
 from .macro_loop import run_macro_loop
+from .meso_loop import run_meso_loop
+from .micro_loop import MicroLoopError, run_micro_loop
+from .state import LoopLevel, LoopStatus
 
 logger = logging.getLogger("tinker.orchestrator")
 
@@ -68,15 +68,18 @@ class LoopRunnerMixin:
                     self.metrics.on_micro_loop(record)
 
                 # Emit micro loop completed event
-                await self.emit_event(EventType.MICRO_LOOP_COMPLETED, {
-                    "iteration": self.state.total_micro_loops,
-                    "task_id": record.task_id,
-                    "subsystem": record.subsystem,
-                    "critic_score": record.critic_score,
-                    "architect_tokens": arch_tokens,
-                    "critic_tokens": critic_tokens,
-                    "artifact_id": record.artifact_id,
-                })
+                await self.emit_event(
+                    EventType.MICRO_LOOP_COMPLETED,
+                    {
+                        "iteration": self.state.total_micro_loops,
+                        "task_id": record.task_id,
+                        "subsystem": record.subsystem,
+                        "critic_score": record.critic_score,
+                        "architect_tokens": arch_tokens,
+                        "critic_tokens": critic_tokens,
+                        "artifact_id": record.artifact_id,
+                    },
+                )
 
                 # Anti-stagnation check
                 if self.stagnation_monitor is not None:
@@ -90,28 +93,37 @@ class LoopRunnerMixin:
                 return True
 
             # Emit failure event
-            await self.emit_event(EventType.MICRO_LOOP_FAILED, {
-                "iteration": self.state.total_micro_loops,
-                "task_id": record.task_id,
-                "subsystem": record.subsystem,
-                "error": record.error,
-            })
+            await self.emit_event(
+                EventType.MICRO_LOOP_FAILED,
+                {
+                    "iteration": self.state.total_micro_loops,
+                    "task_id": record.task_id,
+                    "subsystem": record.subsystem,
+                    "error": record.error,
+                },
+            )
             return False
 
         except MicroLoopError as exc:
             logger.error("Micro loop failed: %s", exc)
-            await self.emit_event(EventType.MICRO_LOOP_FAILED, {
-                "iteration": self.state.total_micro_loops,
-                "error": str(exc),
-            })
+            await self.emit_event(
+                EventType.MICRO_LOOP_FAILED,
+                {
+                    "iteration": self.state.total_micro_loops,
+                    "error": str(exc),
+                },
+            )
             return False
 
         except Exception as exc:
             logger.exception("Unexpected error in micro loop: %s", exc)
-            await self.emit_event(EventType.MICRO_LOOP_FAILED, {
-                "iteration": self.state.total_micro_loops,
-                "error": str(exc),
-            })
+            await self.emit_event(
+                EventType.MICRO_LOOP_FAILED,
+                {
+                    "iteration": self.state.total_micro_loops,
+                    "error": str(exc),
+                },
+            )
             return False
 
     def _should_run_meso(self, subsystem: str) -> bool:
@@ -139,17 +151,23 @@ class LoopRunnerMixin:
             self.state.add_meso_record(record)
             if self.metrics is not None:
                 self.metrics.on_meso_loop(record)
-            await self.emit_event(EventType.MESO_LOOP_COMPLETED, {
-                "subsystem": subsystem,
-                "iteration": self.state.total_meso_loops,
-                "document_id": getattr(record, "document_id", None),
-            })
+            await self.emit_event(
+                EventType.MESO_LOOP_COMPLETED,
+                {
+                    "subsystem": subsystem,
+                    "iteration": self.state.total_meso_loops,
+                    "document_id": getattr(record, "document_id", None),
+                },
+            )
         except Exception as exc:
             logger.exception("Meso loop raised unexpectedly: %s", exc)
-            await self.emit_event(EventType.MESO_LOOP_FAILED, {
-                "subsystem": subsystem,
-                "error": str(exc),
-            })
+            await self.emit_event(
+                EventType.MESO_LOOP_FAILED,
+                {
+                    "subsystem": subsystem,
+                    "error": str(exc),
+                },
+            )
         finally:
             self.state.current_level = prev_level
 
@@ -179,16 +197,22 @@ class LoopRunnerMixin:
             self.state.add_macro_record(record)
             if self.metrics is not None:
                 self.metrics.on_macro_loop(record)
-            await self.emit_event(EventType.MACRO_LOOP_COMPLETED, {
-                "iteration": self.state.total_macro_loops,
-                "commit_hash": getattr(record, "commit_hash", None),
-                "snapshot_version": getattr(record, "snapshot_version", None),
-            })
+            await self.emit_event(
+                EventType.MACRO_LOOP_COMPLETED,
+                {
+                    "iteration": self.state.total_macro_loops,
+                    "commit_hash": getattr(record, "commit_hash", None),
+                    "snapshot_version": getattr(record, "snapshot_version", None),
+                },
+            )
         except Exception as exc:
             logger.exception("Macro loop raised unexpectedly: %s", exc)
-            await self.emit_event(EventType.MACRO_LOOP_FAILED, {
-                "error": str(exc),
-            })
+            await self.emit_event(
+                EventType.MACRO_LOOP_FAILED,
+                {
+                    "error": str(exc),
+                },
+            )
         finally:
             self.state.current_level = prev_level
 
@@ -203,8 +227,8 @@ class LoopRunnerMixin:
         Returns the current mtime of the preset file.
         """
         try:
-            from core.models.presets import PresetManager
             from core.models.library import ModelLibrary
+            from core.models.presets import PresetManager
         except ImportError:
             return last_mtime
 
@@ -212,7 +236,7 @@ class LoopRunnerMixin:
             lib = ModelLibrary()
             self._preset_manager = PresetManager(lib)
 
-        mgr: "PresetManager" = self._preset_manager  # type: ignore[name-defined]
+        mgr: PresetManager = self._preset_manager  # type: ignore[name-defined]
         current_mtime = mgr.active_file_mtime()
 
         if current_mtime <= last_mtime:
@@ -230,7 +254,9 @@ class LoopRunnerMixin:
         if main_entry is None or judge_entry is None:
             logger.warning(
                 "Preset '%s' references unknown model(s): main=%s judge=%s",
-                preset.name, preset.main_model_id, preset.judge_model_id,
+                preset.name,
+                preset.main_model_id,
+                preset.judge_model_id,
             )
             return current_mtime
 
@@ -251,6 +277,8 @@ class LoopRunnerMixin:
 
         logger.info(
             "Model preset '%s' activated: Main=%s Judge=%s",
-            preset.name, main_entry.model_tag, judge_entry.model_tag,
+            preset.name,
+            main_entry.model_tag,
+            judge_entry.model_tag,
         )
         return current_mtime

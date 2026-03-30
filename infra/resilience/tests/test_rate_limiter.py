@@ -8,11 +8,12 @@ Verifies token bucket refill, burst capacity, acquire blocking, and the registry
 from __future__ import annotations
 
 import time
+
 import pytest
 
 from infra.resilience.rate_limiter import (
-    TokenBucketRateLimiter,
     RateLimiterRegistry,
+    TokenBucketRateLimiter,
     build_default_rate_limiters,
 )
 

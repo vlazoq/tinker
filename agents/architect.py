@@ -42,14 +42,14 @@ import logging
 import uuid
 
 from agents._shared import (
+    _build_architect_prompts,
     _current_trace_id,
+    _extract_candidate_tasks,
+    _extract_knowledge_gaps,
     _get_rate_limiter_registry,
     _get_retry_async,
     _json_block,
-    _extract_knowledge_gaps,
-    _extract_candidate_tasks,
     _parse_architect_structured,
-    _build_architect_prompts,
 )
 
 logger = logging.getLogger("tinker.agents")
@@ -116,9 +116,7 @@ class ArchitectAgent:
         _current_trace_id.set(trace_id)
         task_id = task.get("id", "?")
 
-        logger.info(
-            "ArchitectAgent.call start [task=%s trace_id=%s]", task_id, trace_id
-        )
+        logger.info("ArchitectAgent.call start [task=%s trace_id=%s]", task_id, trace_id)
 
         task_desc = task.get("description", task.get("title", "architecture task"))
         subsystem = task.get("subsystem", "unknown")
@@ -146,9 +144,7 @@ class ArchitectAgent:
             )
         _chars_limit = int(_tokens_budget * 3.8)
         raw_prompt = context.get("prompt", _json_block(context))
-        context_str = (
-            raw_prompt[:_chars_limit] if len(raw_prompt) > _chars_limit else raw_prompt
-        )
+        context_str = raw_prompt[:_chars_limit] if len(raw_prompt) > _chars_limit else raw_prompt
 
         # ── Grub implementation section (review tasks only) ─────────────────
         # When Tinker is processing a 'review' task, the micro loop adds a
@@ -163,8 +159,7 @@ class ArchitectAgent:
             tests = grub_impl.get("test_results", {})
             status = grub_impl.get("status", "unknown")
             tests_str = (
-                f"Passed: {tests.get('passed', '?')}, "
-                f"Failed: {tests.get('failed', '?')}"
+                f"Passed: {tests.get('passed', '?')}, Failed: {tests.get('failed', '?')}"
                 if tests
                 else "Not available"
             )
@@ -218,8 +213,8 @@ class ArchitectAgent:
 
         if resp.structured and isinstance(resp.structured, dict):
             try:
-                content, gaps, decisions, questions, candidates = (
-                    _parse_architect_structured(resp.structured)
+                content, gaps, decisions, questions, candidates = _parse_architect_structured(
+                    resp.structured
                 )
             except Exception as parse_exc:
                 logger.warning(

@@ -18,22 +18,20 @@ ROOT = Path(__file__).parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ui.core import (  # noqa: E402
-    ORCH_CONFIG_SCHEMA,
-    STAGNATION_CONFIG_SCHEMA,
-    FLAG_DEFAULTS,
-    FLAG_DESCRIPTIONS,
-    FLAG_GROUPS,
-    TASK_TYPES,
-    SUBSYSTEMS,
+from ui.core import (
     AUDIT_DB,
     BACKUP_DIR,
     DLQ_DB,
+    FLAG_DEFAULTS,
+    FLAG_DESCRIPTIONS,
+    FLAG_GROUPS,
     FLAGS_FILE,
     FRITZ_CONFIG_FILE,
+    ORCH_CONFIG_SCHEMA,
+    STAGNATION_CONFIG_SCHEMA,
+    SUBSYSTEMS,
+    TASK_TYPES,
     TASKS_DB,
-    db_query_sync as dbq,
-    db_execute_sync as dbe,
     fetch_fritz_status_sync,
     fetch_grub_status_sync,
     list_backups,
@@ -44,6 +42,12 @@ from ui.core import (  # noqa: E402
     now_iso,
     save_config,
     save_flags,
+)
+from ui.core import (
+    db_execute_sync as dbe,
+)
+from ui.core import (
+    db_query_sync as dbq,
 )
 
 st.set_page_config(
@@ -68,6 +72,7 @@ st.title("🔧 TINKER — Control Panel")
 
 
 # ── Fritz async helpers (defined before use) ──────────────────────────────────
+
 
 async def _async_ship(agent, message, task_id, auto_merge):
     await agent.setup()
@@ -147,9 +152,7 @@ with tabs[0]:
 
 # ── Config ────────────────────────────────────────────────────────────────────
 with tabs[1]:
-    st.info(
-        "Saved to `tinker_webui_config.json`. **Restart the orchestrator to apply.**"
-    )
+    st.info("Saved to `tinker_webui_config.json`. **Restart the orchestrator to apply.**")
     saved = load_config()
     if saved.get("_saved_at"):
         st.caption(f"Last saved: {saved['_saved_at']}")
@@ -158,7 +161,7 @@ with tabs[1]:
     new_stag: dict = {}
 
     st.subheader("Orchestrator Config")
-    for section_key, section in ORCH_CONFIG_SCHEMA.items():
+    for _section_key, section in ORCH_CONFIG_SCHEMA.items():
         st.markdown(f"**{section['label']}**")
         cols = st.columns(min(len(section["fields"]), 3))
         for i, (field_name, meta) in enumerate(section["fields"].items()):
@@ -219,9 +222,7 @@ with tabs[1]:
 
 # ── Feature Flags ─────────────────────────────────────────────────────────────
 with tabs[2]:
-    st.info(
-        f"Writing to `{FLAGS_FILE}`. Orchestrator picks up changes within **30 seconds**."
-    )
+    st.info(f"Writing to `{FLAGS_FILE}`. Orchestrator picks up changes within **30 seconds**.")
     current_flags = load_flags()
     new_flags: dict[str, bool] = {}
 
@@ -245,9 +246,7 @@ with tabs[2]:
 with tabs[3]:
     import pandas as pd
 
-    stats_rows = (
-        dbq(TASKS_DB, "SELECT status, COUNT(*) n FROM tasks GROUP BY status") or []
-    )
+    stats_rows = dbq(TASKS_DB, "SELECT status, COUNT(*) n FROM tasks GROUP BY status") or []
     stats = {r["status"]: r["n"] for r in stats_rows}
     if stats:
         scols = st.columns(len(stats))
@@ -331,10 +330,7 @@ with tabs[4]:
     )
 
     if dlq_rows:
-        stats_rows2 = (
-            dbq(DLQ_DB, "SELECT status, COUNT(*) n FROM dlq_items GROUP BY status")
-            or []
-        )
+        stats_rows2 = dbq(DLQ_DB, "SELECT status, COUNT(*) n FROM dlq_items GROUP BY status") or []
         s2 = {r["status"]: r["n"] for r in stats_rows2}
         sc1, sc2, sc3 = st.columns(3)
         sc1.metric("Pending", s2.get("pending", 0))
@@ -353,37 +349,35 @@ with tabs[4]:
         dlq_notes = st.text_input("Notes", key="dlq_notes")
         da1, da2 = st.columns(2)
         with da1:
-            if st.button("✅ Mark Resolved", type="primary", key="dlq_resolve"):
-                if dlq_id.strip():
-                    ts = now_iso()
-                    dbe(
-                        DLQ_DB,
-                        "UPDATE dlq_items SET status='resolved',resolved_at=?,updated_at=?,notes=? WHERE id=?",
-                        (
-                            ts,
-                            ts,
-                            dlq_notes or "Resolved via Streamlit UI",
-                            dlq_id.strip(),
-                        ),
-                    )
-                    st.success("Marked resolved.")
-                    st.rerun()
+            if st.button("✅ Mark Resolved", type="primary", key="dlq_resolve") and dlq_id.strip():
+                ts = now_iso()
+                dbe(
+                    DLQ_DB,
+                    "UPDATE dlq_items SET status='resolved',resolved_at=?,updated_at=?,notes=? WHERE id=?",
+                    (
+                        ts,
+                        ts,
+                        dlq_notes or "Resolved via Streamlit UI",
+                        dlq_id.strip(),
+                    ),
+                )
+                st.success("Marked resolved.")
+                st.rerun()
         with da2:
-            if st.button("🗑 Mark Discarded", key="dlq_discard"):
-                if dlq_id.strip():
-                    ts = now_iso()
-                    dbe(
-                        DLQ_DB,
-                        "UPDATE dlq_items SET status='discarded',resolved_at=?,updated_at=?,notes=? WHERE id=?",
-                        (
-                            ts,
-                            ts,
-                            dlq_notes or "Discarded via Streamlit UI",
-                            dlq_id.strip(),
-                        ),
-                    )
-                    st.success("Marked discarded.")
-                    st.rerun()
+            if st.button("🗑 Mark Discarded", key="dlq_discard") and dlq_id.strip():
+                ts = now_iso()
+                dbe(
+                    DLQ_DB,
+                    "UPDATE dlq_items SET status='discarded',resolved_at=?,updated_at=?,notes=? WHERE id=?",
+                    (
+                        ts,
+                        ts,
+                        dlq_notes or "Discarded via Streamlit UI",
+                        dlq_id.strip(),
+                    ),
+                )
+                st.success("Marked discarded.")
+                st.rerun()
 
 # ── Backups ───────────────────────────────────────────────────────────────────
 with tabs[5]:
@@ -401,9 +395,7 @@ with tabs[5]:
     else:
         st.info(f"No backups found in `{BACKUP_DIR}`.")
 
-    st.caption(
-        "Tinker backs up: DuckDB (artifacts), SQLite (tasks), ChromaDB (vectors)."
-    )
+    st.caption("Tinker backs up: DuckDB (artifacts), SQLite (tasks), ChromaDB (vectors).")
 
 # ── Grub ──────────────────────────────────────────────────────────────────────
 with tabs[6]:
@@ -418,9 +410,7 @@ with tabs[6]:
 
     st.subheader("Tinker tasks (implementation + review)")
     # Flatten nested {type: {status: count}} into a list of metrics
-    flat_counts = [
-        (f"{t}/{s}", n) for t, sm in task_counts.items() for s, n in sm.items()
-    ]
+    flat_counts = [(f"{t}/{s}", n) for t, sm in task_counts.items() for s, n in sm.items()]
     if flat_counts:
         tcols = st.columns(min(len(flat_counts), 4))
         for i, (label, count) in enumerate(flat_counts):
@@ -483,7 +473,9 @@ with tabs[7]:
     pp = fritz_status.get("push_policy", {})
 
     if not fritz_status.get("config_exists"):
-        st.warning("`fritz_config.json` not found — showing defaults. Run Fritz once to generate a config file.")
+        st.warning(
+            "`fritz_config.json` not found — showing defaults. Run Fritz once to generate a config file."
+        )
 
     # ── Status summary ────────────────────────────────────────────────────────
     m1, m2, m3, m4 = st.columns(4)
@@ -497,7 +489,9 @@ with tabs[7]:
         st.markdown("**Platforms**")
         gh_enabled = fritz_status.get("github_enabled", False)
         gt_enabled = fritz_status.get("gitea_enabled", False)
-        gh_target = fritz_status.get("github_owner", "") + "/" + fritz_status.get("github_repo", "")
+        gh_target = (
+            fritz_status.get("github_owner", "") + "/" + fritz_status.get("github_repo", "")
+        )
         gt_target = fritz_status.get("gitea_base_url", "")
         st.markdown(
             f"- GitHub: {'✅' if gh_enabled else '❌'} {gh_target.strip('/')}\n"
@@ -532,13 +526,15 @@ with tabs[7]:
             placeholder="fix: correct off-by-one in parser",
             key="fritz_ship_msg",
         )
-        ship_task = st.text_input("Task ID (optional)", placeholder="grub-abc123", key="fritz_ship_task")
+        ship_task = st.text_input(
+            "Task ID (optional)", placeholder="grub-abc123", key="fritz_ship_task"
+        )
         ship_auto_merge = st.checkbox("Auto-merge PR (if policy allows)", key="fritz_auto_merge")
 
         if st.button("⚡ Commit & Ship", key="fritz_ship_btn", disabled=not ship_msg.strip()):
             try:
-                from agents.fritz.config import FritzConfig
                 from agents.fritz.agent import FritzAgent
+                from agents.fritz.config import FritzConfig
 
                 config = (
                     FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -568,8 +564,8 @@ with tabs[7]:
         )
         if st.button("⬆ Push", key="fritz_push_btn"):
             try:
-                from agents.fritz.config import FritzConfig
                 from agents.fritz.agent import FritzAgent
+                from agents.fritz.config import FritzConfig
 
                 config = (
                     FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -589,15 +585,28 @@ with tabs[7]:
     with st.expander("🔀 Create Pull Request"):
         pr_c1, pr_c2 = st.columns(2)
         with pr_c1:
-            pr_title  = st.text_input("Title", placeholder="fix: correct off-by-one", key="fritz_pr_title")
-            pr_head   = st.text_input("Head branch", placeholder=git_info.get("branch", "feature/xyz"), key="fritz_pr_head")
+            pr_title = st.text_input(
+                "Title", placeholder="fix: correct off-by-one", key="fritz_pr_title"
+            )
+            pr_head = st.text_input(
+                "Head branch",
+                placeholder=git_info.get("branch", "feature/xyz"),
+                key="fritz_pr_head",
+            )
         with pr_c2:
-            pr_base   = st.text_input("Base branch", placeholder="main", key="fritz_pr_base")
-            pr_body   = st.text_area("Description", placeholder="Describe what this PR does…", key="fritz_pr_body", height=80)
-        if st.button("🔀 Create PR", key="fritz_pr_btn", disabled=not (pr_title.strip() and pr_head.strip())):
+            pr_base = st.text_input("Base branch", placeholder="main", key="fritz_pr_base")
+            pr_body = st.text_area(
+                "Description",
+                placeholder="Describe what this PR does…",
+                key="fritz_pr_body",
+                height=80,
+            )
+        if st.button(
+            "🔀 Create PR", key="fritz_pr_btn", disabled=not (pr_title.strip() and pr_head.strip())
+        ):
             try:
-                from agents.fritz.config import FritzConfig
                 from agents.fritz.agent import FritzAgent
+                from agents.fritz.config import FritzConfig
 
                 config = (
                     FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -618,19 +627,15 @@ with tabs[7]:
 with tabs[8]:
     evt_types = [
         r["event_type"]
-        for r in dbq(
-            AUDIT_DB, "SELECT DISTINCT event_type FROM audit_events ORDER BY event_type"
-        )
+        for r in dbq(AUDIT_DB, "SELECT DISTINCT event_type FROM audit_events ORDER BY event_type")
         or []
     ]
 
     fcol1, fcol2, fcol3 = st.columns([2, 2, 1])
     with fcol1:
-        filter_evt = st.selectbox("Event Type", [""] + evt_types, key="aud_evt")
+        filter_evt = st.selectbox("Event Type", ["", *evt_types], key="aud_evt")
     with fcol2:
-        filter_actor = st.text_input(
-            "Actor", placeholder="e.g. micro_loop", key="aud_actor"
-        )
+        filter_actor = st.text_input("Actor", placeholder="e.g. micro_loop", key="aud_actor")
     with fcol3:
         audit_limit = st.number_input("Limit", 10, 200, 50, 10, key="aud_limit")
 
@@ -647,7 +652,7 @@ with tabs[8]:
             AUDIT_DB,
             f"SELECT event_type, actor, resource, outcome, trace_id, created_at "
             f"FROM audit_events {where} ORDER BY created_at DESC LIMIT ?",
-            tuple(params) + (int(audit_limit),),
+            (*tuple(params), int(audit_limit)),
         )
         or []
     )

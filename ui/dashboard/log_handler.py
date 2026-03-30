@@ -24,8 +24,7 @@ import re
 import threading
 from collections import deque
 from datetime import datetime
-from typing import Deque, List, NamedTuple, Optional
-
+from typing import NamedTuple
 
 # ──────────────────────────────────────────
 # Log record
@@ -63,7 +62,7 @@ class LogBuffer:
     """
 
     def __init__(self, maxlen: int = 2000) -> None:
-        self._buf: Deque[LogRecord] = deque(maxlen=maxlen)
+        self._buf: deque[LogRecord] = deque(maxlen=maxlen)
         self._lock = threading.Lock()
         self._cursor = 0  # monotonic, for "fetch since" semantics
 
@@ -72,13 +71,13 @@ class LogBuffer:
             self._buf.append(record)
             self._cursor += 1
 
-    def tail(self, n: int = 100) -> List[LogRecord]:
+    def tail(self, n: int = 100) -> list[LogRecord]:
         """Return the most recent *n* records."""
         with self._lock:
             items = list(self._buf)
         return items[-n:]
 
-    def since(self, cursor: int) -> tuple[List[LogRecord], int]:
+    def since(self, cursor: int) -> tuple[list[LogRecord], int]:
         """
         Return all records added after *cursor*, and the new cursor value.
         Used by the panel to efficiently poll only new lines.
@@ -172,7 +171,7 @@ class StdlibBridgeHandler(_stdlib_logging.Handler):
         )
 
 
-def install_stdlib_bridge(root_logger: Optional[_stdlib_logging.Logger] = None) -> None:
+def install_stdlib_bridge(root_logger: _stdlib_logging.Logger | None = None) -> None:
     """
     Attach the bridge handler to the root stdlib logger so that all
     library log output flows into the dashboard's log buffer.

@@ -37,13 +37,13 @@ Environment variable
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class ModelEntry:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ModelEntry":
+    def from_dict(cls, d: dict) -> ModelEntry:
         return cls(
             id=d["id"],
             model_tag=d["model_tag"],
@@ -126,9 +126,7 @@ class ModelLibrary:
             for m in data.get("models", []):
                 entry = ModelEntry.from_dict(m)
                 self._models[entry.id] = entry
-            logger.info(
-                "ModelLibrary: loaded %d models from %s", len(self._models), self._path
-            )
+            logger.info("ModelLibrary: loaded %d models from %s", len(self._models), self._path)
         except Exception as exc:
             logger.error("ModelLibrary: failed to load %s: %s", self._path, exc)
 
@@ -148,10 +146,8 @@ class ModelLibrary:
                 json.dump(data, f, indent=2)
             os.replace(tmp, str(self._path))
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
 
     def _seed_defaults(self) -> None:
@@ -205,7 +201,7 @@ class ModelLibrary:
         """Return all models, sorted by display_name."""
         return sorted(self._models.values(), key=lambda m: m.display_name.lower())
 
-    def get(self, model_id: str) -> Optional[ModelEntry]:
+    def get(self, model_id: str) -> ModelEntry | None:
         return self._models.get(model_id)
 
     def add(self, entry: ModelEntry) -> None:

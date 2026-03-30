@@ -45,21 +45,20 @@ Quick start example
 # Pull in the registry class and its factory function.
 # ToolRegistry is the central hub that holds all tools and dispatches calls.
 # build_default_registry() is the one-liner that wires everything together.
-from .registry import ToolRegistry, build_default_registry
-
 # Pull in the base classes every tool is built on.
 # BaseTool   — the abstract class all individual tools inherit from.
 # ToolResult — the standard return type every tool call produces.
 # ToolSchema — a small data object describing a tool's name, inputs, and outputs.
 from .base import BaseTool, ToolResult, ToolSchema
+from .registry import ToolRegistry, build_default_registry
 
 # __all__ controls what gets exported when someone writes "from core.tools import *".
 # Listing things here is also useful documentation: it says "these are the
 # public names you're meant to use; everything else is an internal detail."
 __all__ = [
-    "ToolRegistry",  # The central registry and dispatcher
-    "build_default_registry",  # Factory that creates a ready-to-use registry
     "BaseTool",  # Base class for every tool
+    "ToolRegistry",  # The central registry and dispatcher
     "ToolResult",  # Standardised return envelope for tool calls
     "ToolSchema",  # Metadata descriptor for a tool
+    "build_default_registry",  # Factory that creates a ready-to-use registry
 ]

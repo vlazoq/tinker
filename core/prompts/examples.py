@@ -37,7 +37,7 @@ The Memory Manager must:
 - Provide a "compressed context" view for the Context Assembler — recent relevant artifacts
   summarized to fit within a configurable token budget
 - Persist state to disk so a Tinker run can be resumed after restart
-- Support concurrent reads (multiple agents reading simultaneously) 
+- Support concurrent reads (multiple agents reading simultaneously)
   and serialized writes (one write at a time)
 """,
     "constraints": """
@@ -52,7 +52,7 @@ Prior micro loop #2 established:
   - Context Assembler will call MemoryManager.get_compressed_context(token_budget=4096)
   - Artifacts are identified by UUID v4 artifact_id
   - All artifacts are JSON-serializable Python dicts
-  
+
 Research Note RN-001 established:
   - SQLite with WAL mode supports concurrent reads + serialized writes natively
   - FTS5 extension supports full-text search on JSON fields
@@ -356,8 +356,7 @@ def get_example_artifact(role: str, loop_level: str) -> dict:
     key = f"{role}.{loop_level}"
     if key not in EXAMPLE_ARTIFACTS:
         raise KeyError(
-            f"No example artifact for '{key}'. "
-            f"Available: {list(EXAMPLE_ARTIFACTS.keys())}"
+            f"No example artifact for '{key}'. Available: {list(EXAMPLE_ARTIFACTS.keys())}"
         )
     return EXAMPLE_ARTIFACTS[key]
 

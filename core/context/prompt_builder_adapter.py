@@ -70,9 +70,7 @@ def _get_template_registry():
 
             _tmpl_registry = TEMPLATE_REGISTRY
         except Exception as exc:
-            logger.warning(
-                "PromptBuilderAdapter: could not load TEMPLATE_REGISTRY: %s", exc
-            )
+            logger.warning("PromptBuilderAdapter: could not load TEMPLATE_REGISTRY: %s", exc)
             _tmpl_registry = {}
     return _tmpl_registry
 
@@ -85,9 +83,7 @@ def _get_builder():
 
             _builder_cls = PromptBuilder
         except Exception as exc:
-            logger.warning(
-                "PromptBuilderAdapter: could not import PromptBuilder: %s", exc
-            )
+            logger.warning("PromptBuilderAdapter: could not import PromptBuilder: %s", exc)
     return _builder_cls
 
 
@@ -145,9 +141,7 @@ class PromptBuilderAdapter(_PromptBuilderProtocol):
         tmpl = _get_template_registry().get(key)
         if tmpl is not None:
             return tmpl.system
-        logger.debug(
-            "PromptBuilderAdapter: no template for key %r — using fallback", key
-        )
+        logger.debug("PromptBuilderAdapter: no template for key %r — using fallback", key)
         return f"You are Tinker's {role.value} agent."
 
     def build_output_format(self, role: AgentRole, loop_level: int) -> str:

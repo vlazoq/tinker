@@ -60,8 +60,9 @@ import logging
 import time
 from typing import Any
 
-from .client import OllamaClient
 from exceptions import ModelNotFoundError, ModelRouterError, ResponseParseError
+
+from .client import OllamaClient
 from .context import enforce_context_limit
 from .parsing import build_json_instruction, extract_json
 from .types import (
@@ -73,7 +74,6 @@ from .types import (
     ModelRequest,
     ModelResponse,
     RetryConfig,
-    ROLE_MACHINE_MAP,
     RoutingStrategy,
 )
 
@@ -114,7 +114,7 @@ class ModelRouter:
         server_config: MachineConfig | None = None,
         secondary_config: MachineConfig | None = None,
         retry_config: RetryConfig | None = None,
-        routing_strategy: "RoutingStrategy | None" = None,
+        routing_strategy: RoutingStrategy | None = None,
     ) -> None:
         # Use provided configs or fall back to environment-variable defaults
         self._server_cfg = server_config or MachineConfig.server_defaults()
@@ -140,9 +140,7 @@ class ModelRouter:
         pattern calls this automatically so you don't forget.
         """
         self._clients[Machine.SERVER] = OllamaClient(self._server_cfg, self._retry)
-        self._clients[Machine.SECONDARY] = OllamaClient(
-            self._secondary_cfg, self._retry
-        )
+        self._clients[Machine.SECONDARY] = OllamaClient(self._secondary_cfg, self._retry)
         logger.info(
             "ModelRouter started — server=%s  secondary=%s",
             self._server_cfg.base_url,
@@ -194,7 +192,10 @@ class ModelRouter:
         """
         logger.info(
             "ModelRouter hot-reload: Main=%s @ %s  Judge=%s @ %s",
-            main_model, main_url, judge_model, judge_url,
+            main_model,
+            main_url,
+            judge_model,
+            judge_url,
         )
         # Build new configs, keeping timeouts from the current configs.
         # keep_alive defaults to the existing config value so callers that
@@ -252,6 +253,7 @@ class ModelRouter:
             await router.warmup()   # optional, but cuts first-request latency
         """
         import asyncio as _asyncio
+
         results = await _asyncio.gather(
             self._clients[Machine.SERVER].warmup(),
             self._clients[Machine.SECONDARY].warmup(),
@@ -262,7 +264,7 @@ class ModelRouter:
             Machine.SECONDARY: results[1] is True,
         }
 
-    async def __aenter__(self) -> "ModelRouter":
+    async def __aenter__(self) -> ModelRouter:
         """Called at the start of an ``async with ModelRouter() as router:`` block."""
         await self.start()
         return self
@@ -367,7 +369,9 @@ class ModelRouter:
             if fallback:
                 logger.warning(
                     "Model '%s' not found on %s — retrying with fallback '%s'",
-                    config.model, machine.value, fallback,
+                    config.model,
+                    machine.value,
+                    fallback,
                 )
                 request.resolved_model = fallback
                 raw_response = await client.chat(
@@ -389,8 +393,7 @@ class ModelRouter:
             structured, strategy = extract_json(raw_text)
             if structured is None:
                 logger.warning(
-                    "JSON extraction failed for %s response (role=%s). "
-                    "Returning raw_text only.",
+                    "JSON extraction failed for %s response (role=%s). Returning raw_text only.",
                     machine.value,
                     request.agent_role.value,
                 )

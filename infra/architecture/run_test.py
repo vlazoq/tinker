@@ -130,9 +130,7 @@ LOOP_2_UPDATE = {
         {
             "name": "Orchestrator",
             "description": "Drives the macro reasoning loop; coordinates all subsystems.",
-            "responsibilities": [
-                "Evaluate termination signal from Anti-Stagnation System"
-            ],
+            "responsibilities": ["Evaluate termination signal from Anti-Stagnation System"],
             "subsystem": "control",
             "confidence_value": 0.60,
             "confidence_note": "Termination logic clarified",
@@ -395,9 +393,7 @@ def run():
         assert_eq("rejected alt count", len(s3.rejected_alternatives), 2)
 
         asm = s3.component_by_name("Architecture State Manager")
-        assert_true(
-            "ASM confidence > 0.70", asm is not None and asm.confidence.value > 0.70
-        )
+        assert_true("ASM confidence > 0.70", asm is not None and asm.confidence.value > 0.70)
         assert_true("ASM evidence_count > 1", asm.confidence.evidence_count > 1)
 
         # All accepted decisions

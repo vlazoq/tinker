@@ -65,14 +65,16 @@ async def _run(args: argparse.Namespace) -> int:
     # Default: print status
     branch = await agent.git.current_branch()
     status = await agent.git.status()
-    print(f"Fritz ready.")
+    print("Fritz ready.")
     print(f"  Branch:   {branch}")
     print(f"  Status:   {status.stdout.strip() or 'clean'}")
     print(f"  GitHub:   {'enabled' if config.github_enabled else 'disabled'}")
     print(f"  Gitea:    {'enabled' if config.gitea_enabled else 'disabled'}")
     print(f"  Identity: {config.identity_mode} ({config.git_name} <{config.git_email}>)")
     pp = config.push_policy
-    print(f"  Policy:   push_to_main={pp.allow_push_to_main} require_pr={pp.require_pr} require_ci={pp.require_ci_green}")
+    print(
+        f"  Policy:   push_to_main={pp.allow_push_to_main} require_pr={pp.require_pr} require_ci={pp.require_ci_green}"
+    )
     return 0
 
 

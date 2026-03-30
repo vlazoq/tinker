@@ -23,46 +23,46 @@ from __future__ import annotations
 
 import inspect
 import time
+
 import pytest
 
 import exceptions as exc_mod
 from exceptions import (
-    TinkerError,
+    # Architecture
+    ArchitectureError,
+    CircuitBreakerOpenError,
+    ConfigurationError,
+    # Context
+    ContextError,
+    DependencyCycleError,
+    # Experiments
+    ExperimentError,
     # LLM
     LLMError,
-    ModelClientError,
-    ModelConnectionError,
-    ModelTimeoutError,
-    ModelRateLimitError,
-    ModelServerError,
-    ResponseParseError,
-    ModelRouterError,
-    PromptBuilderError,
-    # Orchestrator
-    OrchestratorError,
-    MicroLoopError,
-    ConfigurationError,
     # Memory
     MemoryStoreError,
-    # Tasks
-    TaskError,
-    DependencyCycleError,
+    MicroLoopError,
+    ModelClientError,
+    ModelConnectionError,
+    ModelRateLimitError,
+    ModelRouterError,
+    ModelServerError,
+    ModelTimeoutError,
+    # Orchestrator
+    OrchestratorError,
+    PromptBuilderError,
     # Resilience
     ResilienceError,
-    CircuitBreakerOpenError,
+    ResponseParseError,
+    # Tasks
+    TaskError,
+    TinkerError,
     # Tools
     ToolError,
     ToolNotFoundError,
-    # Context
-    ContextError,
-    # Architecture
-    ArchitectureError,
     # Validation
     ValidationError,
-    # Experiments
-    ExperimentError,
 )
-
 
 # ---------------------------------------------------------------------------
 # 1. __all__ completeness
@@ -99,9 +99,7 @@ class TestAllCompleteness:
     def test_all_names_are_importable(self):
         """Every name in __all__ must actually exist as an attribute."""
         missing = [n for n in exc_mod.__all__ if not hasattr(exc_mod, n)]
-        assert not missing, (
-            f"Names in __all__ that do not exist in exceptions.py: {missing}"
-        )
+        assert not missing, f"Names in __all__ that do not exist in exceptions.py: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +262,7 @@ class TestTinkerErrorBase:
         assert "trace_id" in err.context
 
     def test_is_catchable_as_exception(self):
-        with pytest.raises(Exception):
+        with pytest.raises(Exception, match="test"):
             raise TinkerError("test")
 
     def test_is_catchable_as_tinker_error(self):

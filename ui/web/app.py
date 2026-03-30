@@ -107,16 +107,16 @@ app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static"
 
 
 # ── Include all route modules ─────────────────────────────────────────────────
-from ui.web.routes.health import router as health_router
-from ui.web.routes.config import router as config_router
-from ui.web.routes.orchestrator_ctrl import router as orch_router
-from ui.web.routes.tasks import router as tasks_router
 from ui.web.routes.audit import router as audit_router
-from ui.web.routes.fritz import router as fritz_router
-from ui.web.routes.models import router as models_router
 from ui.web.routes.backups import router as backups_router
-from ui.web.routes.streaming import router as streaming_router
+from ui.web.routes.config import router as config_router
+from ui.web.routes.fritz import router as fritz_router
+from ui.web.routes.health import router as health_router
+from ui.web.routes.models import router as models_router
+from ui.web.routes.orchestrator_ctrl import router as orch_router
 from ui.web.routes.reviews import router as reviews_router
+from ui.web.routes.streaming import router as streaming_router
+from ui.web.routes.tasks import router as tasks_router
 from ui.web.routes.workflow import router as workflow_router
 
 app.include_router(health_router)
@@ -143,10 +143,10 @@ async def index(request: Request):
 #   _publisher, notify_state_change, app
 # Tests import: app, api_logs_stream
 from ui.web.routes.streaming import (  # noqa: F401
-    _publisher,
-    notify_state_change,
     StatePublisher,
+    _publisher,
     api_logs_stream,
+    notify_state_change,
 )
 
 

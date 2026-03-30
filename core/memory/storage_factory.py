@@ -71,9 +71,7 @@ def create_storage_adapter(
         from core.memory.storage import RedisAdapter
 
         return RedisAdapter(
-            url=kwargs.get("url") or os.getenv(
-                "TINKER_REDIS_URL", "redis://localhost:6379"
-            ),
+            url=kwargs.get("url") or os.getenv("TINKER_REDIS_URL", "redis://localhost:6379"),
             default_ttl=kwargs.get(
                 "default_ttl",
                 int(os.getenv("TINKER_REDIS_TTL", "3600")),
@@ -84,18 +82,16 @@ def create_storage_adapter(
         from core.memory.storage import DuckDBAdapter
 
         return DuckDBAdapter(
-            path=kwargs.get("path") or kwargs.get("db_path") or os.getenv(
-                "TINKER_DUCKDB_PATH", "tinker_session.duckdb"
-            ),
+            path=kwargs.get("path")
+            or kwargs.get("db_path")
+            or os.getenv("TINKER_DUCKDB_PATH", "tinker_session.duckdb"),
         )
 
     if key in ("chroma", "chromadb"):
         from core.memory.storage import ChromaAdapter
 
         return ChromaAdapter(
-            path=kwargs.get("path") or os.getenv(
-                "TINKER_CHROMA_PATH", "./chroma_db"
-            ),
+            path=kwargs.get("path") or os.getenv("TINKER_CHROMA_PATH", "./chroma_db"),
             collection_name=kwargs.get("collection_name", "tinker_research"),
         )
 
@@ -103,16 +99,16 @@ def create_storage_adapter(
         from core.memory.storage import SQLiteAdapter
 
         return SQLiteAdapter(
-            path=kwargs.get("path") or kwargs.get("db_path") or os.getenv(
-                "TINKER_SQLITE_PATH", "tinker_tasks.sqlite"
-            ),
+            path=kwargs.get("path")
+            or kwargs.get("db_path")
+            or os.getenv("TINKER_SQLITE_PATH", "tinker_tasks.sqlite"),
         )
 
     if key == "trino":
         # Trino is an optional backend — requires ``pip install trino``.
         # If the package is missing, fall back to DuckDB with a warning.
         try:
-            from core.memory.trino_store import TrinoSessionStore, TrinoConfig
+            from core.memory.trino_store import TrinoConfig, TrinoSessionStore
 
             config = TrinoConfig.from_env()
             return TrinoSessionStore(config=config)
@@ -127,9 +123,8 @@ def create_storage_adapter(
             from core.memory.storage import DuckDBAdapter
 
             return DuckDBAdapter(
-                path=kwargs.get("path") or os.getenv(
-                    "TINKER_DUCKDB_PATH", "tinker_session.duckdb"
-                ),
+                path=kwargs.get("path")
+                or os.getenv("TINKER_DUCKDB_PATH", "tinker_session.duckdb"),
             )
 
     raise ValueError(

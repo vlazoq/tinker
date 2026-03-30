@@ -28,11 +28,11 @@ duration_seconds: Wall-clock time taken.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 
 
-class ResultStatus(str, Enum):
+class ResultStatus(StrEnum):
     """
     The outcome of a Minion's run.
 
@@ -140,9 +140,7 @@ class MinionResult:
     # Metadata
     iterations: int = 1
     duration_seconds: float = 0.0
-    completed_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    completed_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     raw_llm_output: str = ""  # full LLM response (for debugging)
 
     @property

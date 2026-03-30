@@ -109,7 +109,7 @@ class TaskGenerator:
         self,
         title: str,
         description: str,
-        subsystem: "Subsystem | str" = "cross_cutting",
+        subsystem: Subsystem | str = "cross_cutting",
         artifact_path: str = "",
         tinker_task_id: str = "",
     ) -> Task:
@@ -190,9 +190,7 @@ class TaskGenerator:
         subsystem = self._parse_subsystem(raw.get("subsystem", source_subsystem.value))
         deps = self._parse_str_list(raw.get("dependencies", []))
         tags = self._parse_str_list(raw.get("tags", []))
-        metadata = (
-            raw.get("metadata", {}) if isinstance(raw.get("metadata"), dict) else {}
-        )
+        metadata = raw.get("metadata", {}) if isinstance(raw.get("metadata"), dict) else {}
         conf_gap = self._clamp_float(
             raw.get("confidence_gap", self.default_confidence_gap), 0.0, 1.0
         )

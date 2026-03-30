@@ -74,11 +74,12 @@ Usage
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -151,8 +152,8 @@ class LineageTracker:
         child_id: str,
         child_type: str,
         operation: str,
-        metadata: Optional[dict] = None,
-    ) -> Optional[str]:
+        metadata: dict | None = None,
+    ) -> str | None:
         """
         Record a parent→child derivation edge with cycle detection.
 
@@ -192,7 +193,7 @@ class LineageTracker:
             return None
 
         edge_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         async with self._lock:
             try:
@@ -269,9 +270,7 @@ class LineageTracker:
             logger.error("LineageTracker.get_children failed: %s", exc)
             return []
 
-    async def get_full_ancestry(
-        self, entity_id: str, max_depth: int = 10
-    ) -> list[dict]:
+    async def get_full_ancestry(self, entity_id: str, max_depth: int = 10) -> list[dict]:
         """
         Iteratively get all ancestors of an entity up to ``max_depth`` levels.
 
@@ -451,8 +450,6 @@ class LineageTracker:
         """Convert an aiosqlite Row to a plain dict with parsed metadata."""
         d = dict(row)
         if d.get("metadata"):
-            try:
+            with contextlib.suppress(Exception):
                 d["metadata"] = json.loads(d["metadata"])
-            except Exception:
-                pass
         return d

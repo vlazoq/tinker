@@ -48,7 +48,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -172,8 +172,7 @@ class ArtifactWriterTool(BaseTool):
                 "required": ["title", "content", "artifact_type", "task_id"],
             },
             returns=(
-                "Dict: {artifact_id, file_path, task_id, artifact_type, "
-                "created_at, size_bytes}"
+                "Dict: {artifact_id, file_path, task_id, artifact_type, created_at, size_bytes}"
             ),
         )
 
@@ -334,7 +333,7 @@ class ArtifactWriterTool(BaseTool):
         artifact_type: ArtifactType,
         task_id: str,
         tags: list[str] | None = None,
-        format: str = "markdown",  # noqa: A002  (shadowing built-in "format" is intentional here)
+        format: str = "markdown",
         sources: list[str] | None = None,
         **_: Any,  # absorb any unexpected kwargs
     ) -> dict:
@@ -366,7 +365,7 @@ class ArtifactWriterTool(BaseTool):
         tags = tags or []
         sources = sources or []
         # Use UTC time for all timestamps — consistent regardless of server location.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ts = now.isoformat()  # e.g. "2024-03-15T14:23:01.456789+00:00"
 
         # Generate the unique ID for this artifact.

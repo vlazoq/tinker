@@ -10,15 +10,10 @@ All tests use mocks — no real Ollama, SearXNG, or external services needed.
 from __future__ import annotations
 
 import asyncio
-import json
-import os
 import sqlite3
-import tempfile
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -44,9 +39,9 @@ def _mock_memory_search_results(score: float = 0.9, content: str = "cached resea
 
 
 class TestResearchEnhancer:
-
     def _make_enhancer(self, router=None, memory=None, **kwargs):
         from core.tools.research_enhancer import ResearchEnhancer
+
         return ResearchEnhancer(
             router=router,
             memory_manager=memory,
@@ -138,7 +133,9 @@ class TestResearchEnhancer:
     async def test_summarize_content(self):
         """Mock router.complete_text, verify summarization."""
         router = MagicMock()
-        resp = _mock_router_response(raw_text="A concise summary of the research content that is long enough to pass the 50 char check.")
+        resp = _mock_router_response(
+            raw_text="A concise summary of the research content that is long enough to pass the 50 char check."
+        )
         router.complete_text = AsyncMock(return_value=resp)
 
         enhancer = self._make_enhancer(router=router, summarize=True, summarize_threshold=100)
@@ -198,9 +195,7 @@ class TestResearchEnhancer:
         # assess response (sufficient on first check)
         assess_resp = _mock_router_response(raw_text="SUFFICIENT")
 
-        router.complete_text = AsyncMock(
-            side_effect=[rewrite_resp, summarize_resp, assess_resp]
-        )
+        router.complete_text = AsyncMock(side_effect=[rewrite_resp, summarize_resp, assess_resp])
 
         # Memory miss
         memory = MagicMock()
@@ -217,10 +212,12 @@ class TestResearchEnhancer:
         )
 
         # Mock research function
-        research_fn = AsyncMock(return_value={
-            "result": "X" * 200,
-            "sources": ["http://example.com"],
-        })
+        research_fn = AsyncMock(
+            return_value={
+                "result": "X" * 200,
+                "sources": ["http://example.com"],
+            }
+        )
 
         result = await enhancer.enhanced_research("my gap", research_fn)
 
@@ -238,19 +235,21 @@ class TestResearchEnhancer:
 
 
 class TestResearchTeam:
-
     def _make_team(self, tool_layer=None, **kwargs):
         from agents.research_team import ResearchTeam
+
         return ResearchTeam(tool_layer=tool_layer or MagicMock(), **kwargs)
 
     @pytest.mark.asyncio
     async def test_research_gaps_parallel(self):
         """Mock tool_layer.research, verify concurrent execution."""
         tool_layer = MagicMock()
-        tool_layer.research = AsyncMock(return_value={
-            "result": "Research content here",
-            "sources": ["http://example.com"],
-        })
+        tool_layer.research = AsyncMock(
+            return_value={
+                "result": "Research content here",
+                "sources": ["http://example.com"],
+            }
+        )
 
         team = self._make_team(tool_layer=tool_layer, max_concurrent=3)
         gaps = ["gap one", "gap two", "gap three"]
@@ -263,10 +262,12 @@ class TestResearchTeam:
     async def test_research_gaps_dedup(self):
         """Duplicate gaps should be deduplicated."""
         tool_layer = MagicMock()
-        tool_layer.research = AsyncMock(return_value={
-            "result": "content",
-            "sources": [],
-        })
+        tool_layer.research = AsyncMock(
+            return_value={
+                "result": "content",
+                "sources": [],
+            }
+        )
 
         team = self._make_team(tool_layer=tool_layer)
         # "Gap One" and "gap one" normalize to the same thing
@@ -281,10 +282,12 @@ class TestResearchTeam:
     async def test_research_gaps_cache(self):
         """Second call with same gap returns cached result."""
         tool_layer = MagicMock()
-        tool_layer.research = AsyncMock(return_value={
-            "result": "cached content",
-            "sources": [],
-        })
+        tool_layer.research = AsyncMock(
+            return_value={
+                "result": "cached content",
+                "sources": [],
+            }
+        )
 
         team = self._make_team(tool_layer=tool_layer)
 
@@ -313,7 +316,6 @@ class TestResearchTeam:
 
 
 class TestHumanJudge:
-
     def _make_judge(self, judge_mode="llm", **config_overrides):
         from agents.human_judge import HumanJudge
 
@@ -391,16 +393,20 @@ class TestHumanJudge:
         judge = self._make_judge()
 
         # Add directives
-        judge.sticky_directives.append({
-            "directive": "Use Redis for caching",
-            "added_at": 1000.0,
-            "review_id": "r1",
-        })
-        judge.sticky_directives.append({
-            "directive": "Avoid microservices",
-            "added_at": 1001.0,
-            "review_id": "r2",
-        })
+        judge.sticky_directives.append(
+            {
+                "directive": "Use Redis for caching",
+                "added_at": 1000.0,
+                "review_id": "r1",
+            }
+        )
+        judge.sticky_directives.append(
+            {
+                "directive": "Avoid microservices",
+                "added_at": 1001.0,
+                "review_id": "r2",
+            }
+        )
 
         active = judge.get_active_directives()
         assert len(active) == 2
@@ -424,11 +430,13 @@ class TestHumanJudge:
     def test_get_context_block_with_directives(self):
         """Context block includes directives."""
         judge = self._make_judge()
-        judge.sticky_directives.append({
-            "directive": "Focus on performance",
-            "added_at": 1000.0,
-            "review_id": "r1",
-        })
+        judge.sticky_directives.append(
+            {
+                "directive": "Focus on performance",
+                "added_at": 1000.0,
+                "review_id": "r1",
+            }
+        )
         block = judge.get_context_block()
         assert "HUMAN DIRECTIVES" in block
         assert "Focus on performance" in block
@@ -440,9 +448,9 @@ class TestHumanJudge:
 
 
 class TestAutoMemory:
-
     def _make_auto_memory(self, tmpdir):
         from core.memory.auto_memory import AutoMemory
+
         return AutoMemory(
             memory_dir=str(tmpdir),
             high_score_threshold=0.85,
@@ -536,17 +544,36 @@ class TestAutoMemory:
         """get_lessons filters by subsystem and includes general."""
         am = self._make_auto_memory(tmp_path)
 
-        from core.memory.auto_memory import MemoryEntry
         from dataclasses import asdict
 
+        from core.memory.auto_memory import MemoryEntry
+
         am._state.entries = [
-            asdict(MemoryEntry(category="insight", subsystem="caching", content="cache tip", source_event="test")),
-            asdict(MemoryEntry(category="insight", subsystem="auth", content="auth tip", source_event="test")),
-            asdict(MemoryEntry(category="insight", subsystem="general", content="general tip", source_event="test")),
+            asdict(
+                MemoryEntry(
+                    category="insight",
+                    subsystem="caching",
+                    content="cache tip",
+                    source_event="test",
+                )
+            ),
+            asdict(
+                MemoryEntry(
+                    category="insight", subsystem="auth", content="auth tip", source_event="test"
+                )
+            ),
+            asdict(
+                MemoryEntry(
+                    category="insight",
+                    subsystem="general",
+                    content="general tip",
+                    source_event="test",
+                )
+            ),
         ]
 
         lessons = am.get_lessons(subsystem="caching")
-        contents = [l["content"] for l in lessons]
+        contents = [lesson["content"] for lesson in lessons]
         assert "cache tip" in contents
         assert "general tip" in contents
         assert "auth tip" not in contents
@@ -558,19 +585,24 @@ class TestAutoMemory:
 
 
 class TestWebhookDispatcher:
-
     def _make_dispatcher(self, endpoints=None, **kwargs):
         from core.tools.webhook import WebhookDispatcher
+
         return WebhookDispatcher(endpoints=endpoints or [], **kwargs)
 
     def test_attach_subscribes_specific_events(self):
         """Subscribe to listed events."""
-        from core.tools.webhook import WebhookDispatcher
         from core.events import EventType
+        from core.tools.webhook import WebhookDispatcher
 
-        dispatcher = WebhookDispatcher(endpoints=[
-            {"url": "http://localhost:5678/hook", "events": ["micro_loop_completed", "stagnation_detected"]},
-        ])
+        dispatcher = WebhookDispatcher(
+            endpoints=[
+                {
+                    "url": "http://localhost:5678/hook",
+                    "events": ["micro_loop_completed", "stagnation_detected"],
+                },
+            ]
+        )
 
         bus = MagicMock()
         dispatcher.attach(bus)
@@ -585,9 +617,11 @@ class TestWebhookDispatcher:
         """Wildcard subscription."""
         from core.tools.webhook import WebhookDispatcher
 
-        dispatcher = WebhookDispatcher(endpoints=[
-            {"url": "http://localhost:5678/hook", "events": ["*"]},
-        ])
+        dispatcher = WebhookDispatcher(
+            endpoints=[
+                {"url": "http://localhost:5678/hook", "events": ["*"]},
+            ]
+        )
 
         bus = MagicMock()
         dispatcher.attach(bus)
@@ -599,12 +633,15 @@ class TestWebhookDispatcher:
     async def test_fire_sends_post(self):
         """Mock httpx, verify POST sent with correct payload."""
         import httpx as _httpx
-        from core.tools.webhook import WebhookDispatcher
-        from core.events import Event, EventType
 
-        dispatcher = WebhookDispatcher(endpoints=[
-            {"url": "http://localhost:5678/hook", "events": ["*"]},
-        ])
+        from core.events import Event, EventType
+        from core.tools.webhook import WebhookDispatcher
+
+        dispatcher = WebhookDispatcher(
+            endpoints=[
+                {"url": "http://localhost:5678/hook", "events": ["*"]},
+            ]
+        )
 
         event = Event(
             type=EventType.MICRO_LOOP_COMPLETED,
@@ -633,12 +670,15 @@ class TestWebhookDispatcher:
     async def test_fire_handles_error(self):
         """Network error increments failed counter."""
         import httpx as _httpx
-        from core.tools.webhook import WebhookDispatcher
-        from core.events import Event, EventType
 
-        dispatcher = WebhookDispatcher(endpoints=[
-            {"url": "http://localhost:5678/hook", "events": ["*"]},
-        ])
+        from core.events import Event, EventType
+        from core.tools.webhook import WebhookDispatcher
+
+        dispatcher = WebhookDispatcher(
+            endpoints=[
+                {"url": "http://localhost:5678/hook", "events": ["*"]},
+            ]
+        )
 
         event = Event(
             type=EventType.MICRO_LOOP_COMPLETED,
@@ -665,7 +705,6 @@ class TestWebhookDispatcher:
 
 
 class TestWebhookTool:
-
     def test_webhook_tool_schema(self):
         """Verify schema name and parameters."""
         from core.tools.webhook import WebhookTool
@@ -683,6 +722,7 @@ class TestWebhookTool:
     async def test_webhook_tool_execute(self):
         """Mock httpx, verify POST."""
         import httpx as _httpx
+
         from core.tools.webhook import WebhookTool
 
         tool = WebhookTool(timeout=5.0)
@@ -713,7 +753,6 @@ class TestWebhookTool:
 
 
 class TestWorkflowRoutes:
-
     def test_build_mermaid_empty_state(self):
         """Empty state returns valid mermaid."""
         from ui.web.routes.workflow import _build_mermaid
@@ -770,7 +809,6 @@ class TestWorkflowRoutes:
 
 
 class TestFileReaderTool:
-
     @pytest.mark.asyncio
     async def test_file_reader_allowed(self, tmp_path):
         """Reading within allowed dir succeeds."""
@@ -813,7 +851,6 @@ class TestFileReaderTool:
 
 
 class TestShellTool:
-
     @pytest.mark.asyncio
     async def test_shell_tool_whitelist_allowed(self):
         """Whitelisted commands execute."""
@@ -847,7 +884,6 @@ class TestShellTool:
 
 
 class TestDatabaseQueryTool:
-
     @pytest.mark.asyncio
     async def test_database_query_select_only(self, tmp_path):
         """SELECT works, INSERT raises PermissionError."""

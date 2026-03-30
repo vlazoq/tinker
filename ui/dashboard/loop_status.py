@@ -33,9 +33,7 @@ class LoopStatusPanel(Widget):
         yield Static("", id="loop-updated")
 
     def refresh_state(self, state: TinkerState) -> None:
-        style, label = LEVEL_STYLE.get(
-            state.loop_level, ("white", str(state.loop_level))
-        )
+        style, label = LEVEL_STYLE.get(state.loop_level, ("white", str(state.loop_level)))
 
         # Level line
         level_text = Text()

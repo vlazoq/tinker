@@ -9,18 +9,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 
 import pytest
 
 from tinker_platform.experiments.offline_eval import (
     EvalCase,
-    EvalSet,
     EvalReport,
     EvalResult,
+    EvalSet,
     OfflineEvaluator,
 )
-
 
 # ---------------------------------------------------------------------------
 # EvalCase
@@ -58,8 +56,7 @@ class TestEvalCase:
 class TestEvalSet:
     def _make_set(self, n: int = 3, tags=None) -> EvalSet:
         cases = [
-            EvalCase(task={"i": i}, tags=tags or [], expected_output=f"out{i}")
-            for i in range(n)
+            EvalCase(task={"i": i}, tags=tags or [], expected_output=f"out{i}") for i in range(n)
         ]
         return EvalSet(name="test_set", cases=cases)
 
@@ -80,10 +77,7 @@ class TestEvalSet:
         assert len(filtered.cases) == 0
 
     def test_from_file_to_file_roundtrip(self, tmp_path):
-        cases = [
-            EvalCase(task={"x": i}, expected_output=f"res{i}", tags=["t"])
-            for i in range(4)
-        ]
+        cases = [EvalCase(task={"x": i}, expected_output=f"res{i}", tags=["t"]) for i in range(4)]
         original = EvalSet(name="my_set", cases=cases)
         path = str(tmp_path / "eval.json")
         original.to_file(path)
@@ -91,16 +85,14 @@ class TestEvalSet:
         loaded = EvalSet.from_file(path)
         assert loaded.name == "my_set"
         assert len(loaded.cases) == 4
-        for orig, reloaded in zip(cases, loaded.cases):
+        for orig, reloaded in zip(cases, loaded.cases, strict=False):
             assert reloaded.id == orig.id
             assert reloaded.expected_output == orig.expected_output
             assert reloaded.tags == orig.tags
 
     def test_from_file_bare_array(self, tmp_path):
         """from_file handles a bare JSON array (no 'name' key)."""
-        cases_data = [
-            {"id": "a", "task": {"x": 1}, "expected_output": "y", "tags": []}
-        ]
+        cases_data = [{"id": "a", "task": {"x": 1}, "expected_output": "y", "tags": []}]
         path = str(tmp_path / "bare.json")
         with open(path, "w") as fh:
             json.dump(cases_data, fh)
@@ -118,8 +110,7 @@ class TestEvalSet:
 class TestEvalReport:
     def _report(self, scores: list[float]) -> EvalReport:
         results = [
-            EvalResult(case_id=str(i), actual_output="x", score=s)
-            for i, s in enumerate(scores)
+            EvalResult(case_id=str(i), actual_output="x", score=s) for i, s in enumerate(scores)
         ]
         return EvalReport(eval_set_name="test", results=results)
 
@@ -178,10 +169,7 @@ class TestJaccardScorer:
 
 class TestOfflineEvaluator:
     def _make_eval_set(self, n: int = 3) -> EvalSet:
-        cases = [
-            EvalCase(task={"id": i}, expected_output="hello world")
-            for i in range(n)
-        ]
+        cases = [EvalCase(task={"id": i}, expected_output="hello world") for i in range(n)]
         return EvalSet(name="test", cases=cases)
 
     @pytest.mark.asyncio

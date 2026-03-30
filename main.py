@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import os
 import sys
@@ -99,14 +100,14 @@ def _make_dashboard_patch(orch_state_dict: dict) -> dict:
 
 async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     """Everything from here runs inside asyncio's event loop."""
-    from bootstrap.health import asyncio_exception_handler, run_health_check
     from bootstrap.components import build_real_components, build_stub_components
     from bootstrap.enterprise_stack import build_enterprise_stack
+    from bootstrap.health import asyncio_exception_handler, run_health_check
 
     asyncio.get_event_loop().set_exception_handler(asyncio_exception_handler)
 
-    from runtime.orchestrator.orchestrator import Orchestrator
     from runtime.orchestrator.config import OrchestratorConfig
+    from runtime.orchestrator.orchestrator import Orchestrator
 
     config = OrchestratorConfig(
         macro_interval_seconds=float(os.getenv("TINKER_MACRO_INTERVAL", str(4 * 3600))),
@@ -246,7 +247,9 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     # If the web UI is not running in-process, this is a no-op.
     _web_notify: object = None
     try:
-        from ui.web.app import _publisher as _web_publisher, notify_state_change as _notify_web
+        from ui.web.app import _publisher as _web_publisher
+        from ui.web.app import notify_state_change as _notify_web
+
         _web_notify = (_web_publisher, _notify_web)
     except ImportError:
         pass
@@ -289,17 +292,15 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
 
         _self_improvement_engine = SelfImprovementEngine(
             baseline_temperature=float(os.getenv("TINKER_TEMPERATURE", "0.7")),
-            self_improve_branch=os.getenv(
-                "TINKER_SELF_IMPROVE_BRANCH", "tinker/self-improve"
-            ),
+            self_improve_branch=os.getenv("TINKER_SELF_IMPROVE_BRANCH", "tinker/self-improve"),
             enabled=True,
         )
         logger.info("Self-improvement engine enabled")
 
     # ── MCP ───────────────────────────────────────────────────────────────────
     try:
-        from core.mcp.config import MCPConfig as _MCPConfig
         from core.mcp.bridge import MCPBridge as _MCPBridge
+        from core.mcp.config import MCPConfig as _MCPConfig
 
         _mcp_config = _MCPConfig.from_env()
         if _mcp_config.enabled:
@@ -339,7 +340,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
             if enterprise.get("health_server"):
                 await enterprise["health_server"].stop()
 
-            try:
+            with contextlib.suppress(Exception):
                 await enterprise["audit_log"].log(
                     event_type=AuditEventType.SYSTEM_STOP,
                     actor="main",
@@ -351,8 +352,6 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
                         "macro_loops": orchestrator.state.total_macro_loops,
                     },
                 )
-            except Exception:
-                pass
 
             if router is not None:
                 await router.shutdown()
@@ -381,7 +380,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
             orchestrator.request_shutdown()
             try:
                 await asyncio.wait_for(orch_task, timeout=5.0)
-            except (asyncio.TimeoutError, asyncio.CancelledError):
+            except (TimeoutError, asyncio.CancelledError):
                 orch_task.cancel()
     else:
         await _run_orchestrator()
@@ -407,7 +406,8 @@ Press Ctrl-C to stop.  Dashboard in a separate terminal: python -m dashboard
 """,
     )
     parser.add_argument(
-        "--problem", "-p",
+        "--problem",
+        "-p",
         default="Design a robust, scalable software architecture",
         help="The architectural design problem Tinker will work on.",
     )

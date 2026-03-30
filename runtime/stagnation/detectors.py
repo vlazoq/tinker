@@ -18,7 +18,7 @@ import logging
 import math
 from collections import Counter, deque
 from dataclasses import dataclass, field
-from typing import Any, Deque, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from .config import (
     CritiqueCollapseConfig,
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 class DetectionResult:
     stagnation_type: StagnationType
     severity: float  # 0.0 – 1.0
-    evidence: Dict[str, Any] = field(default_factory=dict)
+    evidence: dict[str, Any] = field(default_factory=dict)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -62,20 +62,18 @@ class SemanticLoopDetector:
     def __init__(self, cfg: SemanticLoopConfig, backend: EmbeddingBackend):
         self.cfg = cfg
         self.backend = backend
-        self._window: Deque[Tuple[int, List[float]]] = deque(
+        self._window: deque[tuple[int, list[float]]] = deque(
             maxlen=cfg.window_size
         )  # (loop_index, embedding)
 
-    def check(self, ctx: MicroLoopContext) -> Optional[DetectionResult]:
+    def check(self, ctx: MicroLoopContext) -> DetectionResult | None:
         if not ctx.output_text:
             return None
 
         try:
             vec = self.backend.embed(ctx.output_text)
         except Exception as exc:
-            logger.warning(
-                "SemanticLoopDetector: embedding failed (skipping check): %s", exc
-            )
+            logger.warning("SemanticLoopDetector: embedding failed (skipping check): %s", exc)
             return None
         self._window.append((ctx.loop_index, vec))
 
@@ -83,7 +81,7 @@ class SemanticLoopDetector:
             return None
 
         pairs = list(itertools.combinations(self._window, 2))
-        breaches: List[Tuple[int, int, float]] = []
+        breaches: list[tuple[int, int, float]] = []
 
         for (idx_a, vec_a), (idx_b, vec_b) in pairs:
             # Ensure vectors are the same dimension before comparing
@@ -129,9 +127,9 @@ class SubsystemFixationDetector:
 
     def __init__(self, cfg: SubsystemFixationConfig):
         self.cfg = cfg
-        self._window: Deque[str] = deque(maxlen=cfg.window_size)
+        self._window: deque[str] = deque(maxlen=cfg.window_size)
 
-    def check(self, ctx: MicroLoopContext) -> Optional[DetectionResult]:
+    def check(self, ctx: MicroLoopContext) -> DetectionResult | None:
         if not ctx.subsystem_tag:
             return None
 
@@ -185,9 +183,9 @@ class CritiqueCollapseDetector:
 
     def __init__(self, cfg: CritiqueCollapseConfig):
         self.cfg = cfg
-        self._scores: Deque[float] = deque(maxlen=cfg.window_size)
+        self._scores: deque[float] = deque(maxlen=cfg.window_size)
 
-    def check(self, ctx: MicroLoopContext) -> Optional[DetectionResult]:
+    def check(self, ctx: MicroLoopContext) -> DetectionResult | None:
         if ctx.critic_score is None:
             return None
 
@@ -203,9 +201,7 @@ class CritiqueCollapseDetector:
             return None
 
         # Compute stddev to measure how "flat" the scores are
-        variance = sum((s - rolling_mean) ** 2 for s in self._scores) / len(
-            self._scores
-        )
+        variance = sum((s - rolling_mean) ** 2 for s in self._scores) / len(self._scores)
         std_dev = math.sqrt(variance)
 
         # Severity: higher excess + lower stddev → more severe
@@ -247,19 +243,19 @@ class ResearchSaturationDetector:
 
     def __init__(self, cfg: ResearchSaturationConfig):
         self.cfg = cfg
-        self._window: Deque[Tuple[int, Set[str]]] = deque(
+        self._window: deque[tuple[int, set[str]]] = deque(
             maxlen=cfg.window_size
         )  # (loop_index, url_set)
 
     @staticmethod
-    def _jaccard(a: Set[str], b: Set[str]) -> float:
+    def _jaccard(a: set[str], b: set[str]) -> float:
         if not a and not b:
             return 1.0
         if not a or not b:
             return 0.0
         return len(a & b) / len(a | b)
 
-    def check(self, ctx: MicroLoopContext) -> Optional[DetectionResult]:
+    def check(self, ctx: MicroLoopContext) -> DetectionResult | None:
         if not ctx.research_urls:
             return None
 
@@ -276,7 +272,7 @@ class ResearchSaturationDetector:
             return None
 
         # Consecutive-pair Jaccard scores
-        pairs = list(zip(self._window, list(self._window)[1:]))
+        pairs = list(zip(self._window, list(self._window)[1:], strict=False))
         jaccard_scores = [self._jaccard(a, b) for (_, a), (_, b) in pairs]
         avg_jaccard = sum(jaccard_scores) / len(jaccard_scores)
 
@@ -328,10 +324,10 @@ class TaskStarvationDetector:
 
     def __init__(self, cfg: TaskStarvationConfig):
         self.cfg = cfg
-        self._net_history: Deque[int] = deque(maxlen=cfg.window_size)
+        self._net_history: deque[int] = deque(maxlen=cfg.window_size)
         self._consecutive_negative: int = 0
 
-    def check(self, ctx: MicroLoopContext) -> Optional[DetectionResult]:
+    def check(self, ctx: MicroLoopContext) -> DetectionResult | None:
         if ctx.queue_depth is None:
             return None
 
@@ -348,9 +344,7 @@ class TaskStarvationDetector:
             self._consecutive_negative = 0
 
         depth_critical = queue_depth <= self.cfg.low_depth_threshold
-        rate_critical = (
-            self._consecutive_negative >= self.cfg.consecutive_negative_threshold
-        )
+        rate_critical = self._consecutive_negative >= self.cfg.consecutive_negative_threshold
 
         if not (depth_critical and rate_critical):
             return None

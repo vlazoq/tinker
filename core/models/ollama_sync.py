@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 from .library import ModelEntry
 
@@ -92,7 +91,7 @@ class OllamaSync:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_models: list[dict] = []
-        for url, result in zip(self._urls, results):
+        for url, result in zip(self._urls, results, strict=False):
             if isinstance(result, Exception):
                 logger.warning("OllamaSync: could not reach %s — %s", url, result)
                 continue
@@ -136,11 +135,10 @@ class OllamaSync:
 
         url = base_url.rstrip("/") + "/api/tags"
         timeout = aiohttp.ClientTimeout(total=self._timeout)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    raise RuntimeError(f"HTTP {resp.status} from {url}")
-                data = await resp.json()
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"HTTP {resp.status} from {url}")
+            data = await resp.json()
         return self._parse_tags(data, base_url)
 
     def _query_server_sync(self, base_url: str) -> list[dict]:
@@ -174,12 +172,19 @@ class OllamaSync:
             size_gb = round(size_bytes / 1_073_741_824, 2) if size_bytes else 0.0
 
             # Build a display name: "Qwen3 7.6B Q4_K_M"
-            parts = [p for p in [family.title() or name.split(":")[0].title(), param_size, quant] if p]
+            parts = [
+                p for p in [family.title() or name.split(":")[0].title(), param_size, quant] if p
+            ]
             display = " ".join(parts) if parts else name
 
             # Suggested library id: "qwen3-7b-192-168-1-10"
             slug = name.replace(":", "-").replace(".", "").replace("_", "-").lower()
-            host_slug = base_url.replace("http://", "").replace("https://", "").replace(":", "-").replace(".", "-")
+            host_slug = (
+                base_url.replace("http://", "")
+                .replace("https://", "")
+                .replace(":", "-")
+                .replace(".", "-")
+            )
             suggested_id = f"{slug}-{host_slug}"
 
             results.append(

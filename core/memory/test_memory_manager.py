@@ -19,28 +19,27 @@ import asyncio
 import os
 import tempfile
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
 
 from core.memory import (
-    MemoryManager,
     Artifact,
-    Task,
-    MemoryConfig,
     EmbeddingPipeline,
     MemoryCompressor,
+    MemoryConfig,
+    MemoryManager,
+    Task,
 )
-from core.memory.schemas import ArtifactType, TaskStatus, TaskPriority
+from core.memory.schemas import ArtifactType, TaskPriority, TaskStatus
 from core.memory.storage import (
-    DuckDBAdapter,
     ChromaAdapter,
-    SQLiteAdapter,
+    DuckDBAdapter,
     RedisAdapter,
+    SQLiteAdapter,
 )
-
 
 # ===========================================================================
 # Helpers / Fixtures
@@ -122,9 +121,7 @@ class TestDuckDBAdapter:
             ArtifactType.CODE,
             ArtifactType.ARCHITECTURE,
         ]:
-            await db.insert_artifact(
-                Artifact(content="x", artifact_type=t, session_id=SESSION_ID)
-            )
+            await db.insert_artifact(Artifact(content="x", artifact_type=t, session_id=SESSION_ID))
         arch = await db.get_recent(SESSION_ID, artifact_type="architecture")
         assert len(arch) == 2
         for row in arch:
@@ -132,18 +129,14 @@ class TestDuckDBAdapter:
 
     @pytest.mark.asyncio
     async def test_mark_archived(self, db):
-        artifacts = [
-            Artifact(content=f"artifact {i}", session_id=SESSION_ID) for i in range(4)
-        ]
+        artifacts = [Artifact(content=f"artifact {i}", session_id=SESSION_ID) for i in range(4)]
         for a in artifacts:
             await db.insert_artifact(a)
 
         ids = [artifacts[0].id, artifacts[1].id]
         await db.mark_archived(ids)
 
-        count_active = await db.count_session_artifacts(
-            SESSION_ID, include_archived=False
-        )
+        count_active = await db.count_session_artifacts(SESSION_ID, include_archived=False)
         count_all = await db.count_session_artifacts(SESSION_ID, include_archived=True)
         assert count_active == 2
         assert count_all == 4
@@ -151,12 +144,12 @@ class TestDuckDBAdapter:
     @pytest.mark.asyncio
     async def test_get_old_artifacts(self, db):
         old = Artifact(content="old data", session_id=SESSION_ID)
-        old.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+        old.created_at = datetime.now(UTC) - timedelta(hours=3)
         new = Artifact(content="new data", session_id=SESSION_ID)
         await db.insert_artifact(old)
         await db.insert_artifact(new)
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+        cutoff = datetime.now(UTC) - timedelta(hours=1)
         old_rows = await db.get_old_artifacts(SESSION_ID, older_than=cutoff)
         assert len(old_rows) == 1
         assert old_rows[0]["content"] == "old data"
@@ -194,7 +187,7 @@ class TestChromaAdapter:
                 "tags": "grpc",
                 "source": "test",
                 "task_id": "",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             },
         )
         results = await chroma.query(embedding=embedding, n_results=1)
@@ -216,7 +209,7 @@ class TestChromaAdapter:
                 "tags": "",
                 "source": "test",
                 "task_id": "",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             },
         )
         result = await chroma.get_by_id(note_id)
@@ -243,7 +236,7 @@ class TestChromaAdapter:
                     "tags": "",
                     "source": "test",
                     "task_id": "",
-                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "created_at": datetime.now(UTC).isoformat(),
                 },
             )
         query_emb = await embeddings.embed("software architecture patterns")
@@ -294,9 +287,7 @@ class TestSQLiteAdapter:
     @pytest.mark.asyncio
     async def test_get_by_status(self, db):
         for i in range(3):
-            await db.upsert_task(
-                Task(title=f"task {i}", description="...", session_id=SESSION_ID)
-            )
+            await db.upsert_task(Task(title=f"task {i}", description="...", session_id=SESSION_ID))
         await db.upsert_task(
             Task(
                 title="done",
@@ -352,7 +343,7 @@ class TestEmbeddingPipeline:
         texts = ["text one", "text two", "text three"]
         batch = await pipeline.embed_batch(texts)
         single = [await pipeline.embed(t) for t in texts]
-        for b, s in zip(batch, single):
+        for b, s in zip(batch, single, strict=False):
             assert b == s
 
     @pytest.mark.asyncio
@@ -402,9 +393,7 @@ class TestMemoryCompressor:
     async def test_no_compression_below_threshold(self, setup):
         compressor, duckdb, _, calls = setup
         for i in range(3):
-            await duckdb.insert_artifact(
-                Artifact(content=f"artifact {i}", session_id=SESSION_ID)
-            )
+            await duckdb.insert_artifact(Artifact(content=f"artifact {i}", session_id=SESSION_ID))
         archived = await compressor.maybe_compress(SESSION_ID)
         assert archived == 0
         assert len(calls) == 0
@@ -415,9 +404,7 @@ class TestMemoryCompressor:
         # Insert 8 artifacts — 3 over threshold of 5
         for i in range(8):
             await duckdb.insert_artifact(
-                Artifact(
-                    content=f"big artifact content number {i}", session_id=SESSION_ID
-                )
+                Artifact(content=f"big artifact content number {i}", session_id=SESSION_ID)
             )
         archived = await compressor.maybe_compress(SESSION_ID)
         assert archived > 0
@@ -428,16 +415,12 @@ class TestMemoryCompressor:
 
     @pytest.mark.asyncio
     async def test_force_compress_all(self, setup):
-        compressor, duckdb, chroma, _ = setup
+        compressor, duckdb, _chroma, _ = setup
         for i in range(4):
-            await duckdb.insert_artifact(
-                Artifact(content=f"data {i}", session_id=SESSION_ID)
-            )
+            await duckdb.insert_artifact(Artifact(content=f"data {i}", session_id=SESSION_ID))
         archived = await compressor.force_compress_all(SESSION_ID)
         assert archived == 4
-        active = await duckdb.count_session_artifacts(
-            SESSION_ID, include_archived=False
-        )
+        active = await duckdb.count_session_artifacts(SESSION_ID, include_archived=False)
         assert active == 2  # 2 summary artifacts (one per chunk of 2 originals)
 
 
@@ -464,7 +447,7 @@ class TestMemoryManagerIntegration:
         manager._connected = False
 
         # Real DuckDB, ChromaDB, SQLite
-        from core.memory.storage import DuckDBAdapter, ChromaAdapter, SQLiteAdapter
+        from core.memory.storage import ChromaAdapter, DuckDBAdapter, SQLiteAdapter
 
         manager._duckdb = DuckDBAdapter(config.duckdb_path)
         manager._chroma = ChromaAdapter(config.chroma_path, config.chroma_collection)
@@ -552,9 +535,7 @@ class TestMemoryManagerIntegration:
     async def test_get_recent_artifacts(self, mm):
         for i in range(5):
             atype = ArtifactType.CODE if i % 2 == 0 else ArtifactType.ANALYSIS
-            await mm.store_artifact(
-                f"content {i}", artifact_type=atype, auto_compress=False
-            )
+            await mm.store_artifact(f"content {i}", artifact_type=atype, auto_compress=False)
 
         all_recent = await mm.get_recent_artifacts(limit=10)
         assert len(all_recent) == 5
@@ -589,9 +570,7 @@ class TestMemoryManagerIntegration:
             "suitable for event sourcing.",
             topic="data-stores",
         )
-        results = await mm.search_research(
-            "ports and adapters domain isolation", n_results=2
-        )
+        results = await mm.search_research("ports and adapters domain isolation", n_results=2)
         # With stub embeddings semantic ranking is not guaranteed;
         # verify both stored docs are retrievable.
         assert len(results) == 2
@@ -753,7 +732,7 @@ async def run_smoke_test():
             fake_redis_client = None
             print("[!] fakeredis not installed — Redis tests skipped")
 
-        from core.memory.storage import DuckDBAdapter, ChromaAdapter, SQLiteAdapter
+        from core.memory.storage import ChromaAdapter, DuckDBAdapter, SQLiteAdapter
 
         duckdb = DuckDBAdapter(config.duckdb_path)
         chroma = ChromaAdapter(config.chroma_path, config.chroma_collection)
@@ -778,9 +757,7 @@ async def run_smoke_test():
             print(f"[✗] SQLite: {e}")
 
         # DuckDB round-trip
-        a = Artifact(
-            content="test artifact", session_id="smoke", artifact_type=ArtifactType.CODE
-        )
+        a = Artifact(content="test artifact", session_id="smoke", artifact_type=ArtifactType.CODE)
         await duckdb.insert_artifact(a)
         row = await duckdb.get_artifact(a.id)
         assert row and row["content"] == "test artifact"
@@ -799,7 +776,7 @@ async def run_smoke_test():
                 "tags": "",
                 "source": "smoke",
                 "task_id": "",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
             },
         )
         results = await chroma.query(emb, n_results=1)

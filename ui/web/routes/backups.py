@@ -6,7 +6,7 @@ import sys
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from ui.core import BASE_DIR, BACKUP_DIR, list_backups
+from ui.core import BACKUP_DIR, BASE_DIR, list_backups
 
 router = APIRouter()
 
@@ -37,7 +37,7 @@ async def api_backups_trigger():
         else:
             err = stderr.decode().strip() or "Backup failed (no output)."
             return JSONResponse({"ok": False, "error": err}, status_code=500)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return JSONResponse(
             {"ok": False, "error": "Backup timed out after 120s."}, status_code=504
         )

@@ -66,8 +66,7 @@ log = logging.getLogger(__name__)
 # DependencyCycleError is defined in the central exceptions module and
 # re-exported here so ``from runtime.tasks.resolver import DependencyCycleError``
 # continues to work.
-from exceptions import DependencyCycleError  # noqa: E402, F401  (intentional re-export)
-
+from exceptions import DependencyCycleError  # noqa: E402  (intentional re-export)
 
 # =============================================================================
 # DependencyResolver class
@@ -90,7 +89,7 @@ class DependencyResolver:
     # Public API
     # =========================================================================
 
-    def check_and_block(self, task: Task, registry: "TaskRegistry") -> Task:
+    def check_and_block(self, task: Task, registry: TaskRegistry) -> Task:
         """Check whether a task's prerequisites are all done; block if not.
 
         Call this right after creating a new task with dependencies.  If any
@@ -124,15 +123,13 @@ class DependencyResolver:
             task.metadata["blocking_deps"] = blocking
             task.touch()  # Update the updated_at timestamp
             registry.save(task)  # Persist the BLOCKED status
-            log.debug(
-                "Task '%s' blocked by %d dep(s): %s", task.id, len(blocking), blocking
-            )
+            log.debug("Task '%s' blocked by %d dep(s): %s", task.id, len(blocking), blocking)
         return task
 
     def unblock_dependents(
         self,
         completed_task: Task,
-        registry: "TaskRegistry",
+        registry: TaskRegistry,
     ) -> list[Task]:
         """Check whether completing a task unblocks any other tasks.
 
@@ -181,7 +178,7 @@ class DependencyResolver:
 
         return unblocked
 
-    def resolve_all(self, registry: "TaskRegistry") -> list[Task]:
+    def resolve_all(self, registry: TaskRegistry) -> list[Task]:
         """Re-evaluate every BLOCKED task in the registry.
 
         This is a full-scan version of ``unblock_dependents``.  It's slower
@@ -208,7 +205,7 @@ class DependencyResolver:
         log.info("resolve_all unblocked %d task(s)", len(unblocked))
         return unblocked
 
-    def build_dependency_graph(self, registry: "TaskRegistry") -> dict[str, set[str]]:
+    def build_dependency_graph(self, registry: TaskRegistry) -> dict[str, set[str]]:
         """Build a complete dependency adjacency dict for all tasks.
 
         Returns a dict where:
@@ -228,7 +225,7 @@ class DependencyResolver:
             graph[task.id] = set(task.dependencies)
         return graph
 
-    def detect_cycles(self, registry: "TaskRegistry") -> list[list[str]]:
+    def detect_cycles(self, registry: TaskRegistry) -> list[list[str]]:
         """Find any circular dependencies in the task graph.
 
         Uses a depth-first search (DFS) with a "recursion stack" to find
@@ -259,12 +256,12 @@ class DependencyResolver:
             for dep in graph.get(node, set()):
                 if dep not in visited:
                     # Haven't seen this node yet — keep exploring
-                    dfs(dep, path + [dep])
+                    dfs(dep, [*path, dep])
                 elif dep in rec_stack:
                     # We've reached a node that's already on our current path!
                     # That means there's a cycle.
                     cycle_start = path.index(dep) if dep in path else 0
-                    cycles.append(path[cycle_start:] + [dep])
+                    cycles.append([*path[cycle_start:], dep])
 
             # Remove from recursion stack when we backtrack
             rec_stack.discard(node)
@@ -276,7 +273,7 @@ class DependencyResolver:
 
         return cycles
 
-    def topological_order(self, registry: "TaskRegistry") -> list[str]:
+    def topological_order(self, registry: TaskRegistry) -> list[str]:
         """Return task IDs in a valid dependency-respecting execution order.
 
         "Topological order" means: if task B depends on task A, then A
@@ -333,9 +330,7 @@ class DependencyResolver:
         # If we couldn't order ALL tasks, some must be in a cycle (they never
         # reached in-degree 0, so they never got added to the queue).
         if len(order) != len(all_tasks):
-            raise DependencyCycleError(
-                "Cycle detected: could not produce full topological order."
-            )
+            raise DependencyCycleError("Cycle detected: could not produce full topological order.")
         return order
 
     # =========================================================================
@@ -343,7 +338,7 @@ class DependencyResolver:
     # =========================================================================
 
     @staticmethod
-    def _blocking_deps(task: Task, registry: "TaskRegistry") -> list[str]:
+    def _blocking_deps(task: Task, registry: TaskRegistry) -> list[str]:
         """Return the IDs of this task's dependencies that are NOT yet COMPLETE.
 
         These are the tasks that are "blocking" the given task from running.

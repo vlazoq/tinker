@@ -1,8 +1,10 @@
 """Health, state, and version endpoints."""
 
+import contextlib
+
 from fastapi import APIRouter
 
-from ui.core import fetch_health, fetch_grub_status, load_state
+from ui.core import fetch_grub_status, fetch_health, load_state
 
 router = APIRouter()
 
@@ -30,8 +32,8 @@ async def api_state():
 @router.get("/api/health/components")
 async def api_health_components():
     """Report status of optional components: research enhancer, webhooks, auto-memory."""
-    import os
     import json
+    import os
 
     components = {}
 
@@ -50,10 +52,8 @@ async def api_health_components():
     raw_endpoints = os.getenv("TINKER_WEBHOOK_ENDPOINTS", "")
     webhook_endpoints = []
     if raw_endpoints.strip():
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             webhook_endpoints = json.loads(raw_endpoints)
-        except json.JSONDecodeError:
-            pass
     components["webhook_dispatcher"] = {
         "enabled": len(webhook_endpoints) > 0,
         "endpoint_count": len(webhook_endpoints),

@@ -1,6 +1,7 @@
 """Entry point: python -m tinker.ui.web"""
 
 import os
+
 import uvicorn
 
 if __name__ == "__main__":

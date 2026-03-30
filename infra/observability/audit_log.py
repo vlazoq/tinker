@@ -58,9 +58,8 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 
 from infra.resilience.migrations import SQLiteMigrationRunner
 
@@ -80,18 +79,15 @@ _FLUSH_BUFFER_MAX: int = 50
 # Baseline migration — establishes the schema_migrations table for this DB.
 # Future schema changes should be added as version 2, 3, etc.
 AUDIT_MIGRATIONS: list[tuple[int, str]] = [
-    (1, (
-        "CREATE INDEX IF NOT EXISTS idx_audit_event_type "
-        "ON audit_events(event_type)"
-    )),
-    (2, (
-        "CREATE INDEX IF NOT EXISTS idx_audit_trace_id "
-        "ON audit_events(trace_id) WHERE trace_id IS NOT NULL"
-    )),
-    (3, (
-        "CREATE INDEX IF NOT EXISTS idx_audit_created_at "
-        "ON audit_events(created_at)"
-    )),
+    (1, ("CREATE INDEX IF NOT EXISTS idx_audit_event_type ON audit_events(event_type)")),
+    (
+        2,
+        (
+            "CREATE INDEX IF NOT EXISTS idx_audit_trace_id "
+            "ON audit_events(trace_id) WHERE trace_id IS NOT NULL"
+        ),
+    ),
+    (3, ("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_events(created_at)")),
 ]
 
 
@@ -136,7 +132,7 @@ class AuditLog:
         self._lock = asyncio.Lock()
         self._buffer: list[dict] = []
         self._flush_interval = _FLUSH_INTERVAL_SECONDS
-        self._flush_task: Optional[asyncio.Task] = None
+        self._flush_task: asyncio.Task | None = None
 
     async def connect(self) -> None:
         """Open the SQLite connection and create the audit table."""
@@ -189,12 +185,12 @@ class AuditLog:
         self,
         event_type: AuditEventType,
         actor: str,
-        resource: Optional[str] = None,
-        outcome: Optional[str] = None,
-        details: Optional[dict] = None,
-        trace_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-    ) -> Optional[str]:
+        resource: str | None = None,
+        outcome: str | None = None,
+        details: dict | None = None,
+        trace_id: str | None = None,
+        session_id: str | None = None,
+    ) -> str | None:
         """
         Record an audit event.
 
@@ -219,7 +215,7 @@ class AuditLog:
             return None
 
         event_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         event = {
             "id": event_id,
@@ -244,9 +240,9 @@ class AuditLog:
 
     async def query(
         self,
-        event_type: Optional[AuditEventType] = None,
-        actor: Optional[str] = None,
-        trace_id: Optional[str] = None,
+        event_type: AuditEventType | None = None,
+        actor: str | None = None,
+        trace_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
@@ -285,8 +281,7 @@ class AuditLog:
 
         try:
             cursor = await self._conn.execute(
-                f"SELECT * FROM audit_events {where} "
-                f"ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                f"SELECT * FROM audit_events {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 params,
             )
             rows = await cursor.fetchall()

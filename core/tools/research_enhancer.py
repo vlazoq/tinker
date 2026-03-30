@@ -131,9 +131,7 @@ class ResearchEnhancer:
             queries = [q.strip() for q in raw.splitlines() if q.strip()]
             if queries:
                 self._stats["queries_rewritten"] += 1
-                logger.debug(
-                    "query_rewrite: %r → %s", gap, queries
-                )
+                logger.debug("query_rewrite: %r → %s", gap, queries)
                 return queries[:2]  # cap at 2
         except Exception as exc:
             logger.debug("query_rewrite: failed for %r: %s — using original", gap, exc)
@@ -171,9 +169,7 @@ class ResearchEnhancer:
             if isinstance(results, list) and results:
                 best = results[0]
                 score = (
-                    best.get("score", 0)
-                    if isinstance(best, dict)
-                    else getattr(best, "score", 0)
+                    best.get("score", 0) if isinstance(best, dict) else getattr(best, "score", 0)
                 )
                 if score >= self._memory_min_score:
                     if isinstance(best, dict):
@@ -188,7 +184,9 @@ class ResearchEnhancer:
                         self._stats["memory_hits"] += 1
                         logger.info(
                             "memory_first: hit for %r (score=%.3f, %d chars)",
-                            gap, score, len(content),
+                            gap,
+                            score,
+                            len(content),
                         )
                         return {
                             "query": gap,
@@ -207,19 +205,13 @@ class ResearchEnhancer:
     # 3. Content Summarization
     # ------------------------------------------------------------------
 
-    async def summarize_content(
-        self, content: str, gap: str, max_chars: int = 5000
-    ) -> str:
+    async def summarize_content(self, content: str, gap: str, max_chars: int = 5000) -> str:
         """Summarize scraped content using the Judge model.
 
         Only activates if content exceeds summarize_threshold.  Falls back
         to truncation if the LLM call fails.
         """
-        if (
-            not self.summarize
-            or self._router is None
-            or len(content) <= self._summarize_threshold
-        ):
+        if not self.summarize or self._router is None or len(content) <= self._summarize_threshold:
             return content[:max_chars]
 
         try:
@@ -251,7 +243,9 @@ class ResearchEnhancer:
                 self._stats["summaries_generated"] += 1
                 logger.debug(
                     "summarize: %d chars → %d chars for %r",
-                    len(content), len(summary), gap,
+                    len(content),
+                    len(summary),
+                    gap,
                 )
                 return summary[:max_chars]
         except Exception as exc:
@@ -263,9 +257,7 @@ class ResearchEnhancer:
     # 4. Iterative Deepening
     # ------------------------------------------------------------------
 
-    async def assess_and_refine(
-        self, gap: str, result: dict, round_num: int
-    ) -> str | None:
+    async def assess_and_refine(self, gap: str, result: dict, round_num: int) -> str | None:
         """Assess research quality and return a refined query if insufficient.
 
         Returns a new query string if research should be retried, or None
@@ -287,7 +279,7 @@ class ResearchEnhancer:
             from core.llm.types import AgentRole
 
             prompt = (
-                f"A researcher searched for: \"{gap}\"\n\n"
+                f'A researcher searched for: "{gap}"\n\n'
                 f"They found this content ({len(content)} chars):\n"
                 f"{content[:2000]}\n\n"
                 "Is this research sufficient to answer the knowledge gap? "
@@ -312,7 +304,9 @@ class ResearchEnhancer:
                     self._stats["iterative_rounds"] += 1
                     logger.info(
                         "iterative: round %d — refining %r → %r",
-                        round_num + 1, gap, refined,
+                        round_num + 1,
+                        gap,
+                        refined,
                     )
                     return refined
         except Exception as exc:
@@ -384,9 +378,7 @@ class ResearchEnhancer:
                 sources = result.get("sources", [])
                 all_sources.extend(sources)
 
-                if best_result is None or len(content) > len(
-                    best_result.get("result", "")
-                ):
+                if best_result is None or len(content) > len(best_result.get("result", "")):
                     best_result = result
             except Exception as exc:
                 logger.debug("enhanced_research: query %r failed: %s", query, exc)
@@ -417,9 +409,7 @@ class ResearchEnhancer:
 
         # Step 5: Iterative deepening
         for round_num in range(self.iterative_max_rounds):
-            refined_query = await self.assess_and_refine(
-                gap, best_result, round_num
-            )
+            refined_query = await self.assess_and_refine(gap, best_result, round_num)
             if refined_query is None:
                 break  # research is sufficient
 
@@ -430,9 +420,7 @@ class ResearchEnhancer:
                     max_content_chars=max_content_chars,
                 )
                 deeper_content = deeper.get("result", "")
-                if deeper_content and len(deeper_content) > len(
-                    best_result.get("result", "")
-                ):
+                if deeper_content and len(deeper_content) > len(best_result.get("result", "")):
                     # Combine: keep both the original and the deeper result
                     combined = (
                         best_result.get("result", "")
@@ -447,9 +435,7 @@ class ResearchEnhancer:
                             unique_sources.append(s)
                     best_result["sources"] = unique_sources
             except Exception as exc:
-                logger.debug(
-                    "iterative: round %d search failed: %s", round_num + 1, exc
-                )
+                logger.debug("iterative: round %d search failed: %s", round_num + 1, exc)
                 break
 
         best_result["from_memory"] = False

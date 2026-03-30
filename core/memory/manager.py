@@ -47,20 +47,21 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Callable, Awaitable, Optional, Protocol, runtime_checkable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any, Protocol, runtime_checkable
 
+from .compression import MemoryCompressor
+from .embeddings import EmbeddingPipeline
 from .schemas import (
     Artifact,
     ArtifactType,
+    MemoryConfig,
     ResearchNote,
     Task,
     TaskStatus,
-    MemoryConfig,
 )
-from .storage import RedisAdapter, DuckDBAdapter, ChromaAdapter, SQLiteAdapter
-from .embeddings import EmbeddingPipeline
-from .compression import MemoryCompressor, _cosine_similarity
+from .storage import ChromaAdapter, DuckDBAdapter, RedisAdapter, SQLiteAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -99,20 +100,20 @@ class ArtifactStore(Protocol):
         self,
         content: str,
         artifact_type: ArtifactType = ArtifactType.RAW,
-        task_id: Optional[str] = None,
-        metadata: Optional[dict] = None,
-        session_id: Optional[str] = None,
+        task_id: str | None = None,
+        metadata: dict | None = None,
+        session_id: str | None = None,
         auto_compress: bool = True,
     ) -> Artifact: ...
 
-    async def get_artifact(self, artifact_id: str) -> Optional[Artifact]: ...
+    async def get_artifact(self, artifact_id: str) -> Artifact | None: ...
 
     async def get_recent_artifacts(
         self,
-        artifact_type: Optional[ArtifactType] = None,
+        artifact_type: ArtifactType | None = None,
         limit: int = 20,
         include_archived: bool = False,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> list[Artifact]: ...
 
 
@@ -124,19 +125,19 @@ class ResearchStore(Protocol):
         self,
         content: str,
         topic: str,
-        tags: Optional[list[str]] = None,
+        tags: list[str] | None = None,
         source: str = "tinker-internal",
-        task_id: Optional[str] = None,
-        metadata: Optional[dict] = None,
-        session_id: Optional[str] = None,
+        task_id: str | None = None,
+        metadata: dict | None = None,
+        session_id: str | None = None,
     ) -> ResearchNote: ...
 
     async def search_research(
         self,
         query: str,
         n_results: int = 5,
-        filter_topic: Optional[str] = None,
-        filter_session: Optional[str] = None,
+        filter_topic: str | None = None,
+        filter_session: str | None = None,
     ) -> list[ResearchNote]: ...
 
 
@@ -145,12 +146,12 @@ class WorkingMemory(Protocol):
     """Minimal interface for ephemeral per-task context storage."""
 
     async def set_context(
-        self, key: str, value: Any, ttl: Optional[int] = None, session_id: Optional[str] = None
+        self, key: str, value: Any, ttl: int | None = None, session_id: str | None = None
     ) -> None: ...
 
-    async def get_context(self, key: str, session_id: Optional[str] = None) -> Optional[Any]: ...
+    async def get_context(self, key: str, session_id: str | None = None) -> Any | None: ...
 
-    async def delete_context(self, key: str, session_id: Optional[str] = None) -> None: ...
+    async def delete_context(self, key: str, session_id: str | None = None) -> None: ...
 
 
 @runtime_checkable
@@ -159,14 +160,14 @@ class TaskStore(Protocol):
 
     async def store_task(self, task: Task) -> Task: ...
 
-    async def get_task(self, task_id: str) -> Optional[Task]: ...
+    async def get_task(self, task_id: str) -> Task | None: ...
 
     async def update_task_status(
         self,
         task_id: str,
         status: TaskStatus,
-        result: Optional[str] = None,
-        error: Optional[str] = None,
+        result: str | None = None,
+        error: str | None = None,
     ) -> None: ...
 
 
@@ -182,10 +183,10 @@ def _parse_row_metadata(row: dict) -> dict:
     return row
 
 
-from ._working_memory import WorkingMemoryMixin
-from ._session_memory import SessionMemoryMixin
 from ._research_archive import ResearchArchiveMixin
+from ._session_memory import SessionMemoryMixin
 from ._task_registry import TaskRegistryMixin
+from ._working_memory import WorkingMemoryMixin
 
 
 class MemoryManager(
@@ -222,22 +223,17 @@ class MemoryManager(
 
     def __init__(
         self,
-        config: Optional[MemoryConfig] = None,
-        session_id: Optional[str] = None,
-        summariser: Optional[Callable[[str], Awaitable[str]]] = None,
+        config: MemoryConfig | None = None,
+        session_id: str | None = None,
+        summariser: Callable[[str], Awaitable[str]] | None = None,
     ):
         self.config = config or MemoryConfig()
-        self.session_id = (
-            session_id
-            or f"session-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
-        )
+        self.session_id = session_id or f"session-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}"
 
         # Storage adapters
         self._redis = RedisAdapter(self.config.redis_url, self.config.redis_default_ttl)
         self._duckdb = DuckDBAdapter(self.config.duckdb_path)
-        self._chroma = ChromaAdapter(
-            self.config.chroma_path, self.config.chroma_collection
-        )
+        self._chroma = ChromaAdapter(self.config.chroma_path, self.config.chroma_collection)
         self._sqlite = SQLiteAdapter(self.config.sqlite_path)
 
         # Embedding pipeline
@@ -288,7 +284,7 @@ class MemoryManager(
         self._connected = False
         logger.info("MemoryManager closed (session=%s)", self.session_id)
 
-    async def __aenter__(self) -> "MemoryManager":
+    async def __aenter__(self) -> MemoryManager:
         await self.connect()
         return self
 
@@ -311,7 +307,7 @@ class MemoryManager(
         self,
         subsystem: str,
         limit: int = 10,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> list[dict]:
         """
         Return up to *limit* recent artifacts for a given subsystem as plain dicts.
@@ -345,9 +341,7 @@ class MemoryManager(
         Internally stored as a SUMMARY artifact with metadata.
         """
         content = document.get("synthesis") or document.get("content", str(document))
-        metadata = {
-            k: v for k, v in document.items() if k not in ("synthesis", "content")
-        }
+        metadata = {k: v for k, v in document.items() if k not in ("synthesis", "content")}
         artifact = await self.store_artifact(
             content=content,
             artifact_type=ArtifactType.SUMMARY,
@@ -356,7 +350,7 @@ class MemoryManager(
         )
         return artifact.id
 
-    async def get_all_documents(self, session_id: Optional[str] = None) -> list[dict]:
+    async def get_all_documents(self, session_id: str | None = None) -> list[dict]:
         """
         Return all stored SUMMARY documents (meso/macro synthesis results).
         Used by the macro loop to compile a full architectural snapshot.
@@ -384,7 +378,7 @@ class MemoryManager(
         self,
         query: str,
         top_k: int = 10,
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> list[dict]:
         """
         Semantic search adapter for the MemoryQueryTool protocol.
@@ -416,9 +410,7 @@ class MemoryManager(
                 "task_id": r["metadata"].get("task_id") or "",
                 "created_at": r["metadata"].get("created_at", ""),
                 "tags": (
-                    r["metadata"].get("tags", "").split(",")
-                    if r["metadata"].get("tags")
-                    else []
+                    r["metadata"].get("tags", "").split(",") if r["metadata"].get("tags") else []
                 ),
                 "snippet": r["document"][:300],
                 "text": r["document"],
@@ -430,7 +422,7 @@ class MemoryManager(
     # Compression
     # ------------------------------------------------------------------
 
-    async def compress(self, session_id: Optional[str] = None) -> int:
+    async def compress(self, session_id: str | None = None) -> int:
         """
         Run compression checks for a session.
 
@@ -440,7 +432,7 @@ class MemoryManager(
         sid = session_id or self.session_id
         return await self._compressor.maybe_compress(sid)
 
-    async def compress_all(self, session_id: Optional[str] = None) -> int:
+    async def compress_all(self, session_id: str | None = None) -> int:
         """
         Force-compress every un-archived artifact in a session.
 
@@ -493,13 +485,11 @@ class MemoryManager(
             "connected": self._connected,
         }
 
-    async def stats(self, session_id: Optional[str] = None) -> dict[str, Any]:
+    async def stats(self, session_id: str | None = None) -> dict[str, Any]:
         """Return high-level memory stats for a session."""
         sid = session_id or self.session_id
         artifact_count = await self._duckdb.count_session_artifacts(sid)
-        archived_count = await self._duckdb.count_session_artifacts(
-            sid, include_archived=True
-        )
+        archived_count = await self._duckdb.count_session_artifacts(sid, include_archived=True)
         research_count = await self._chroma.count()
         context_keys = await self._redis.keys(sid)
 

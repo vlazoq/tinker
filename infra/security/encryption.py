@@ -37,11 +37,10 @@ import base64
 import json
 import logging
 import os
-from typing import Optional
 
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +73,10 @@ class ArtifactEncryptor:
         the encryptor is disabled and all operations are no-ops.
     """
 
-    def __init__(self, master_key: Optional[str] = None) -> None:
+    def __init__(self, master_key: str | None = None) -> None:
         resolved = master_key or os.getenv("TINKER_ARTIFACT_KEY")
         if resolved:
-            self._master_key: Optional[str] = resolved
+            self._master_key: str | None = resolved
             self._enabled = True
         else:
             self._master_key = None

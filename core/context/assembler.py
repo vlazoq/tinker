@@ -18,16 +18,15 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
-
-from exceptions import ConfigurationError
+from typing import Any
 
 # AgentRole is the single source of truth for role names throughout Tinker.
 # It lives in llm.types because the model router uses it to decide which
 # machine / model to target.  We import it here so ContextAssembler callers
 # can use the same enum without a separate import.  Previously this module
 # defined its own duplicate AgentRole — that redundancy is now eliminated.
-from core.llm.types import AgentRole  # noqa: F401  (re-exported for callers)
+from core.llm.types import AgentRole
+from exceptions import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
@@ -200,14 +199,10 @@ class _MemoryManagerProtocol:
     async def get_arch_state_summary(self) -> str:
         raise NotImplementedError
 
-    async def semantic_search_session(
-        self, query: str, top_k: int = 5
-    ) -> list[MemoryItem]:
+    async def semantic_search_session(self, query: str, top_k: int = 5) -> list[MemoryItem]:
         raise NotImplementedError
 
-    async def semantic_search_archive(
-        self, query: str, top_k: int = 5
-    ) -> list[MemoryItem]:
+    async def semantic_search_archive(self, query: str, top_k: int = 5) -> list[MemoryItem]:
         raise NotImplementedError
 
     async def get_prior_critique(self, task_id: str) -> list[MemoryItem]:
@@ -333,9 +328,7 @@ class ContextAssembler:
 
             if effective_chars <= 0:
                 sections_dropped.append(section_name)
-                warnings.append(
-                    f"Section '{section_name}' dropped: token budget exhausted."
-                )
+                warnings.append(f"Section '{section_name}' dropped: token budget exhausted.")
                 continue
 
             truncated = self._truncate_to_chars(raw, effective_chars)
@@ -414,13 +407,12 @@ class ContextAssembler:
         """Wrap a coroutine in a timeout + exception guard."""
         try:
             return await asyncio.wait_for(coro, timeout=self.timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             warnings.append(
-                f"[{label}] retrieval timed out after {self.timeout}s — "
-                "section will be empty."
+                f"[{label}] retrieval timed out after {self.timeout}s — section will be empty."
             )
             return default
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             warnings.append(f"[{label}] retrieval failed: {exc}")
             return default
 
@@ -460,7 +452,7 @@ class ContextAssembler:
         self,
         task: dict,
         max_artifacts: int = 10,
-        role: Optional[AgentRole] = None,
+        role: AgentRole | None = None,
     ) -> dict:
         """
         Simplified adapter used by the Orchestrator's micro loop.

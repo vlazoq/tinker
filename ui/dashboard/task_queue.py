@@ -31,7 +31,7 @@ TYPE_COLOURS = {
 def _small_bar(count: int, total: int, width: int = 10) -> str:
     if total == 0:
         return "░" * width
-    filled = max(1, int(round(count / total * width))) if count else 0
+    filled = max(1, round(count / total * width)) if count else 0
     return "█" * filled + "░" * (width - filled)
 
 

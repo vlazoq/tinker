@@ -17,12 +17,14 @@ Run with:
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 import unittest
 
 # ── allow running from repo root without install ──────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../.."))
+
+import itertools
 
 from runtime.stagnation import (
     FallbackTFIDFBackend,
@@ -39,7 +41,6 @@ from runtime.stagnation.config import (
     SubsystemFixationConfig,
     TaskStarvationConfig,
 )
-
 
 # ─────────────────────────────────────────────────────────────
 # Helpers
@@ -115,9 +116,7 @@ class TestSemanticLoopDetector(unittest.TestCase):
         directive = next(
             d for d in directives if d.stagnation_type == StagnationType.SEMANTIC_LOOP
         )
-        self.assertEqual(
-            directive.intervention_type, InterventionType.ALTERNATIVE_FORCING
-        )
+        self.assertEqual(directive.intervention_type, InterventionType.ALTERNATIVE_FORCING)
         self.assertGreater(directive.severity, 0.0)
         self.assertLessEqual(directive.severity, 1.0)
 
@@ -137,13 +136,9 @@ class TestSemanticLoopDetector(unittest.TestCase):
             all_directives.extend(monitor.check(ctx(i, output_text=text)))
 
         semantic_hits = [
-            d
-            for d in all_directives
-            if d.stagnation_type == StagnationType.SEMANTIC_LOOP
+            d for d in all_directives if d.stagnation_type == StagnationType.SEMANTIC_LOOP
         ]
-        self.assertEqual(
-            len(semantic_hits), 0, "False positive: diverse outputs flagged as loops"
-        )
+        self.assertEqual(len(semantic_hits), 0, "False positive: diverse outputs flagged as loops")
 
     def test_severity_is_bounded(self):
         monitor = make_monitor()
@@ -175,11 +170,7 @@ class TestSubsystemFixationDetector(unittest.TestCase):
         for i, tag in enumerate(tags):
             directives = monitor.check(ctx(i, subsystem_tag=tag))
 
-        hits = [
-            d
-            for d in directives
-            if d.stagnation_type == StagnationType.SUBSYSTEM_FIXATION
-        ]
+        hits = [d for d in directives if d.stagnation_type == StagnationType.SUBSYSTEM_FIXATION]
         self.assertTrue(len(hits) > 0, "Expected SUBSYSTEM_FIXATION")
         self.assertEqual(hits[0].intervention_type, InterventionType.FORCE_BRANCH)
         self.assertEqual(hits[0].metadata.get("avoid_subsystem"), "memory_manager")
@@ -199,9 +190,7 @@ class TestSubsystemFixationDetector(unittest.TestCase):
             all_directives.extend(monitor.check(ctx(i, subsystem_tag=tag)))
 
         fixation_hits = [
-            d
-            for d in all_directives
-            if d.stagnation_type == StagnationType.SUBSYSTEM_FIXATION
+            d for d in all_directives if d.stagnation_type == StagnationType.SUBSYSTEM_FIXATION
         ]
         self.assertEqual(len(fixation_hits), 0, "False positive: balanced tags flagged")
 
@@ -211,11 +200,7 @@ class TestSubsystemFixationDetector(unittest.TestCase):
         # Only 4 entries (< window_size), all the same
         for i in range(4):
             directives = monitor.check(ctx(i, subsystem_tag="memory_manager"))
-        hits = [
-            d
-            for d in directives
-            if d.stagnation_type == StagnationType.SUBSYSTEM_FIXATION
-        ]
+        hits = [d for d in directives if d.stagnation_type == StagnationType.SUBSYSTEM_FIXATION]
         self.assertEqual(len(hits), 0, "Should not fire before window is full")
 
 
@@ -233,15 +218,9 @@ class TestCritiqueCollapseDetector(unittest.TestCase):
         for i, score in enumerate(scores):
             directives = monitor.check(ctx(i, critic_score=score))
 
-        hits = [
-            d
-            for d in directives
-            if d.stagnation_type == StagnationType.CRITIQUE_COLLAPSE
-        ]
+        hits = [d for d in directives if d.stagnation_type == StagnationType.CRITIQUE_COLLAPSE]
         self.assertTrue(len(hits) > 0, "Expected CRITIQUE_COLLAPSE")
-        self.assertEqual(
-            hits[0].intervention_type, InterventionType.INJECT_CONTRADICTION
-        )
+        self.assertEqual(hits[0].intervention_type, InterventionType.INJECT_CONTRADICTION)
 
     def test_no_false_positive_healthy_scores(self):
         """Scores varying healthily around 0.7 should not trigger."""
@@ -252,13 +231,9 @@ class TestCritiqueCollapseDetector(unittest.TestCase):
             all_directives.extend(monitor.check(ctx(i, critic_score=score)))
 
         collapse_hits = [
-            d
-            for d in all_directives
-            if d.stagnation_type == StagnationType.CRITIQUE_COLLAPSE
+            d for d in all_directives if d.stagnation_type == StagnationType.CRITIQUE_COLLAPSE
         ]
-        self.assertEqual(
-            len(collapse_hits), 0, "False positive: healthy scores flagged"
-        )
+        self.assertEqual(len(collapse_hits), 0, "False positive: healthy scores flagged")
 
     def test_requires_min_samples(self):
         """Should not fire until min_samples (3) scores are recorded."""
@@ -267,11 +242,7 @@ class TestCritiqueCollapseDetector(unittest.TestCase):
         for i, score in enumerate([0.95, 0.96]):  # only 2 scores
             directives = monitor.check(ctx(i, critic_score=score))
 
-        hits = [
-            d
-            for d in directives
-            if d.stagnation_type == StagnationType.CRITIQUE_COLLAPSE
-        ]
+        hits = [d for d in directives if d.stagnation_type == StagnationType.CRITIQUE_COLLAPSE]
         self.assertEqual(len(hits), 0, "Should not fire before min_samples reached")
 
 
@@ -293,11 +264,7 @@ class TestResearchSaturationDetector(unittest.TestCase):
         for i in range(4):
             directives = monitor.check(ctx(i, research_urls=shared_urls))
 
-        hits = [
-            d
-            for d in directives
-            if d.stagnation_type == StagnationType.RESEARCH_SATURATION
-        ]
+        hits = [d for d in directives if d.stagnation_type == StagnationType.RESEARCH_SATURATION]
         self.assertTrue(len(hits) > 0, "Expected RESEARCH_SATURATION")
         self.assertEqual(hits[0].intervention_type, InterventionType.SPAWN_EXPLORATION)
         # Directive should carry the repeated URLs
@@ -316,13 +283,9 @@ class TestResearchSaturationDetector(unittest.TestCase):
             all_directives.extend(monitor.check(ctx(i, research_urls=urls)))
 
         saturation_hits = [
-            d
-            for d in all_directives
-            if d.stagnation_type == StagnationType.RESEARCH_SATURATION
+            d for d in all_directives if d.stagnation_type == StagnationType.RESEARCH_SATURATION
         ]
-        self.assertEqual(
-            len(saturation_hits), 0, "False positive: fresh sources flagged"
-        )
+        self.assertEqual(len(saturation_hits), 0, "False positive: fresh sources flagged")
 
     def test_partial_overlap_below_threshold_no_flag(self):
         """50% overlap (below 60% threshold) should not trigger."""
@@ -330,14 +293,8 @@ class TestResearchSaturationDetector(unittest.TestCase):
         base = {"https://a.com", "https://b.com"}
         varied = {"https://a.com", "https://c.com"}  # 33% Jaccard
         for i in range(3):
-            directives = monitor.check(
-                ctx(i, research_urls=base if i % 2 == 0 else varied)
-            )
-        hits = [
-            d
-            for d in directives
-            if d.stagnation_type == StagnationType.RESEARCH_SATURATION
-        ]
+            directives = monitor.check(ctx(i, research_urls=base if i % 2 == 0 else varied))
+        hits = [d for d in directives if d.stagnation_type == StagnationType.RESEARCH_SATURATION]
         self.assertEqual(len(hits), 0)
 
 
@@ -359,9 +316,7 @@ class TestTaskStarvationDetector(unittest.TestCase):
         for i, s in enumerate(scenarios):
             directives = monitor.check(ctx(i, **s))
 
-        hits = [
-            d for d in directives if d.stagnation_type == StagnationType.TASK_STARVATION
-        ]
+        hits = [d for d in directives if d.stagnation_type == StagnationType.TASK_STARVATION]
         self.assertTrue(len(hits) > 0, "Expected TASK_STARVATION")
         self.assertEqual(hits[0].intervention_type, InterventionType.ESCALATE_LOOP)
 
@@ -378,13 +333,9 @@ class TestTaskStarvationDetector(unittest.TestCase):
             all_directives.extend(monitor.check(ctx(i, **s)))
 
         starvation_hits = [
-            d
-            for d in all_directives
-            if d.stagnation_type == StagnationType.TASK_STARVATION
+            d for d in all_directives if d.stagnation_type == StagnationType.TASK_STARVATION
         ]
-        self.assertEqual(
-            len(starvation_hits), 0, "False positive: healthy queue flagged"
-        )
+        self.assertEqual(len(starvation_hits), 0, "False positive: healthy queue flagged")
 
     def test_high_queue_depth_no_flag(self):
         """Even with negative net generation, a deep queue should not trigger."""
@@ -398,9 +349,7 @@ class TestTaskStarvationDetector(unittest.TestCase):
                     tasks_consumed=2,
                 )
             )
-        hits = [
-            d for d in directives if d.stagnation_type == StagnationType.TASK_STARVATION
-        ]
+        hits = [d for d in directives if d.stagnation_type == StagnationType.TASK_STARVATION]
         self.assertEqual(len(hits), 0)
 
 
@@ -458,7 +407,7 @@ class TestIntegration(unittest.TestCase):
             )
 
         if len(directives) >= 2:
-            for a, b in zip(directives, directives[1:]):
+            for a, b in itertools.pairwise(directives):
                 self.assertGreaterEqual(a.severity, b.severity)
 
     def test_reset_clears_state(self):
@@ -474,9 +423,7 @@ class TestIntegration(unittest.TestCase):
         # Single cycle after reset should never fire
         directives = monitor.check(ctx(0, subsystem_tag="memory_manager"))
         fixation_hits = [
-            d
-            for d in directives
-            if d.stagnation_type == StagnationType.SUBSYSTEM_FIXATION
+            d for d in directives if d.stagnation_type == StagnationType.SUBSYSTEM_FIXATION
         ]
         self.assertEqual(len(fixation_hits), 0, "Detector should be reset")
         self.assertEqual(monitor.event_log.total(), 0)
@@ -547,17 +494,13 @@ class TestEdgeCases(unittest.TestCase):
     def test_run_all_false_stops_at_first_hit(self):
         """With run_all_detectors=False, only the first firing detector's directive is returned."""
         cfg = StagnationMonitorConfig(
-            subsystem_fixation=SubsystemFixationConfig(
-                window_size=5, fixation_threshold=0.70
-            ),
+            subsystem_fixation=SubsystemFixationConfig(window_size=5, fixation_threshold=0.70),
             critique_collapse=CritiqueCollapseConfig(
                 window_size=4, collapse_threshold=0.85, min_samples=3
             ),
             run_all_detectors=False,
         )
-        monitor = StagnationMonitor(
-            config=cfg, embedding_backend=FallbackTFIDFBackend()
-        )
+        monitor = StagnationMonitor(config=cfg, embedding_backend=FallbackTFIDFBackend())
         for i in range(6):
             directives = monitor.check(
                 ctx(

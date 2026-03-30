@@ -47,7 +47,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Data containers
 # ---------------------------------------------------------------------------
@@ -281,7 +280,7 @@ class BaseTool(ABC):
                 data=data,
                 duration_ms=duration,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # BLE001 is a linting rule that discourages bare "except Exception".
             # We silence it here because catching everything is intentional —
             # we want the registry to NEVER crash, no matter what a tool does.

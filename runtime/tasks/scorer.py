@@ -53,7 +53,6 @@ from dataclasses import dataclass
 
 from .schema import Task, TaskType
 
-
 # =============================================================================
 # ScorerWeights — configuration knobs
 # =============================================================================

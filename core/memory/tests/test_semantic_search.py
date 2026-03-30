@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Minimal MemoryManager stub that bypasses DB connections
 # ---------------------------------------------------------------------------
@@ -69,9 +68,7 @@ class StubMemoryManager:
                 "task_id": r["metadata"].get("task_id") or "",
                 "created_at": r["metadata"].get("created_at", ""),
                 "tags": (
-                    r["metadata"].get("tags", "").split(",")
-                    if r["metadata"].get("tags")
-                    else []
+                    r["metadata"].get("tags", "").split(",") if r["metadata"].get("tags") else []
                 ),
                 "snippet": r["document"][:300],
                 "text": r["document"],
@@ -175,8 +172,12 @@ class TestSemanticSearch:
     async def test_multiple_results_all_scored(self):
         """All results should have correct scores."""
         raw = [
-            {"id": f"n-{i}", "document": "doc", "distance": float(i),
-             "metadata": {"topic": "t", "tags": ""}}
+            {
+                "id": f"n-{i}",
+                "document": "doc",
+                "distance": float(i),
+                "metadata": {"topic": "t", "tags": ""},
+            }
             for i in range(4)
         ]
         mm = StubMemoryManager(chroma_results=raw)

@@ -22,18 +22,17 @@ import json
 import uuid
 from typing import Any
 
-from .templates import TEMPLATE_REGISTRY, PromptTemplate, Role, LoopLevel
-from .variants import (
-    VariantKey,
-    validate_variant_combination,
-    get_variant,
-)
-
-
 # PromptBuilderError is defined in the central exceptions module and
 # re-exported here so ``from core.prompts.builder import PromptBuilderError``
 # continues to work.
-from exceptions import PromptBuilderError  # noqa: F401  (intentional re-export)
+from exceptions import PromptBuilderError
+
+from .templates import TEMPLATE_REGISTRY, LoopLevel, PromptTemplate, Role
+from .variants import (
+    VariantKey,
+    get_variant,
+    validate_variant_combination,
+)
 
 
 class PromptBuilder:
@@ -208,8 +207,7 @@ class PromptBuilder:
     def _get_template(self, key: str) -> PromptTemplate:
         if key not in TEMPLATE_REGISTRY:
             raise PromptBuilderError(
-                f"No template found for key '{key}'. "
-                f"Available: {sorted(TEMPLATE_REGISTRY.keys())}"
+                f"No template found for key '{key}'. Available: {sorted(TEMPLATE_REGISTRY.keys())}"
             )
         return TEMPLATE_REGISTRY[key]
 
@@ -218,8 +216,7 @@ class PromptBuilder:
         conflicts = validate_variant_combination(variants)
         if conflicts:
             raise PromptBuilderError(
-                "Variant conflicts detected:\n"
-                + "\n".join(f"  - {c}" for c in conflicts)
+                "Variant conflicts detected:\n" + "\n".join(f"  - {c}" for c in conflicts)
             )
         # Check applicability
         for vk in variants:

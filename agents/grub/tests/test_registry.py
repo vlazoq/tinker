@@ -7,11 +7,10 @@ Tests for MinionRegistry — minion registration, skill loading, get_minion().
 import pytest
 
 from agents.grub.config import GrubConfig
-from agents.grub.registry import MinionRegistry
-from agents.grub.minions.base import BaseMinion
-from agents.grub.contracts.task import GrubTask
 from agents.grub.contracts.result import MinionResult, ResultStatus
-
+from agents.grub.contracts.task import GrubTask
+from agents.grub.minions.base import BaseMinion
+from agents.grub.registry import MinionRegistry
 
 # ── A minimal stub Minion for testing ─────────────────────────────────────────
 

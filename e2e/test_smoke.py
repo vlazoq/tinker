@@ -17,7 +17,6 @@ import pytest
 
 from e2e.conftest import make_stub_orchestrator
 
-
 # ---------------------------------------------------------------------------
 # Test 1: Orchestrator starts and stops cleanly
 # ---------------------------------------------------------------------------
@@ -46,7 +45,7 @@ async def test_orchestrator_starts_and_stops():
     # Wait up to 10 s for the orchestrator to stop cleanly.
     try:
         await asyncio.wait_for(task, timeout=10)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         task.cancel()
         pytest.fail("Orchestrator did not shut down within 10 seconds")
 
@@ -83,7 +82,7 @@ async def test_micro_loop_runs_at_least_once():
 
     try:
         await asyncio.wait_for(task, timeout=10)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         task.cancel()
         pytest.fail("Orchestrator did not shut down within 10 seconds")
 
@@ -134,14 +133,14 @@ async def test_quality_gate_fires_on_low_score():
 
     # ── Configure with an active quality gate ─────────────────────────────────
     config = OrchestratorConfig(
-        meso_trigger_count=10,          # prevent meso synthesis during test
-        macro_interval_seconds=9999,    # disable macro loop
+        meso_trigger_count=10,  # prevent meso synthesis during test
+        macro_interval_seconds=9999,  # disable macro loop
         architect_timeout=5.0,
         critic_timeout=5.0,
         synthesizer_timeout=10.0,
         tool_timeout=5.0,
         micro_loop_idle_seconds=0.0,
-        quality_gate_threshold=0.4,     # alert when score < 0.4
+        quality_gate_threshold=0.4,  # alert when score < 0.4
         state_snapshot_path=str(Path(tempfile.gettempdir()) / "tinker_test_qg_state.json"),
     )
 
@@ -179,7 +178,7 @@ async def test_quality_gate_fires_on_low_score():
         orch.request_shutdown()
         try:
             await asyncio.wait_for(run_task, timeout=10)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             run_task.cancel()
 
     await _run_and_stop()
@@ -190,8 +189,7 @@ async def test_quality_gate_fires_on_low_score():
     )
 
     assert mock_alerter.alert.called, (
-        "Expected the alerter to be called with a quality gate breach, "
-        "but it was never called."
+        "Expected the alerter to be called with a quality gate breach, but it was never called."
     )
 
     # Verify at least one call included a quality gate breach title.

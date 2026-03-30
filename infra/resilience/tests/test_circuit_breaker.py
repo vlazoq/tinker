@@ -9,6 +9,7 @@ fast-fail behaviour, recovery probes, and the registry helpers.
 from __future__ import annotations
 
 import asyncio
+
 import pytest
 
 from infra.resilience.circuit_breaker import (
@@ -18,7 +19,6 @@ from infra.resilience.circuit_breaker import (
     CircuitState,
     build_default_registry,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -80,9 +80,7 @@ class TestCircuitBreakerStateMachine:
 
     @pytest.mark.asyncio
     async def test_half_open_after_recovery_timeout(self):
-        breaker = CircuitBreaker(
-            name="test", failure_threshold=1, recovery_timeout=0.01
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=1, recovery_timeout=0.01)
         with pytest.raises(RuntimeError):
             await breaker.call(_fail)
         assert breaker.is_open
@@ -95,9 +93,7 @@ class TestCircuitBreakerStateMachine:
 
     @pytest.mark.asyncio
     async def test_reopens_if_probe_fails(self):
-        breaker = CircuitBreaker(
-            name="test", failure_threshold=1, recovery_timeout=0.01
-        )
+        breaker = CircuitBreaker(name="test", failure_threshold=1, recovery_timeout=0.01)
         with pytest.raises(RuntimeError):
             await breaker.call(_fail)
         await asyncio.sleep(0.05)

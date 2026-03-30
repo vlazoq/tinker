@@ -35,9 +35,7 @@ def _diff_states(a: ArchitectureState, b: ArchitectureState) -> str:
     A multi-line string suitable for printing to the console or logging.
     """
     lines: list[str] = []
-    lines.append(
-        f"=== Diff: loop {a.macro_loop} → loop {b.macro_loop} ({a.system_name}) ==="
-    )
+    lines.append(f"=== Diff: loop {a.macro_loop} → loop {b.macro_loop} ({a.system_name}) ===")
 
     # Overall confidence change — shows whether the AI is becoming more or less certain
     dc = b.overall_confidence.value - a.overall_confidence.value
@@ -224,8 +222,7 @@ class DiffingMixin:
 
         if self.auto_git:
             self._git_commit(
-                f"rollback(n={n}): restored loop {state.macro_loop} "
-                f"from {target_path.name}"
+                f"rollback(n={n}): restored loop {state.macro_loop} from {target_path.name}"
             )
 
         logger.info(

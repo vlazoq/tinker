@@ -46,9 +46,7 @@ class FritzCredentials:
     async def load(self) -> None:
         """Fetch all configured tokens. Call once before using credentials."""
         if self._config.github_enabled:
-            self.github_token = await self._secrets.get(
-                self._config.github_token_key
-            )
+            self.github_token = await self._secrets.get(self._config.github_token_key)
             if not self.github_token:
                 logger.warning(
                     "GitHub enabled but token key '%s' resolved to empty. "
@@ -57,9 +55,7 @@ class FritzCredentials:
                 )
 
         if self._config.gitea_enabled:
-            self.gitea_token = await self._secrets.get(
-                self._config.gitea_token_key
-            )
+            self.gitea_token = await self._secrets.get(self._config.gitea_token_key)
             if not self.gitea_token:
                 logger.warning(
                     "Gitea enabled but token key '%s' resolved to empty. "

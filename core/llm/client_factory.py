@@ -73,9 +73,7 @@ def create_router(
     ValueError
         If an unsupported backend name is given.
     """
-    effective = (
-        (backend or os.getenv("TINKER_LLM_BACKEND", "ollama")).lower().strip()
-    )
+    effective = (backend or os.getenv("TINKER_LLM_BACKEND", "ollama")).lower().strip()
 
     if effective == "ollama":
         from core.llm.router import ModelRouter
@@ -102,6 +100,4 @@ def create_router(
             secondary_config=kwargs.get("secondary_config") or stub_cfg,
         )
 
-    raise ValueError(
-        f"Unknown LLM backend: {effective!r}.  Supported values: 'ollama', 'stub'."
-    )
+    raise ValueError(f"Unknown LLM backend: {effective!r}.  Supported values: 'ollama', 'stub'.")

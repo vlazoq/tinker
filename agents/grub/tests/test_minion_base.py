@@ -5,14 +5,14 @@ Tests for BaseMinion helpers — code block extraction, score parsing,
 system prompt building.  No LLM calls needed.
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from agents.grub.config import GrubConfig
-from agents.grub.contracts.task import GrubTask
-from agents.grub.contracts.result import MinionResult, ResultStatus
-from agents.grub.minions.base import BaseMinion
+import pytest
 
+from agents.grub.config import GrubConfig
+from agents.grub.contracts.result import MinionResult, ResultStatus
+from agents.grub.contracts.task import GrubTask
+from agents.grub.minions.base import BaseMinion
 
 # ── Concrete subclass for testing ─────────────────────────────────────────────
 
@@ -22,9 +22,7 @@ class ConcreteMinion(BaseMinion):
     BASE_SYSTEM_PROMPT = "You are a test minion."
 
     async def run(self, task: GrubTask) -> MinionResult:
-        return MinionResult(
-            task_id=task.id, minion_name=self.name, status=ResultStatus.SUCCESS
-        )
+        return MinionResult(task_id=task.id, minion_name=self.name, status=ResultStatus.SUCCESS)
 
 
 @pytest.fixture

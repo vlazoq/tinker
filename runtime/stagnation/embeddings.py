@@ -20,8 +20,6 @@ import math
 import re
 from abc import ABC, abstractmethod
 from collections import Counter
-from typing import List
-
 
 # ─────────────────────────────────────────────────────────────
 # Abstract interface
@@ -30,18 +28,18 @@ from typing import List
 
 class EmbeddingBackend(ABC):
     @abstractmethod
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         """Return a unit-length embedding vector for *text*."""
         ...
 
     # ── shared utility ──────────────────────────────────────
 
     @staticmethod
-    def cosine_similarity(a: List[float], b: List[float]) -> float:
+    def cosine_similarity(a: list[float], b: list[float]) -> float:
         """Cosine similarity between two pre-normalised vectors."""
         if len(a) != len(b):
             raise ValueError("Vector dimension mismatch")
-        dot = sum(x * y for x, y in zip(a, b))
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         # Clamp for floating-point drift
         return max(-1.0, min(1.0, dot))
 
@@ -75,7 +73,7 @@ class OllamaEmbeddingBackend(EmbeddingBackend):
             self._requests = requests
         return self._requests
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         requests = self._get_requests()
         response = requests.post(
             f"{self.base_url}/api/embeddings",
@@ -87,7 +85,7 @@ class OllamaEmbeddingBackend(EmbeddingBackend):
         return self._normalise(raw)
 
     @staticmethod
-    def _normalise(v: List[float]) -> List[float]:
+    def _normalise(v: list[float]) -> list[float]:
         magnitude = math.sqrt(sum(x * x for x in v))
         if magnitude == 0.0:
             return v
@@ -110,7 +108,7 @@ class FallbackTFIDFBackend(EmbeddingBackend):
     """
 
     def __init__(self, max_vocab: int = 512):
-        self.max_vocab: List[str] = []
+        self.max_vocab: list[str] = []
         self.max_vocab_size = max_vocab
         self._doc_freq: Counter = Counter()
         self._doc_count: int = 0
@@ -118,7 +116,7 @@ class FallbackTFIDFBackend(EmbeddingBackend):
 
     # ── vocabulary management ────────────────────────────────
 
-    def _update_vocab(self, tokens: List[str]) -> None:
+    def _update_vocab(self, tokens: list[str]) -> None:
         self._doc_count += 1
         for tok in set(tokens):
             self._doc_freq[tok] += 1
@@ -129,12 +127,12 @@ class FallbackTFIDFBackend(EmbeddingBackend):
                     if len(self.max_vocab) == self.max_vocab_size:
                         break
 
-    def _tfidf_vector(self, tokens: List[str]) -> List[float]:
+    def _tfidf_vector(self, tokens: list[str]) -> list[float]:
         if not self.max_vocab:
             return [0.0]
         tf = Counter(tokens)
         total = max(len(tokens), 1)
-        vec: List[float] = []
+        vec: list[float] = []
         for word in self.max_vocab:
             tf_val = tf[word] / total
             df = self._doc_freq.get(word, 0)
@@ -143,13 +141,13 @@ class FallbackTFIDFBackend(EmbeddingBackend):
         return vec
 
     @staticmethod
-    def _l2_normalise(v: List[float]) -> List[float]:
+    def _l2_normalise(v: list[float]) -> list[float]:
         mag = math.sqrt(sum(x * x for x in v))
         if mag == 0.0:
             return v
         return [x / mag for x in v]
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         tokens = self._tokenise(text)
         self._update_vocab(tokens)
         raw = self._tfidf_vector(tokens)

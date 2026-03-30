@@ -51,8 +51,8 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from ui.web.app import app
 from ui.core import FLAG_DEFAULTS, ORCH_CONFIG_SCHEMA
+from ui.web.app import app
 
 # ---------------------------------------------------------------------------
 # Module-level client (shared, no DB side effects from stateless GETs)
@@ -106,9 +106,7 @@ class TestHealthEndpoints:
         assert r.status_code == 200
 
     def test_grub_status_returns_json(self):
-        assert (
-            "application/json" in client.get("/api/grub/status").headers["content-type"]
-        )
+        assert "application/json" in client.get("/api/grub/status").headers["content-type"]
 
     def test_health_does_not_raise_500(self):
         """Orchestrator down → graceful empty response, never 500."""
@@ -211,18 +209,14 @@ class TestConfigEndpoints:
         with (
             patch("ui.core.CONFIG_FILE", cfg_file),
             patch("ui.web.app.load_config", lambda: {}),
-            patch(
-                "ui.web.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))
-            ),
+            patch("ui.web.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))),
         ):
             # Build a valid payload from the schema defaults
             orch: dict[str, Any] = {}
             for section in ORCH_CONFIG_SCHEMA.values():
                 for fname, meta in section["fields"].items():
                     orch[fname] = meta["default"]
-            r = client.post(
-                "/api/config", json={"orchestrator": orch, "stagnation": {}}
-            )
+            r = client.post("/api/config", json={"orchestrator": orch, "stagnation": {}})
         assert r.status_code == 200
         assert r.json().get("ok") is True
 
@@ -286,21 +280,15 @@ class TestFeatureFlagEndpoints:
         assert len(r.json()["message"]) > 0
 
     def test_toggle_unknown_flag_returns_404(self):
-        r = client.post(
-            "/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True}
-        )
+        r = client.post("/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True})
         assert r.status_code == 404
 
     def test_toggle_unknown_flag_ok_false(self):
-        r = client.post(
-            "/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True}
-        )
+        r = client.post("/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True})
         assert r.json().get("ok") is False
 
     def test_toggle_unknown_flag_error_mentions_flag_name(self):
-        r = client.post(
-            "/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True}
-        )
+        r = client.post("/api/flags/COMPLETELY_UNKNOWN_FLAG_XYZ", json={"enabled": True})
         assert "COMPLETELY_UNKNOWN_FLAG_XYZ" in r.json().get("error", "")
 
     def test_all_default_flags_are_toggleable(self):
@@ -393,9 +381,7 @@ class TestConfigPersistence:
                 "ui.web.app.load_config",
                 lambda: json.loads(cfg_file.read_text()) if cfg_file.exists() else {},
             ),
-            patch(
-                "ui.web.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))
-            ),
+            patch("ui.web.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))),
         ):
             yield TestClient(app, raise_server_exceptions=True)
 
@@ -720,6 +706,7 @@ class TestSSEStream:
     def test_sse_level_param_in_signature(self):
         """The route handler must accept a ``level`` query parameter."""
         import inspect
+
         from ui.web.app import api_logs_stream
 
         sig = inspect.signature(api_logs_stream)
@@ -733,13 +720,13 @@ class TestSSEStream:
         ``text/event-stream``.
         """
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from starlette.responses import StreamingResponse
+
         from ui.web.app import api_logs_stream
 
         mock_request = MagicMock()
-        mock_request.is_disconnected = AsyncMock(
-            return_value=True
-        )  # disconnect at once
+        mock_request.is_disconnected = AsyncMock(return_value=True)  # disconnect at once
 
         with (
             patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
@@ -753,6 +740,7 @@ class TestSSEStream:
     @pytest.mark.asyncio
     async def test_sse_cache_control_header_is_no_cache(self):
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from ui.web.app import api_logs_stream
 
         mock_request = MagicMock()
@@ -766,9 +754,7 @@ class TestSSEStream:
 
         # headers is a MutableHeaders / list of (bytes, bytes)
         raw = {
-            k.decode() if isinstance(k, bytes) else k: v.decode()
-            if isinstance(v, bytes)
-            else v
+            k.decode() if isinstance(k, bytes) else k: v.decode() if isinstance(v, bytes) else v
             for k, v in response.raw_headers
         }
         assert "no-cache" in raw.get("cache-control", "")
@@ -780,6 +766,7 @@ class TestSSEStream:
         must emit a chunk starting with ``data: ``.
         """
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from ui.web.app import api_logs_stream
 
         call_count = 0
@@ -817,6 +804,7 @@ class TestSSEStream:
     async def test_sse_event_payload_is_valid_json(self):
         """Each emitted SSE event payload must be deserializable as JSON."""
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from ui.web.app import api_logs_stream
 
         call_count = 0
@@ -855,9 +843,7 @@ class TestSSEStream:
                     payload = text[len("data: ") :].strip()
                     parsed = json.loads(payload)  # raises on invalid JSON
                     assert "time" in parsed, "SSE payload missing 'time' field"
-                    assert "micro_loops" in parsed, (
-                        "SSE payload missing 'micro_loops' field"
-                    )
+                    assert "micro_loops" in parsed, "SSE payload missing 'micro_loops' field"
                     assert isinstance(parsed["micro_loops"], int)
 
     @pytest.mark.asyncio
@@ -869,6 +855,7 @@ class TestSSEStream:
         Specifically: 3 iterations with micro=0 → only 1 event total, not 3.
         """
         from unittest.mock import AsyncMock, MagicMock, patch
+
         from ui.web.app import api_logs_stream
 
         call_count = 0
@@ -956,9 +943,7 @@ class TestResponseSchemas:
         """descriptions keys must be a superset of FLAG_DEFAULTS keys."""
         descs = client.get("/api/flags").json()["descriptions"]
         for flag_name in FLAG_DEFAULTS:
-            assert flag_name in descs, (
-                f"Flag '{flag_name}' has no entry in FLAG_DESCRIPTIONS"
-            )
+            assert flag_name in descs, f"Flag '{flag_name}' has no entry in FLAG_DESCRIPTIONS"
 
     def test_config_schema_fields_have_required_meta(self):
         """Every field in _schema must have 'type', 'default', 'label', 'min'."""
@@ -1285,9 +1270,7 @@ class TestAdversarialInputs:
         """SQL injection in a task title must not raise 500."""
         for payload in self._SQL_INJECTION_PAYLOADS:
             r = client.post("/api/tasks/inject", json={"title": payload})
-            assert r.status_code != 500, (
-                f"SQL injection payload caused 500: {payload!r}"
-            )
+            assert r.status_code != 500, f"SQL injection payload caused 500: {payload!r}"
 
     def test_xss_payload_in_task_title_does_not_render(self):
         """XSS payloads must not appear unescaped in a JSON response."""
@@ -1308,17 +1291,13 @@ class TestAdversarialInputs:
                     "description": payload,
                 },
             )
-            assert r.status_code != 500, (
-                f"Path traversal payload caused 500: {payload!r}"
-            )
+            assert r.status_code != 500, f"Path traversal payload caused 500: {payload!r}"
 
     def test_prompt_injection_in_task_title_does_not_crash(self):
         """Prompt injection strings in task titles must be accepted safely."""
         for payload in self._PROMPT_INJECTION_PAYLOADS:
             r = client.post("/api/tasks/inject", json={"title": payload})
-            assert r.status_code != 500, (
-                f"Prompt injection payload caused 500: {payload!r}"
-            )
+            assert r.status_code != 500, f"Prompt injection payload caused 500: {payload!r}"
 
     def test_null_bytes_in_title_do_not_crash(self):
         """Null bytes in string fields must be handled without crashing."""
@@ -1350,9 +1329,7 @@ class TestAdversarialInputs:
         """SQL injection in query-string parameters must not cause 500."""
         for payload in self._SQL_INJECTION_PAYLOADS:
             r = client.get(f"/api/audit?subsystem={payload}")
-            assert r.status_code != 500, (
-                f"SQL injection in query param caused 500: {payload!r}"
-            )
+            assert r.status_code != 500, f"SQL injection in query param caused 500: {payload!r}"
 
     def test_config_post_with_injected_string_values(self):
         """String values containing SQL/XSS must not crash config save."""

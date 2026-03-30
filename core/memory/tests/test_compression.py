@@ -8,15 +8,13 @@ Uses stub DuckDB/ChromaDB/EmbeddingPipeline to avoid real DB connections.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 
 import pytest
 
-from core.memory.compression import _cosine_similarity, MemoryCompressor
+from core.memory.compression import MemoryCompressor, _cosine_similarity
 from core.memory.schemas import MemoryConfig
-
 
 # ---------------------------------------------------------------------------
 # Stub adapters
@@ -51,7 +49,7 @@ class FakeChroma:
 class FakeEmbeddings:
     """Returns a controllable fixed vector for every embed() call."""
 
-    def __init__(self, vector: list[float] = None):
+    def __init__(self, vector: list[float] | None = None):
         self._vector = vector or [1.0, 0.0, 0.0]
         self.calls = []
 
@@ -108,7 +106,7 @@ class TestCosineSimilarity:
     def test_normalised_diagonal(self):
         a = [1.0, 1.0]
         n = math.sqrt(2)
-        expected = (1.0 / n) * (1.0 / n) * 2  # == 1.0
+        (1.0 / n) * (1.0 / n) * 2  # == 1.0
         assert _cosine_similarity(a, a) == pytest.approx(1.0)
 
 
@@ -223,15 +221,17 @@ class TestSimilarityLogging:
             config=config,
         )
 
-        artifacts = [{"id": "x1", "content": "original", "artifact_type": "raw", "created_at": "now"}]
+        artifacts = [
+            {"id": "x1", "content": "original", "artifact_type": "raw", "created_at": "now"}
+        ]
 
         with caplog.at_level(logging.WARNING, logger="core.memory.compression"):
             await compressor._compress_chunk("ses-1", artifacts, "threshold-based")
 
-        warning_messages = [
-            r.message for r in caplog.records if r.levelno >= logging.WARNING
-        ]
-        assert any("Low summary quality" in m or "cosine_similarity" in m for m in warning_messages)
+        warning_messages = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any(
+            "Low summary quality" in m or "cosine_similarity" in m for m in warning_messages
+        )
 
     @pytest.mark.asyncio
     async def test_high_similarity_logs_debug(self, caplog):
@@ -251,19 +251,17 @@ class TestSimilarityLogging:
             config=config,
         )
 
-        artifacts = [{"id": "y1", "content": "content", "artifact_type": "raw", "created_at": "now"}]
+        artifacts = [
+            {"id": "y1", "content": "content", "artifact_type": "raw", "created_at": "now"}
+        ]
 
         with caplog.at_level(logging.DEBUG, logger="core.memory.compression"):
             await compressor._compress_chunk("ses-2", artifacts, "age-based")
 
         # Must have no WARNING-level log about quality
-        warning_messages = [
-            r.message for r in caplog.records if r.levelno >= logging.WARNING
-        ]
+        warning_messages = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
         assert not any("Low summary quality" in m for m in warning_messages)
 
         # Should have a DEBUG message about quality being OK
-        debug_messages = [
-            r.message for r in caplog.records if r.levelno == logging.DEBUG
-        ]
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
         assert any("quality OK" in m or "cosine_similarity" in m for m in debug_messages)

@@ -58,13 +58,13 @@ Usage
 
 from __future__ import annotations
 
-import time
 import logging
 import threading
+import time
 from collections import deque
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Deque, Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -85,18 +85,18 @@ class Span:
 
     name: str
     started_at: float = field(default_factory=time.monotonic)
-    ended_at: Optional[float] = None
+    ended_at: float | None = None
     attributes: dict = field(default_factory=dict)
-    error: Optional[str] = None
+    error: str | None = None
 
-    def finish(self, error: Optional[str] = None) -> None:
+    def finish(self, error: str | None = None) -> None:
         """Mark the span as finished."""
         self.ended_at = time.monotonic()
         if error:
             self.error = error
 
     @property
-    def duration_ms(self) -> Optional[float]:
+    def duration_ms(self) -> float | None:
         """Duration in milliseconds, or None if still running."""
         if self.ended_at is None:
             return None
@@ -108,9 +108,7 @@ class Span:
             "name": self.name,
             "started_at": round(self.started_at, 4),
             "ended_at": round(self.ended_at, 4) if self.ended_at else None,
-            "duration_ms": round(self.duration_ms, 2)
-            if self.duration_ms is not None
-            else None,
+            "duration_ms": round(self.duration_ms, 2) if self.duration_ms is not None else None,
             "attributes": self.attributes,
             "error": self.error,
         }
@@ -136,24 +134,24 @@ class Trace:
     trace_id: str
     name: str
     started_at: float = field(default_factory=time.monotonic)
-    ended_at: Optional[float] = None
+    ended_at: float | None = None
     attributes: dict = field(default_factory=dict)
     spans: list = field(default_factory=list)
-    _current_span: Optional[Span] = field(default=None, repr=False)
+    _current_span: Span | None = field(default=None, repr=False)
 
     def finish(self) -> None:
         """Mark the trace as complete."""
         self.ended_at = time.monotonic()
 
     @property
-    def duration_ms(self) -> Optional[float]:
+    def duration_ms(self) -> float | None:
         """Total trace duration in milliseconds."""
         if self.ended_at is None:
             return None
         return (self.ended_at - self.started_at) * 1000
 
     @contextmanager
-    def span(self, name: str, attributes: Optional[dict] = None) -> Iterator[Span]:
+    def span(self, name: str, attributes: dict | None = None) -> Iterator[Span]:
         """
         Context manager to create a child span.
 
@@ -180,14 +178,12 @@ class Trace:
             "name": self.name,
             "started_at": round(self.started_at, 4),
             "ended_at": round(self.ended_at, 4) if self.ended_at else None,
-            "duration_ms": round(self.duration_ms, 2)
-            if self.duration_ms is not None
-            else None,
+            "duration_ms": round(self.duration_ms, 2) if self.duration_ms is not None else None,
             "attributes": self.attributes,
             "spans": [s.to_dict() for s in self.spans],
         }
 
-    def slowest_span(self) -> Optional[Span]:
+    def slowest_span(self) -> Span | None:
         """Return the span with the longest duration."""
         finished = [s for s in self.spans if s.duration_ms is not None]
         if not finished:
@@ -199,9 +195,7 @@ class Trace:
         if self.duration_ms is None:
             return
         slowest = self.slowest_span()
-        slowest_info = (
-            f" (slowest: {slowest.name}={slowest.duration_ms:.0f}ms)" if slowest else ""
-        )
+        slowest_info = f" (slowest: {slowest.name}={slowest.duration_ms:.0f}ms)" if slowest else ""
         logger.debug(
             "Trace '%s' [%s] completed in %.0fms%s",
             self.name,
@@ -227,14 +221,12 @@ class Tracer:
     def __init__(self, max_traces: int = 100, auto_log: bool = True) -> None:
         self._max_traces = max_traces
         self._auto_log = auto_log
-        self._traces: Deque[Trace] = deque(maxlen=max_traces)
+        self._traces: deque[Trace] = deque(maxlen=max_traces)
         self._lock = threading.Lock()
         self._trace_counter: int = 0
 
     @contextmanager
-    def start_trace(
-        self, name: str, attributes: Optional[dict] = None
-    ) -> Iterator[Trace]:
+    def start_trace(self, name: str, attributes: dict | None = None) -> Iterator[Trace]:
         """
         Context manager that starts a trace and yields it.
 
@@ -339,7 +331,7 @@ default_tracer = Tracer()
 # ---------------------------------------------------------------------------
 
 
-def record_tinker_exception(exc: Exception, span: "Span") -> None:
+def record_tinker_exception(exc: Exception, span: Span) -> None:
     """
     Record a ``TinkerError`` on a tracing ``Span``.
 

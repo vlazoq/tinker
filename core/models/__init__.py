@@ -46,13 +46,13 @@ Public API
 """
 
 from .library import ModelEntry, ModelLibrary
-from .presets import ModelPreset, PresetManager
 from .ollama_sync import OllamaSync
+from .presets import ModelPreset, PresetManager
 
 __all__ = [
     "ModelEntry",
     "ModelLibrary",
     "ModelPreset",
-    "PresetManager",
     "OllamaSync",
+    "PresetManager",
 ]

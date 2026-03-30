@@ -34,7 +34,6 @@ from typing import Any
 
 from core.llm.types import AgentRole
 
-
 # ---------------------------------------------------------------------------
 # Internal registry — maps AgentRole → constructor callable.
 #

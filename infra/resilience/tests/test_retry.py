@@ -38,20 +38,19 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from exceptions import (
+    ConfigurationError,
     ModelConnectionError,
     ResponseParseError,
-    ConfigurationError,
 )
 from infra.resilience.retry import (
-    RetryConfig,
     AGGRESSIVE,
     CONSERVATIVE,
     ONCE,
+    RetryConfig,
     _compute_delay,
     retry_async,
     with_retry,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -381,9 +380,11 @@ class TestRetryAsyncSleep:
 
     @pytest.mark.asyncio
     async def test_no_sleep_on_non_retryable_failure(self):
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            with pytest.raises(ResponseParseError):
-                await retry_async(lambda: _always_fail_non_retryable(), RetryConfig())
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            pytest.raises(ResponseParseError),
+        ):
+            await retry_async(lambda: _always_fail_non_retryable(), RetryConfig())
         mock_sleep.assert_not_called()
 
 

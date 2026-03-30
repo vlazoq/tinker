@@ -42,9 +42,7 @@ class SummarizerMixin:
         lines: list[str] = []
 
         # Header: system name, loop number, confidence
-        lines.append(
-            f"=== Architecture State: {s.system_name} (loop {s.macro_loop}) ==="
-        )
+        lines.append(f"=== Architecture State: {s.system_name} (loop {s.macro_loop}) ===")
         lines.append(f"Purpose : {s.system_purpose or '(not set)'}")
         lines.append(f"Scope   : {s.system_scope or '(not set)'}")
         tier = s.overall_confidence.tier.value
@@ -58,8 +56,7 @@ class SummarizerMixin:
             # Show only the first 3 responsibilities to save space
             resps = "; ".join(c.responsibilities[:3])
             lines.append(
-                f"  [{c.confidence.value:.2f}] {c.name}"
-                + (f" — {resps}" if resps else "")
+                f"  [{c.confidence.value:.2f}] {c.name}" + (f" — {resps}" if resps else "")
             )
         lines.append("")
 
@@ -83,9 +80,7 @@ class SummarizerMixin:
         # Decisions — top 8 by confidence, with status label
         if s.decisions:
             lines.append(f"── Design Decisions ({len(s.decisions)}) ──")
-            for d in sorted(s.decisions.values(), key=lambda x: -x.confidence.value)[
-                :8
-            ]:
+            for d in sorted(s.decisions.values(), key=lambda x: -x.confidence.value)[:8]:
                 lines.append(f"  [{d.status} {d.confidence.value:.2f}] {d.title}")
             lines.append("")
 

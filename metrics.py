@@ -209,9 +209,7 @@ class TinkerMetrics:
         except OSError as exc:
             # Port already in use or permission denied.  Log and continue —
             # a failed metrics server should never crash Tinker.
-            logger.warning(
-                "Could not start metrics server on port %d: %s", self._port, exc
-            )
+            logger.warning("Could not start metrics server on port %d: %s", self._port, exc)
             self._enabled = False
 
     # ── Hooks called by the Orchestrator ────────────────────────────────────

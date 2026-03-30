@@ -42,10 +42,9 @@ def build_enterprise_stack() -> dict:
       capacity_planner, feature_flags, backup_manager,
       auto_recovery, health_server (None until start() called).
     """
-    from tinker_platform.features.flags import default_flags as flags
-
     # ── Alerting ──────────────────────────────────────────────────────────────
     from infra.observability.alerting import AlertManager, NullAlertManager
+    from tinker_platform.features.flags import default_flags as flags
 
     slack_url = os.getenv("TINKER_SLACK_WEBHOOK")
     webhook_url = os.getenv("TINKER_ALERT_WEBHOOK")
@@ -78,9 +77,7 @@ def build_enterprise_stack() -> dict:
     # ── Dead letter queue ─────────────────────────────────────────────────────
     from infra.resilience.dead_letter_queue import DeadLetterQueue
 
-    dlq = DeadLetterQueue(
-        db_path=os.getenv("TINKER_DLQ_PATH", "tinker_dlq.sqlite")
-    )
+    dlq = DeadLetterQueue(db_path=os.getenv("TINKER_DLQ_PATH", "tinker_dlq.sqlite"))
 
     # ── Idempotency cache ─────────────────────────────────────────────────────
     from infra.resilience.idempotency import IdempotencyCache
@@ -104,8 +101,8 @@ def build_enterprise_stack() -> dict:
     )
 
     # ── SLA tracker ───────────────────────────────────────────────────────────
-    from infra.observability.sla_tracker import build_default_sla_tracker
     from infra.observability.alerting import AlertType as _AlertType
+    from infra.observability.sla_tracker import build_default_sla_tracker
 
     _sla_log = logging.getLogger("tinker.sla_tracker")
 
@@ -130,9 +127,7 @@ def build_enterprise_stack() -> dict:
     # ── Audit log ─────────────────────────────────────────────────────────────
     from infra.observability.audit_log import AuditLog
 
-    audit_log = AuditLog(
-        db_path=os.getenv("TINKER_AUDIT_LOG_PATH", "tinker_audit.sqlite")
-    )
+    audit_log = AuditLog(db_path=os.getenv("TINKER_AUDIT_LOG_PATH", "tinker_audit.sqlite"))
 
     # ── Tracing ───────────────────────────────────────────────────────────────
     from infra.observability.tracing import Tracer
@@ -196,6 +191,6 @@ def build_enterprise_stack() -> dict:
         "capacity_planner": capacity_planner,
         "feature_flags": flags,
         "backup_manager": backup_manager,
-        "auto_recovery": None,      # wired later after memory_manager exists
-        "health_server": None,      # started later after orchestrator exists
+        "auto_recovery": None,  # wired later after memory_manager exists
+        "health_server": None,  # started later after orchestrator exists
     }

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from tinker_platform.experiments.ab_testing import ABTestingFramework
 from exceptions import ExperimentError
+from tinker_platform.experiments.ab_testing import ABTestingFramework
 
 
 @pytest.fixture
@@ -85,13 +85,14 @@ class TestAnalysis:
     def test_insufficient_data_no_winner(self, ab):
         ab.create_experiment("few_data", {"control": 1, "treatment": 2})
         # Only 5 outcomes — need >= 10 for winner determination
-        for i in range(5):
+        for _i in range(5):
             ab.record_outcome("few_data", "control", 0.7)
         report = ab.analyse("few_data")
         assert report["winner"] is None
 
     def test_clear_winner_detected(self, ab):
         import random
+
         rng = random.Random(42)
         ab.create_experiment("clear_win", {"control": 1, "treatment": 2})
         # control gets low scores, treatment gets high scores (with variance so t-test fires)
@@ -178,6 +179,7 @@ class TestResetAndMeanStd:
         assert stats["n"] == 5
         assert abs(stats["mean"] - 0.8) < 0.001
         import statistics
+
         expected_std = round(statistics.stdev(values), 4)
         assert abs(stats["std"] - expected_std) < 0.001
 

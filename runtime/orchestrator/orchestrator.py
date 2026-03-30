@@ -48,18 +48,20 @@ How to run it
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from core.events import EventBus, Event, EventType
-from .config import OrchestratorConfig
-from .state import OrchestratorState, LoopLevel
+from core.events import Event, EventType
+
+from ._lifecycle import LifecycleMixin
 
 # Mixin classes — each provides a focused group of methods
 from ._loop_runners import LoopRunnerMixin
 from ._resilience import ResilienceMixin
 from ._stagnation import StagnationMixin
-from ._lifecycle import LifecycleMixin
+from .config import OrchestratorConfig
+from .state import LoopLevel, OrchestratorState
 
 try:
     from infra.observability.audit_log import AuditEventType
@@ -96,7 +98,7 @@ class Orchestrator(
     def __init__(
         self,
         *,
-        config: Optional[OrchestratorConfig] = None,
+        config: OrchestratorConfig | None = None,
         task_engine: Any,
         context_assembler: Any,
         architect_agent: Any,
@@ -107,11 +109,11 @@ class Orchestrator(
         arch_state_manager: Any,
         stagnation_monitor: Any = None,
         metrics: Any = None,
-        snapshot_callback: Optional[Any] = None,
-        checkpoint_manager: Optional[Any] = None,
-        event_bus: Optional[Any] = None,
-        research_team: Optional[Any] = None,
-        research_enhancer: Optional[Any] = None,
+        snapshot_callback: Any | None = None,
+        checkpoint_manager: Any | None = None,
+        event_bus: Any | None = None,
+        research_team: Any | None = None,
+        research_enhancer: Any | None = None,
     ) -> None:
         self.config = config or OrchestratorConfig()
 
@@ -170,6 +172,7 @@ class Orchestrator(
 
         # Confirmation gate
         from .confirmation import ConfirmationGate
+
         self.confirmation_gate = ConfirmationGate(self.config, self.state)
 
         # Human judge — quality control agent.
@@ -177,6 +180,7 @@ class Orchestrator(
         # which are all available at this point.
         if self.config.judge_mode != "llm":
             from agents.human_judge import HumanJudge
+
             self.human_judge = HumanJudge(self.config, self.state, self.event_bus)
             logger.info("HumanJudge wired — mode=%s", self.config.judge_mode)
         else:
@@ -200,7 +204,7 @@ class Orchestrator(
             await self.event_bus.publish(
                 Event(type=event_type, payload=payload or {}, source=source)
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("EventBus publish failed (non-fatal): %s", exc)
 
     # ── Public API ───────────────────────────────────────────────────────────
@@ -217,23 +221,29 @@ class Orchestrator(
 
         await self._setup_dlq_replayer()
 
-        await self.emit_event(EventType.SYSTEM_STARTED, {
-            "config": {
-                "meso_trigger_count": self.config.meso_trigger_count,
-                "macro_interval_seconds": self.config.macro_interval_seconds,
+        await self.emit_event(
+            EventType.SYSTEM_STARTED,
+            {
+                "config": {
+                    "meso_trigger_count": self.config.meso_trigger_count,
+                    "macro_interval_seconds": self.config.macro_interval_seconds,
+                },
             },
-        })
+        )
 
         try:
             await self._main_loop()
         except asyncio.CancelledError:
             logger.info("Orchestrator task cancelled — treating as shutdown")
         finally:
-            await self.emit_event(EventType.SYSTEM_STOPPING, {
-                "total_micro_loops": self.state.total_micro_loops,
-                "total_meso_loops": self.state.total_meso_loops,
-                "total_macro_loops": self.state.total_macro_loops,
-            })
+            await self.emit_event(
+                EventType.SYSTEM_STOPPING,
+                {
+                    "total_micro_loops": self.state.total_micro_loops,
+                    "total_meso_loops": self.state.total_meso_loops,
+                    "total_macro_loops": self.state.total_macro_loops,
+                },
+            )
             await self._on_shutdown()
 
     def request_shutdown(self) -> None:
@@ -349,10 +359,7 @@ class Orchestrator(
             else:
                 self.state.consecutive_failures += 1
 
-                if (
-                    self.state.consecutive_failures
-                    >= self.config.max_consecutive_failures
-                ):
+                if self.state.consecutive_failures >= self.config.max_consecutive_failures:
                     logger.warning(
                         "Backing off for %.1fs after %d consecutive failures",
                         self.config.failure_backoff_seconds,
@@ -380,13 +387,11 @@ class Orchestrator(
         Uses ``asyncio.wait_for(event.wait(), timeout=seconds)`` so the
         orchestrator stays responsive to shutdown requests during any sleep.
         """
-        try:
+        with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(
                 self._shutdown_event.wait(),
                 timeout=seconds,
             )
-        except asyncio.TimeoutError:
-            pass
 
     def _try_write_snapshot(self) -> None:
         """

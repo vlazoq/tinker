@@ -39,8 +39,6 @@ import asyncio
 import json
 import logging
 import os
-import time
-from dataclasses import asdict
 from typing import Any
 
 from .base import BaseTool, ToolSchema
@@ -203,9 +201,7 @@ class WebhookDispatcher:
                     bus.subscribe_handler(etype, self._on_event)
                 except ValueError:
                     logger.warning("WebhookDispatcher: unknown event type '%s'", event_val)
-            logger.info(
-                "WebhookDispatcher: subscribed to %d event type(s)", len(specific_events)
-            )
+            logger.info("WebhookDispatcher: subscribed to %d event type(s)", len(specific_events))
 
     async def _on_event(self, event: Any) -> None:
         """Handle an event by dispatching to matching endpoints."""
@@ -255,7 +251,10 @@ class WebhookDispatcher:
                     self._stats["failed"] += 1
                     self._stats["last_error"] = f"HTTP {resp.status_code} from {url}"
                     logger.warning(
-                        "webhook: %s → %s failed (status=%d)", event.type.value, url, resp.status_code
+                        "webhook: %s → %s failed (status=%d)",
+                        event.type.value,
+                        url,
+                        resp.status_code,
                     )
             except Exception as exc:
                 self._stats["failed"] += 1

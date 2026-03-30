@@ -20,8 +20,7 @@ from a single thread or the caller must serialise access.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import List, Optional
+from datetime import UTC, datetime
 
 from .config import StagnationMonitorConfig
 from .detectors import (
@@ -61,8 +60,8 @@ class StagnationMonitor:
 
     def __init__(
         self,
-        config: Optional[StagnationMonitorConfig] = None,
-        embedding_backend: Optional[EmbeddingBackend] = None,
+        config: StagnationMonitorConfig | None = None,
+        embedding_backend: EmbeddingBackend | None = None,
     ):
         self.config = config or StagnationMonitorConfig()
         self.event_log = StagnationEventLog(max_size=self.config.event_log_max_size)
@@ -102,7 +101,7 @@ class StagnationMonitor:
     # Primary interface
     # ─────────────────────────────────────────────────────────
 
-    def check(self, ctx: MicroLoopContext) -> List[InterventionDirective]:
+    def check(self, ctx: MicroLoopContext) -> list[InterventionDirective]:
         """
         Run all (or one) detectors against the current micro-loop context.
 
@@ -110,11 +109,11 @@ class StagnationMonitor:
             A list of InterventionDirective objects, sorted by severity
             descending.  The list is empty when no stagnation is detected.
         """
-        directives: List[InterventionDirective] = []
+        directives: list[InterventionDirective] = []
 
         for stagnation_type, detector in self._detectors.items():
             try:
-                result: Optional[DetectionResult] = detector.check(ctx)
+                result: DetectionResult | None = detector.check(ctx)
             except Exception as exc:  # never let a detector crash the loop
                 logger.warning(
                     "Detector %s raised an exception: %s",
@@ -133,8 +132,7 @@ class StagnationMonitor:
             directives.append(directive)
 
             logger.warning(
-                "[StagnationMonitor] %s detected at loop %d — "
-                "intervention: %s (severity=%.3f)",
+                "[StagnationMonitor] %s detected at loop %d — intervention: %s (severity=%.3f)",
                 stagnation_type.value,
                 ctx.loop_index,
                 directive.intervention_type.value,
@@ -210,7 +208,7 @@ class StagnationMonitor:
     ) -> StagnationEvent:
         return StagnationEvent(
             stagnation_type=result.stagnation_type,
-            detected_at=datetime.now(timezone.utc),
+            detected_at=datetime.now(UTC),
             loop_index=loop_index,
             directive=directive,
             detector_evidence=result.evidence,

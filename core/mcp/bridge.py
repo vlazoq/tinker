@@ -45,13 +45,13 @@ bridge.status() returns a dict suitable for the /api/mcp/status endpoint::
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
     from core.mcp.config import MCPConfig
     from core.mcp.server import MCPServer
-    from core.mcp.client import MCPClient
     from core.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -67,13 +67,13 @@ class MCPBridge:
     registry : Tinker's ToolRegistry.  Remote tools are registered here.
     """
 
-    def __init__(self, config: "MCPConfig", registry: "ToolRegistry") -> None:
+    def __init__(self, config: MCPConfig, registry: ToolRegistry) -> None:
         self._config = config
         self._registry = registry
-        self._server: Optional["MCPServer"] = None
+        self._server: MCPServer | None = None
         self._imported_tool_names: list[str] = []
 
-    def mount_server(self, app: "FastAPI") -> None:
+    def mount_server(self, app: FastAPI) -> None:
         """
         Add MCP server routes to an existing FastAPI app.
 

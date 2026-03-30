@@ -18,7 +18,6 @@ from agents.fritz.github_ops import FritzRemoteResult
 from agents.fritz.metrics import FritzMetrics
 from agents.fritz.push_policy import PolicyViolation
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -82,6 +81,7 @@ def _make_agent(
 
     # Wire up the policy directly (skip setup())
     from agents.fritz.push_policy import PushPolicy
+
     agent._policy = PushPolicy(cfg)
     agent._ready = True
 
@@ -101,9 +101,11 @@ def _make_agent(
         gh.create_pr = AsyncMock(return_value=_remote_ok("create_pr"))
         gh.merge_pr = AsyncMock(return_value=_remote_ok("merge_pr", url=""))
         gh.request_review = AsyncMock(return_value=_remote_ok("request_review", url=""))
-        gh.wait_for_ci = AsyncMock(return_value=FritzRemoteResult(
-            ok=True, operation="wait_for_ci", data={"state": "success"}
-        ))
+        gh.wait_for_ci = AsyncMock(
+            return_value=FritzRemoteResult(
+                ok=True, operation="wait_for_ci", data={"state": "success"}
+            )
+        )
         gh.whoami = AsyncMock(return_value=_remote_ok("whoami", url=""))
         agent._github = gh
 
@@ -230,7 +232,9 @@ class TestPrFlow:
     @pytest.mark.asyncio
     async def test_branch_creation_failure_falls_back_to_checkout(self):
         agent = _make_agent()
-        agent._git.create_branch = AsyncMock(return_value=_git_fail("create_branch", stderr="exists"))
+        agent._git.create_branch = AsyncMock(
+            return_value=_git_fail("create_branch", stderr="exists")
+        )
 
         with patch.object(agent, "_audit", new=AsyncMock()):
             result = await agent.commit_and_ship("feat: x", task_id="t1", auto_merge=False)
@@ -279,9 +283,11 @@ class TestPrFlow:
     @pytest.mark.asyncio
     async def test_auto_merge_waits_for_ci_when_required(self):
         agent = _make_agent(require_ci_green=True)
-        agent._github.wait_for_ci = AsyncMock(return_value=FritzRemoteResult(
-            ok=True, operation="wait_for_ci", data={"state": "success"}
-        ))
+        agent._github.wait_for_ci = AsyncMock(
+            return_value=FritzRemoteResult(
+                ok=True, operation="wait_for_ci", data={"state": "success"}
+            )
+        )
         agent._github.merge_pr = AsyncMock(return_value=_remote_ok("merge_pr", url=""))
 
         with patch.object(agent, "_audit", new=AsyncMock()):
@@ -293,9 +299,9 @@ class TestPrFlow:
     @pytest.mark.asyncio
     async def test_auto_merge_skipped_when_ci_fails(self):
         agent = _make_agent(require_ci_green=True)
-        agent._github.wait_for_ci = AsyncMock(return_value=FritzRemoteResult(
-            ok=False, operation="wait_for_ci", error="CI failed"
-        ))
+        agent._github.wait_for_ci = AsyncMock(
+            return_value=FritzRemoteResult(ok=False, operation="wait_for_ci", error="CI failed")
+        )
 
         with patch.object(agent, "_audit", new=AsyncMock()):
             result = await agent.commit_and_ship("feat: x", task_id="t1", auto_merge=True)
@@ -414,7 +420,7 @@ class TestAuditLogging:
         with patch.object(agent, "_audit", new=AsyncMock(side_effect=Exception("audit down"))):
             # Should NOT raise even though audit fails
             try:
-                result = await agent.commit_and_ship("fix: typo")
+                await agent.commit_and_ship("fix: typo")
                 # If audit is patched to raise, it should propagate in this test
                 # since we're not patching inside _direct_push_flow silently.
                 # This test verifies the _audit method itself is wrapped.
@@ -445,10 +451,12 @@ class TestMetricsRecorded:
     @pytest.mark.asyncio
     async def test_push_metric_per_remote(self):
         agent = _make_agent(allow_push_to_main=True, require_pr=False)
-        agent._git.push_all_remotes = AsyncMock(return_value={
-            "origin": _git_ok("push"),
-            "upstream": _git_ok("push"),
-        })
+        agent._git.push_all_remotes = AsyncMock(
+            return_value={
+                "origin": _git_ok("push"),
+                "upstream": _git_ok("push"),
+            }
+        )
 
         with patch.object(agent, "_audit", new=AsyncMock()):
             await agent.commit_and_ship("fix: x")

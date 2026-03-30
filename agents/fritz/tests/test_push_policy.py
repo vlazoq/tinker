@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from agents.fritz.config import FritzConfig, PushPolicyConfig
-from agents.fritz.push_policy import PolicyDecision, PolicyViolation, PushPolicy
+from agents.fritz.config import FritzConfig
+from agents.fritz.push_policy import PolicyViolation, PushPolicy
 
 
 def _policy(

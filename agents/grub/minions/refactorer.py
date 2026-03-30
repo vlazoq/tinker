@@ -25,11 +25,11 @@ from __future__ import annotations
 
 import time
 
-from .base import BaseMinion
-from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus, TestSummary
+from ..contracts.task import GrubTask
 from ..tools.file_ops import read_file, write_file
-from ..tools.shell import run_tests, check_syntax
+from ..tools.shell import check_syntax, run_tests
+from .base import BaseMinion
 
 
 class RefactorerMinion(BaseMinion):
@@ -93,9 +93,7 @@ If no changes are needed:
         test_file = task.context.get("test_file", "")
 
         if not files_to_refactor:
-            return self._make_failed_result(
-                task, "No files_to_refactor in task.context"
-            )
+            return self._make_failed_result(task, "No files_to_refactor in task.context")
 
         # ── Load files ────────────────────────────────────────────────────────
         originals: dict[str, str] = {}
@@ -123,7 +121,8 @@ If no changes are needed:
         )
 
         response = await self._llm(
-            prompt, temperature=0.15,
+            prompt,
+            temperature=0.15,
             timeout=self.config.timeouts.get(self.name, 120.0),
         )
         if response.startswith("ERROR:"):
@@ -150,12 +149,10 @@ If no changes are needed:
                 continue
 
             # Syntax check
-            import tempfile
             import os
+            import tempfile
 
-            with tempfile.NamedTemporaryFile(
-                suffix=".py", delete=False, mode="w"
-            ) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w") as tmp:
                 tmp.write(block)
                 tmp_path = tmp.name
             chk = check_syntax(tmp_path)

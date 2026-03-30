@@ -66,7 +66,6 @@ import os
 import stat
 import time
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -74,14 +73,14 @@ logger = logging.getLogger(__name__)
 # Simple synchronous convenience function (wraps the default manager)
 # ---------------------------------------------------------------------------
 
-_default_manager: Optional["SecretManager"] = None
+_default_manager: SecretManager | None = None
 
 
 def get_secret(
     key: str,
-    default: Optional[str] = None,
+    default: str | None = None,
     required: bool = False,
-) -> Optional[str]:
+) -> str | None:
     """
     Retrieve a secret by key using the default secret manager.
 
@@ -134,12 +133,7 @@ def check_file_permissions(path: Path) -> None:
         mode = file_stat.st_mode
         # Warn if group or others have any access (read, write, execute)
         if mode & (
-            stat.S_IRGRP
-            | stat.S_IWGRP
-            | stat.S_IXGRP
-            | stat.S_IROTH
-            | stat.S_IWOTH
-            | stat.S_IXOTH
+            stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IWOTH | stat.S_IXOTH
         ):
             logger.warning(
                 "SECURITY WARNING: secrets file '%s' has insecure permissions "
@@ -172,18 +166,16 @@ class SecretManager:
     def __init__(
         self,
         backend: str = "env",
-        secrets_file: Optional[str] = None,
-        vault_url: Optional[str] = None,
-        vault_token: Optional[str] = None,
+        secrets_file: str | None = None,
+        vault_url: str | None = None,
+        vault_token: str | None = None,
         cache_ttl: int = 300,
     ) -> None:
         self._backend = backend
         self._vault_url = vault_url
         self._vault_token = vault_token or os.getenv("VAULT_TOKEN")
         self._cache_ttl = cache_ttl
-        self._cache: dict[
-            str, tuple[Optional[str], float]
-        ] = {}  # key → (value, expires_at)
+        self._cache: dict[str, tuple[str | None, float]] = {}  # key → (value, expires_at)
 
         # Resolve secrets file path for the "file" backend
         raw_path = (
@@ -199,9 +191,9 @@ class SecretManager:
     async def get(
         self,
         key: str,
-        default: Optional[str] = None,
+        default: str | None = None,
         required: bool = False,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Retrieve a secret asynchronously.
 
@@ -245,7 +237,7 @@ class SecretManager:
 
         return val
 
-    async def _fetch_from_backend(self, key: str) -> Optional[str]:
+    async def _fetch_from_backend(self, key: str) -> str | None:
         """Delegate to the configured secret backend."""
         if self._backend == "env":
             return None  # Only env vars, no additional backend
@@ -257,12 +249,10 @@ class SecretManager:
             return await self._fetch_from_vault(key)
 
         else:
-            logger.warning(
-                "Unknown secret backend '%s' — falling back to env", self._backend
-            )
+            logger.warning("Unknown secret backend '%s' — falling back to env", self._backend)
             return None
 
-    def _fetch_from_file(self, key: str) -> Optional[str]:
+    def _fetch_from_file(self, key: str) -> str | None:
         """
         Read a secret from a local KEY=VALUE secrets file.
 
@@ -297,9 +287,7 @@ class SecretManager:
             # Re-parse the file on change
             new_cache: dict[str, str] = {}
             try:
-                for raw_line in self._secrets_file.read_text(
-                    encoding="utf-8"
-                ).splitlines():
+                for raw_line in self._secrets_file.read_text(encoding="utf-8").splitlines():
                     line = raw_line.strip()
                     if not line or line.startswith("#"):
                         continue
@@ -318,7 +306,7 @@ class SecretManager:
 
         return self._file_cache.get(key)
 
-    async def _fetch_from_vault(self, key: str) -> Optional[str]:
+    async def _fetch_from_vault(self, key: str) -> str | None:
         """Fetch a secret from HashiCorp Vault (requires ``hvac`` package)."""
         try:
             import hvac  # type: ignore
@@ -345,7 +333,7 @@ class SecretManager:
             logger.warning("Vault fetch failed for '%s': %s", key, exc)
         return None
 
-    def invalidate_cache(self, key: Optional[str] = None) -> None:
+    def invalidate_cache(self, key: str | None = None) -> None:
         """
         Invalidate cached secrets.
 
@@ -379,9 +367,7 @@ def build_secret_manager() -> SecretManager:
         backend = explicit
     elif (Path.home() / ".tinker" / "secrets").exists():
         backend = "file"
-        logger.info(
-            "SecretManager: auto-detected ~/.tinker/secrets — using file backend"
-        )
+        logger.info("SecretManager: auto-detected ~/.tinker/secrets — using file backend")
     else:
         backend = "env"
 

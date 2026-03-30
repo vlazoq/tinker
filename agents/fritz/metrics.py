@@ -51,7 +51,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -146,15 +145,15 @@ class FritzMetrics:
         try:
             start_http_server(self._port)
             logger.info(
-                "Fritz metrics server started on port %d — "
-                "scrape at http://localhost:%d/metrics",
+                "Fritz metrics server started on port %d — scrape at http://localhost:%d/metrics",
                 self._port,
                 self._port,
             )
         except OSError as exc:
             logger.warning(
                 "Could not start Fritz metrics server on port %d: %s",
-                self._port, exc,
+                self._port,
+                exc,
             )
             self._enabled = False
 

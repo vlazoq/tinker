@@ -14,13 +14,9 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch, call
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from runtime.orchestrator.orchestrator import Orchestrator
-
 
 # ---------------------------------------------------------------------------
 # Minimal stub that satisfies Orchestrator.__init__'s required kwargs

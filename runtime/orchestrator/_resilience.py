@@ -10,15 +10,14 @@ auto-replayer wiring.  These are mixed back into the Orchestrator via
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
 
 try:
-    from infra.resilience.backpressure import BackpressureController, BackpressureAction
+    from infra.resilience.backpressure import BackpressureAction, BackpressureController
 
     _BACKPRESSURE_AVAILABLE = True
 except ImportError:
@@ -73,9 +72,7 @@ class ResilienceMixin:
 
         dlq = self.enterprise.get("dlq")
         if dlq is None:
-            logger.debug(
-                "No DLQ instance in enterprise dict — DLQ replay disabled"
-            )
+            logger.debug("No DLQ instance in enterprise dict — DLQ replay disabled")
             return
 
         task_engine = self.task_engine
@@ -99,9 +96,7 @@ class ResilienceMixin:
                         artifact_id=artifact_id,
                     )
                 else:
-                    raise ValueError(
-                        f"DLQ item missing task_id in payload: {payload}"
-                    )
+                    raise ValueError(f"DLQ item missing task_id in payload: {payload}")
 
             elif operation == "store_artifact":
                 logger.info(
@@ -113,14 +108,11 @@ class ResilienceMixin:
                         **payload,
                     )
                 else:
-                    raise ValueError(
-                        "Memory manager does not support store_artifact"
-                    )
+                    raise ValueError("Memory manager does not support store_artifact")
 
             else:
                 raise ValueError(
-                    f"DLQ replay: unknown operation '{operation}' — "
-                    f"cannot replay automatically"
+                    f"DLQ replay: unknown operation '{operation}' — cannot replay automatically"
                 )
 
         try:
@@ -132,14 +124,9 @@ class ResilienceMixin:
                 max_retries=5,
             )
             await self._dlq_replayer.start()
-            logger.info(
-                "DLQ auto-replayer started — replaying failed operations "
-                "every 60s"
-            )
+            logger.info("DLQ auto-replayer started — replaying failed operations every 60s")
         except Exception as exc:
-            logger.warning(
-                "Failed to start DLQ auto-replayer (non-fatal): %s", exc
-            )
+            logger.warning("Failed to start DLQ auto-replayer (non-fatal): %s", exc)
             self._dlq_replayer = None
 
     async def _apply_backpressure(self) -> None:
@@ -162,9 +149,7 @@ class ResilienceMixin:
         try:
             queue_depth = getattr(self.task_engine, "queue_depth", 0) or 0
             failure_streak = self.state.consecutive_failures
-            artifact_count = sum(
-                1 for r in self.state.micro_history if r.artifact_id is not None
-            )
+            artifact_count = sum(1 for r in self.state.micro_history if r.artifact_id is not None)
 
             recommendation = bp_controller.evaluate(
                 queue_depth=queue_depth,
@@ -196,8 +181,7 @@ class ResilienceMixin:
 
             elif action == BackpressureAction.PAUSE_GENERATION:
                 logger.warning(
-                    "Backpressure PAUSE_GENERATION: pausing task generation "
-                    "for %.1fs — %s",
+                    "Backpressure PAUSE_GENERATION: pausing task generation for %.1fs — %s",
                     recommendation.wait_seconds,
                     recommendation.reason,
                 )
@@ -240,9 +224,7 @@ class ResilienceMixin:
 
         try:
             planner.record_tokens(
-                micro_tokens=(
-                    (record.architect_tokens or 0) + (record.critic_tokens or 0)
-                )
+                micro_tokens=((record.architect_tokens or 0) + (record.critic_tokens or 0))
             )
             total_artifacts = self.state.total_micro_loops
             planner.record_artifact_count(total=total_artifacts)

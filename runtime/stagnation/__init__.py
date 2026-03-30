@@ -38,27 +38,27 @@ from .models import (
 from .monitor import StagnationMonitor
 
 __all__ = [
+    "INTERVENTION_MAP",
+    "CritiqueCollapseConfig",
+    # Embeddings
+    "EmbeddingBackend",
+    "FallbackTFIDFBackend",
+    "InterventionDirective",
+    "InterventionType",
+    # Models
+    "MicroLoopContext",
+    "OllamaEmbeddingBackend",
+    "ResearchSaturationConfig",
+    "SemanticLoopConfig",
+    "StagnationEvent",
+    # Log
+    "StagnationEventLog",
     # Monitor
     "StagnationMonitor",
     # Config
     "StagnationMonitorConfig",
-    "SemanticLoopConfig",
-    "SubsystemFixationConfig",
-    "CritiqueCollapseConfig",
-    "ResearchSaturationConfig",
-    "TaskStarvationConfig",
-    # Models
-    "MicroLoopContext",
-    "InterventionDirective",
-    "InterventionType",
     "StagnationType",
-    "StagnationEvent",
-    "INTERVENTION_MAP",
-    # Embeddings
-    "EmbeddingBackend",
-    "FallbackTFIDFBackend",
-    "OllamaEmbeddingBackend",
+    "SubsystemFixationConfig",
+    "TaskStarvationConfig",
     "make_embedding_backend",
-    # Log
-    "StagnationEventLog",
 ]

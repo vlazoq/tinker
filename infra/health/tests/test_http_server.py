@@ -10,8 +10,9 @@ the handlers directly via mock reader/writer objects.
 from __future__ import annotations
 
 import json
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from infra.health.http_server import HealthServer
 

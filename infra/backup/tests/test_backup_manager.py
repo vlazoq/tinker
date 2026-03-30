@@ -9,6 +9,7 @@ verify-after-write, count-based retention, and restore.
 from __future__ import annotations
 
 import json
+
 import pytest
 
 from infra.backup.backup_manager import BackupManager
@@ -61,9 +62,7 @@ class TestFullBackup:
     @pytest.mark.asyncio
     async def test_files_copied(self, bm):
         backup_id = await bm.backup()
-        manifest = json.loads(
-            (bm._backup_dir / backup_id / "manifest.json").read_text()
-        )
+        manifest = json.loads((bm._backup_dir / backup_id / "manifest.json").read_text())
         assert manifest["files"]["duckdb"]["status"] == "ok"
         assert manifest["files"]["sqlite"]["status"] == "ok"
         assert manifest["files"]["chroma"]["status"] == "ok"
@@ -78,9 +77,7 @@ class TestFullBackup:
             chroma_path=str(tmp_path / "no_chroma"),
         )
         backup_id = await bm.backup()
-        manifest = json.loads(
-            (bm._backup_dir / backup_id / "manifest.json").read_text()
-        )
+        manifest = json.loads((bm._backup_dir / backup_id / "manifest.json").read_text())
         assert manifest["files"]["duckdb"]["status"] == "skipped"
 
 
@@ -91,9 +88,7 @@ class TestIncrementalBackup:
         await bm.backup()
         # Incremental — files unchanged
         backup_id2 = await bm.backup(incremental=True)
-        manifest = json.loads(
-            (bm._backup_dir / backup_id2 / "manifest.json").read_text()
-        )
+        manifest = json.loads((bm._backup_dir / backup_id2 / "manifest.json").read_text())
         assert manifest["mode"] == "incremental"
         assert manifest["files"]["duckdb"]["status"] == "unchanged"
         assert manifest["files"]["sqlite"]["status"] == "unchanged"
@@ -104,9 +99,7 @@ class TestIncrementalBackup:
         # Modify source file
         bm._duckdb_path.write_bytes(b"duckdb_data_v2_changed")
         backup_id2 = await bm.backup(incremental=True)
-        manifest = json.loads(
-            (bm._backup_dir / backup_id2 / "manifest.json").read_text()
-        )
+        manifest = json.loads((bm._backup_dir / backup_id2 / "manifest.json").read_text())
         assert manifest["files"]["duckdb"]["status"] == "ok"
         assert manifest["files"]["sqlite"]["status"] == "unchanged"
 
@@ -114,9 +107,7 @@ class TestIncrementalBackup:
     async def test_first_incremental_without_prior_full_backs_up_everything(self, bm):
         # No prior backup — incremental falls back to full
         backup_id = await bm.backup(incremental=True)
-        manifest = json.loads(
-            (bm._backup_dir / backup_id / "manifest.json").read_text()
-        )
+        manifest = json.loads((bm._backup_dir / backup_id / "manifest.json").read_text())
         assert manifest["files"]["duckdb"]["status"] == "ok"
 
 
@@ -145,7 +136,6 @@ class TestPruneOldBackups:
     async def test_keep_count_prevents_over_pruning(self, tmp_path):
         """keep_count=2 means at least 2 backups survive even with retention_days=0."""
         import datetime as dt
-        from datetime import timezone
 
         bm = BackupManager(
             backup_dir=str(tmp_path / "backups"),
@@ -162,9 +152,7 @@ class TestPruneOldBackups:
             d.mkdir(parents=True)
             manifest = {
                 "id": d.name,
-                "created_at": (
-                    dt.datetime.now(timezone.utc) - dt.timedelta(days=10 + i)
-                ).isoformat(),
+                "created_at": (dt.datetime.now(dt.UTC) - dt.timedelta(days=10 + i)).isoformat(),
                 "files": {},
                 "errors": [],
             }

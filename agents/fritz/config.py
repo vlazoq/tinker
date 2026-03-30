@@ -9,6 +9,7 @@ Config files are JSON; the file is auto-created with defaults on first run.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -34,9 +35,7 @@ class PushPolicyConfig:
     auto_merge_method: str = "squash"
     """How to merge PRs automatically. Options: squash | merge | rebase"""
 
-    protected_branches: list[str] = field(
-        default_factory=lambda: ["production", "release"]
-    )
+    protected_branches: list[str] = field(default_factory=lambda: ["production", "release"])
     """Branches Fritz will NEVER push to directly, regardless of other settings.
     Note: 'main'/'master' protection is controlled by allow_push_to_main."""
 
@@ -127,16 +126,14 @@ class FritzConfig:
     # ─────────────────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_file(cls, path: str | Path = "fritz_config.json") -> "FritzConfig":
+    def from_file(cls, path: str | Path = "fritz_config.json") -> FritzConfig:
         """Load config from JSON file + apply env var overrides."""
         p = Path(path)
         data: dict[str, Any] = {}
 
         if p.exists():
-            try:
+            with contextlib.suppress(Exception):
                 data = json.loads(p.read_text())
-            except Exception:
-                pass
         else:
             # Auto-create with defaults so users have a starting template.
             cfg = cls()
@@ -146,11 +143,7 @@ class FritzConfig:
         policy_data = data.pop("push_policy", {})
         cfg = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
         cfg.push_policy = PushPolicyConfig(
-            **{
-                k: v
-                for k, v in policy_data.items()
-                if k in PushPolicyConfig.__dataclass_fields__
-            }
+            **{k: v for k, v in policy_data.items() if k in PushPolicyConfig.__dataclass_fields__}
         )
         cfg._apply_env_overrides()
         return cfg
@@ -220,13 +213,14 @@ class FritzConfig:
         if self.identity_mode not in ("bot", "delegate"):
             errors.append(f"identity_mode must be 'bot' or 'delegate', got '{self.identity_mode}'")
         if self.push_policy.auto_merge_method not in ("squash", "merge", "rebase"):
-            errors.append(f"auto_merge_method must be squash|merge|rebase")
+            errors.append("auto_merge_method must be squash|merge|rebase")
         if self.gitea_enabled and not self.gitea_base_url:
             errors.append("gitea_base_url is required when gitea_enabled is True")
         return errors
 
 
 # ── Private helpers ───────────────────────────────────────────────────────────
+
 
 def _str(obj: Any, attr: str, env_key: str) -> None:
     val = os.getenv(env_key)
@@ -243,7 +237,5 @@ def _bool(obj: Any, attr: str, env_key: str) -> None:
 def _int(obj: Any, attr: str, env_key: str) -> None:
     val = os.getenv(env_key)
     if val is not None:
-        try:
+        with contextlib.suppress(ValueError):
             setattr(obj, attr, int(val))
-        except ValueError:
-            pass

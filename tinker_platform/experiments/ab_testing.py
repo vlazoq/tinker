@@ -75,9 +75,14 @@ logger = logging.getLogger(__name__)
 # Welch's t-test helper
 # ---------------------------------------------------------------------------
 
+
 def _welch_t_test_p(
-    mean1: float, std1: float, n1: int,
-    mean2: float, std2: float, n2: int,
+    mean1: float,
+    std1: float,
+    n1: int,
+    mean2: float,
+    std2: float,
+    n2: int,
 ) -> float:
     """
     Compute the two-tailed p-value for Welch's t-test (unequal variances).
@@ -97,8 +102,8 @@ def _welch_t_test_p(
             Returns 1.0 if std is zero for both groups (no variation → no test).
     """
     # Avoid division-by-zero when both groups have zero variance
-    var1 = std1 ** 2 / n1
-    var2 = std2 ** 2 / n2
+    var1 = std1**2 / n1
+    var2 = std2**2 / n2
     se2 = var1 + var2
     if se2 == 0:
         return 1.0
@@ -106,9 +111,14 @@ def _welch_t_test_p(
     try:
         # Prefer scipy for accuracy
         from scipy import stats  # type: ignore
+
         result = stats.ttest_ind_from_stats(
-            mean1=mean1, std1=std1, nobs1=n1,
-            mean2=mean2, std2=std2, nobs2=n2,
+            mean1=mean1,
+            std1=std1,
+            nobs1=n1,
+            mean2=mean2,
+            std2=std2,
+            nobs2=n2,
             equal_var=False,
         )
         return float(result.pvalue)
@@ -119,7 +129,7 @@ def _welch_t_test_p(
     t = (mean1 - mean2) / math.sqrt(se2)
 
     # Welch–Satterthwaite degrees of freedom
-    df = se2 ** 2 / (var1 ** 2 / (n1 - 1) + var2 ** 2 / (n2 - 1))
+    df = se2**2 / (var1**2 / (n1 - 1) + var2**2 / (n2 - 1))
 
     # Two-tailed p-value via regularised incomplete beta function:
     #   p = I(df / (df + t²), df/2, 1/2)
@@ -320,9 +330,7 @@ class ABTestingFramework:
         # the other 90 % transparently get the control.
         if exp.traffic_percentage < 1.0:
             traffic_input = f"{self._seed}:traffic:{experiment_name}:{unit_id}"
-            traffic_val = int(
-                hashlib.sha256(traffic_input.encode()).hexdigest(), 16
-            )
+            traffic_val = int(hashlib.sha256(traffic_input.encode()).hexdigest(), 16)
             # Map the 256-bit hash to [0, 1) by dividing by 2^256
             traffic_frac = traffic_val / (2**256)
             if traffic_frac >= exp.traffic_percentage:
@@ -337,9 +345,7 @@ class ABTestingFramework:
         assigned = variant_names[hash_val % len(variant_names)]
         return assigned, exp.variants[assigned]
 
-    def record_outcome(
-        self, experiment_name: str, variant: str, metric_value: float
-    ) -> None:
+    def record_outcome(self, experiment_name: str, variant: str, metric_value: float) -> None:
         """
         Record a metric outcome for a variant.
 

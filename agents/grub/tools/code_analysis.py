@@ -16,12 +16,11 @@ from __future__ import annotations
 import ast
 import logging
 from pathlib import Path
-from typing import Union
 
 logger = logging.getLogger(__name__)
 
 
-def count_lines(path: Union[str, Path]) -> dict:
+def count_lines(path: str | Path) -> dict:
     """
     Count total lines, code lines, comment lines, and blank lines.
 
@@ -50,7 +49,7 @@ def count_lines(path: Union[str, Path]) -> dict:
         return {"total": 0, "code": 0, "comments": 0, "blank": 0, "error": str(exc)}
 
 
-def extract_functions(path: Union[str, Path]) -> list[dict]:
+def extract_functions(path: str | Path) -> list[dict]:
     """
     Extract all function and method definitions from a Python file.
 
@@ -119,7 +118,7 @@ def extract_functions(path: Union[str, Path]) -> list[dict]:
     return functions
 
 
-def extract_imports(path: Union[str, Path]) -> list[str]:
+def extract_imports(path: str | Path) -> list[str]:
     """
     Extract all import statements from a Python file.
 
@@ -144,13 +143,12 @@ def extract_imports(path: Union[str, Path]) -> list[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 imports.add(alias.name.split(".")[0])  # top-level module
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                imports.add(node.module.split(".")[0])
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module.split(".")[0])
     return sorted(imports)
 
 
-def summarise_file(path: Union[str, Path]) -> dict:
+def summarise_file(path: str | Path) -> dict:
     """
     Produce a structured summary of a Python file.
 
@@ -175,9 +173,7 @@ def summarise_file(path: Union[str, Path]) -> dict:
     try:
         source = path.read_text(encoding="utf-8")
         tree = ast.parse(source)
-        classes = [
-            node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)
-        ]
+        classes = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
     except Exception as exc:
         logger.warning("analyze_file: could not parse classes in %s: %s", path, exc)
         classes = []

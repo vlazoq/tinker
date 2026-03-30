@@ -16,7 +16,6 @@ from agents.fritz.config import FritzConfig
 from agents.fritz.github_ops import FritzGitHub, FritzRemoteResult
 from agents.fritz.metrics import FritzMetrics
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -35,6 +34,7 @@ def _make_gh(owner: str = "acme", repo: str = "widget") -> FritzGitHub:
 def _resp(status: int, body: dict | list | None = None) -> httpx.Response:
     """Build a fake httpx.Response."""
     import json as _json
+
     content = _json.dumps(body or {}).encode()
     response = httpx.Response(status, content=content)
     response.request = httpx.Request("GET", "https://api.github.com/")
@@ -242,7 +242,10 @@ class TestCreateRelease:
     @pytest.mark.asyncio
     async def test_prerelease_flag(self):
         gh = _make_gh()
-        release_data = {"id": 11, "html_url": "https://github.com/acme/widget/releases/tag/v2.0-rc"}
+        release_data = {
+            "id": 11,
+            "html_url": "https://github.com/acme/widget/releases/tag/v2.0-rc",
+        }
         with _patch_request(gh, 201, release_data):
             result = await gh.create_release("v2.0-rc", "RC", "notes", prerelease=True)
         assert result.ok
@@ -279,9 +282,11 @@ class TestWaitForCi:
         with patch.object(
             gh,
             "get_ci_status",
-            new=AsyncMock(return_value=FritzRemoteResult(
-                ok=True, operation="get_ci_status", data={"state": "success"}
-            )),
+            new=AsyncMock(
+                return_value=FritzRemoteResult(
+                    ok=True, operation="get_ci_status", data={"state": "success"}
+                )
+            ),
         ):
             result = await gh.wait_for_ci("sha123", timeout=60, poll_interval=1)
         assert result.ok
@@ -292,9 +297,11 @@ class TestWaitForCi:
         with patch.object(
             gh,
             "get_ci_status",
-            new=AsyncMock(return_value=FritzRemoteResult(
-                ok=True, operation="get_ci_status", data={"state": "failure"}
-            )),
+            new=AsyncMock(
+                return_value=FritzRemoteResult(
+                    ok=True, operation="get_ci_status", data={"state": "failure"}
+                )
+            ),
         ):
             result = await gh.wait_for_ci("sha123", timeout=60, poll_interval=1)
         assert not result.ok
@@ -302,13 +309,18 @@ class TestWaitForCi:
     @pytest.mark.asyncio
     async def test_timeout(self):
         gh = _make_gh()
-        with patch.object(
-            gh,
-            "get_ci_status",
-            new=AsyncMock(return_value=FritzRemoteResult(
-                ok=True, operation="get_ci_status", data={"state": "pending"}
-            )),
-        ), patch("asyncio.sleep", new=AsyncMock()):
+        with (
+            patch.object(
+                gh,
+                "get_ci_status",
+                new=AsyncMock(
+                    return_value=FritzRemoteResult(
+                        ok=True, operation="get_ci_status", data={"state": "pending"}
+                    )
+                ),
+            ),
+            patch("asyncio.sleep", new=AsyncMock()),
+        ):
             result = await gh.wait_for_ci("sha123", timeout=2, poll_interval=5)
         assert not result.ok
         assert "did not complete" in result.error
@@ -319,9 +331,11 @@ class TestWaitForCi:
         with patch.object(
             gh,
             "get_ci_status",
-            new=AsyncMock(return_value=FritzRemoteResult(
-                ok=False, operation="get_ci_status", error="network error"
-            )),
+            new=AsyncMock(
+                return_value=FritzRemoteResult(
+                    ok=False, operation="get_ci_status", error="network error"
+                )
+            ),
         ):
             result = await gh.wait_for_ci("sha123", timeout=60, poll_interval=1)
         assert not result.ok
@@ -345,9 +359,7 @@ class TestCreateIssue:
         gh = _make_gh()
         issue_data = {"number": 6, "html_url": "https://github.com/acme/widget/issues/6"}
         with _patch_request(gh, 201, issue_data):
-            result = await gh.create_issue(
-                "Bug", "body", labels=["bug"], assignees=["alice"]
-            )
+            result = await gh.create_issue("Bug", "body", labels=["bug"], assignees=["alice"])
         assert result.ok
 
 
@@ -358,5 +370,6 @@ class TestRateLimitProperty:
     def test_returns_rate_limit_state(self):
         gh = _make_gh()
         from agents.fritz.retry import RateLimitState
+
         assert isinstance(gh.rate_limit, RateLimitState)
         assert gh.rate_limit.remaining == -1  # initial state

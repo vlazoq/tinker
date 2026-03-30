@@ -59,7 +59,8 @@ from .base import BaseTool, ToolSchema
 # so the rest of the code knows to skip the Playwright code path.
 # Playwright is optional — fall back gracefully if not installed.
 try:
-    from playwright.async_api import async_playwright, TimeoutError as PWTimeout
+    from playwright.async_api import TimeoutError as PWTimeout
+    from playwright.async_api import async_playwright
 
     _PLAYWRIGHT_AVAILABLE = True
 except ImportError:
@@ -174,9 +175,7 @@ class WebScraperTool(BaseTool):
                 },
                 "required": ["url"],
             },
-            returns=(
-                "Dict: {url, title, text, word_count, links?, fetch_method, success}"
-            ),
+            returns=("Dict: {url, title, text, word_count, links?, fetch_method, success}"),
         )
 
     # ------------------------------------------------------------------
@@ -279,9 +278,7 @@ class WebScraperTool(BaseTool):
             "links": links if include_links else None,
         }
 
-    async def _fetch_with_playwright(
-        self, url: str, wait_for_selector: str | None
-    ) -> str:
+    async def _fetch_with_playwright(self, url: str, wait_for_selector: str | None) -> str:
         """
         Fetch a page using a real Chromium browser via Playwright.
 
@@ -321,15 +318,11 @@ class WebScraperTool(BaseTool):
                 # Navigate to the URL. "domcontentloaded" means we wait until
                 # the HTML is parsed and the DOM is built, but we don't wait
                 # for all images/fonts to finish downloading (faster).
-                await page.goto(
-                    url, timeout=self._timeout_ms, wait_until="domcontentloaded"
-                )
+                await page.goto(url, timeout=self._timeout_ms, wait_until="domcontentloaded")
                 if wait_for_selector:
                     # Wait for a specific element to appear — useful for SPAs
                     # where the main content is loaded by JavaScript after the DOM.
-                    await page.wait_for_selector(
-                        wait_for_selector, timeout=self._timeout_ms
-                    )
+                    await page.wait_for_selector(wait_for_selector, timeout=self._timeout_ms)
                 # Read the fully rendered HTML from the browser.
                 html = await page.content()
             finally:
@@ -364,8 +357,7 @@ class WebScraperTool(BaseTool):
         headers = {
             # Identify ourselves as "Tinker-Researcher" — a polite, honest User-Agent.
             "User-Agent": (
-                "Mozilla/5.0 (compatible; Tinker-Researcher/1.0; "
-                "+https://github.com/tinker)"
+                "Mozilla/5.0 (compatible; Tinker-Researcher/1.0; +https://github.com/tinker)"
             )
         }
         async with httpx.AsyncClient(
@@ -417,7 +409,7 @@ class WebScraperTool(BaseTool):
         if _PLAYWRIGHT_AVAILABLE:
             try:
                 html = await self._fetch_with_playwright(url, wait_for_selector)
-            except (PWTimeout, Exception):  # noqa: BLE001
+            except (PWTimeout, Exception):
                 # Playwright failed (timeout, browser crash, network error, etc.).
                 # Fall back to the simpler httpx approach.
                 # Fall back to httpx

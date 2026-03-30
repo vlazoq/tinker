@@ -257,8 +257,7 @@ class DiagramGeneratorTool(BaseTool):
             style = rel.get("style", "solid")
             direction_attr = rel.get("direction", "forward")
             lines.append(
-                f'    {src} -> {dst} [label="{lbl}", style={style}, '
-                f"dir={direction_attr}];"
+                f'    {src} -> {dst} [label="{lbl}", style={style}, dir={direction_attr}];'
             )
 
         lines.append("}")
@@ -347,15 +346,15 @@ class DiagramGeneratorTool(BaseTool):
             # Mermaid node shapes: [...] = rectangle (default).
             # We use the rectangle shape for all nodes to keep it simple;
             # Mermaid's shape options are more limited than Graphviz.
-            lines.append(f"    {nid}[\"{self._escape(label)}\"]")
+            lines.append(f'    {nid}["{self._escape(label)}"]')
 
         # Emit grouped nodes inside Mermaid subgraphs.
         for group_name, members in groups.items():
-            lines.append(f"    subgraph {self._safe_id(group_name)}[\"{self._escape(group_name)}\"]")
+            lines.append(f'    subgraph {self._safe_id(group_name)}["{self._escape(group_name)}"]')
             for comp in members:
                 nid = self._safe_id(comp["id"])
                 label = comp.get("label", comp["id"])
-                lines.append(f"        {nid}[\"{self._escape(label)}\"]")
+                lines.append(f'        {nid}["{self._escape(label)}"]')
             lines.append("    end")
 
         lines.append("")
@@ -500,7 +499,7 @@ class DiagramGeneratorTool(BaseTool):
                 rendered = True
             else:
                 render_error = stderr.decode().strip()
-        except (FileNotFoundError, asyncio.TimeoutError) as exc:
+        except (TimeoutError, FileNotFoundError) as exc:
             render_error = str(exc)
 
         return {
@@ -570,8 +569,10 @@ class DiagramGeneratorTool(BaseTool):
             try:
                 proc = await asyncio.create_subprocess_exec(
                     "mmdc",
-                    "-i", str(mmd_path),
-                    "-o", str(png_path),
+                    "-i",
+                    str(mmd_path),
+                    "-o",
+                    str(png_path),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
@@ -580,7 +581,7 @@ class DiagramGeneratorTool(BaseTool):
                     rendered = True
                 else:
                     render_error = stderr.decode().strip()
-            except (FileNotFoundError, asyncio.TimeoutError) as exc:
+            except (TimeoutError, FileNotFoundError) as exc:
                 render_error = str(exc)
         else:
             # mmdc is not installed — this is a soft failure, not a crash.

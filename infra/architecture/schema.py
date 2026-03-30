@@ -67,11 +67,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, fields
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import Enum, StrEnum
 from typing import Any
 from uuid import uuid4
-
 
 # ──────────────────────────────────────────────
 # Enums
@@ -84,7 +83,7 @@ from uuid import uuid4
 # so they serialise naturally to/from JSON.
 
 
-class ConfidenceTier(str, Enum):
+class ConfidenceTier(StrEnum):
     """
     Human-readable buckets for confidence scores.
 
@@ -103,7 +102,7 @@ class ConfidenceTier(str, Enum):
     ESTABLISHED = "established"  # 0.85–1.00
 
 
-class RelationshipKind(str, Enum):
+class RelationshipKind(StrEnum):
     """
     The type of connection between two components.
 
@@ -126,7 +125,7 @@ class RelationshipKind(str, Enum):
     OWNS = "owns"
 
 
-class DecisionStatus(str, Enum):
+class DecisionStatus(StrEnum):
     """
     The lifecycle stage of a design decision.
 
@@ -181,11 +180,9 @@ class ConfidenceScore:
     evidence_count: int = 0  # starts at zero; goes up every time absorb() is called
     last_updated: str = field(
         # auto-fill with the current UTC time when the object is created
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
-    notes: list[str] = field(
-        default_factory=list
-    )  # recent commentary on why confidence changed
+    notes: list[str] = field(default_factory=list)  # recent commentary on why confidence changed
 
     def __post_init__(self):
         # Clamp value to [0, 1] immediately after construction.
@@ -211,7 +208,7 @@ class ConfidenceScore:
             return ConfidenceTier.CONFIDENT
         return ConfidenceTier.ESTABLISHED
 
-    def absorb(self, new_value: float, note: str | None = None) -> "ConfidenceScore":
+    def absorb(self, new_value: float, note: str | None = None) -> ConfidenceScore:
         """
         Produce a new ConfidenceScore that blends the current value with a fresh
         observation.  This object is NOT modified — a brand-new one is returned.
@@ -247,7 +244,7 @@ class ConfidenceScore:
         return ConfidenceScore(
             value=blended,
             evidence_count=self.evidence_count + 1,
-            last_updated=datetime.now(timezone.utc).isoformat(),
+            last_updated=datetime.now(UTC).isoformat(),
             notes=notes[-10:],  # keep only the 10 most recent notes to save space
         )
 
@@ -372,14 +369,10 @@ class DesignDecision:
     id: str = field(default_factory=lambda: str(uuid4())[:8])
     description: str = ""
     rationale: str = ""  # the "why" — often the most important field
-    status: str = (
-        DecisionStatus.PROPOSED.value
-    )  # starts as proposed; must be explicitly accepted
+    status: str = DecisionStatus.PROPOSED.value  # starts as proposed; must be explicitly accepted
     subsystem: str | None = None
     confidence: ConfidenceScore = field(default_factory=ConfidenceScore)
-    alternatives_considered: list[str] = field(
-        default_factory=list
-    )  # what else was on the table
+    alternatives_considered: list[str] = field(default_factory=list)  # what else was on the table
     tags: list[str] = field(default_factory=list)
     first_seen_loop: int = 0
     last_updated_loop: int = 0
@@ -546,7 +539,7 @@ def _from_dict_confidence(d: dict | None) -> ConfidenceScore:
     return ConfidenceScore(
         value=d.get("value", 0.5),
         evidence_count=d.get("evidence_count", 0),
-        last_updated=d.get("last_updated", datetime.now(timezone.utc).isoformat()),
+        last_updated=d.get("last_updated", datetime.now(UTC).isoformat()),
         notes=d.get("notes", []),
     )
 
@@ -578,9 +571,7 @@ def _from_dict_relationship(d: dict) -> Relationship:
         id=d.get("id", str(uuid4())[:8]),
         source_id=d.get("source_id", ""),
         target_id=d.get("target_id", ""),
-        kind=d.get(
-            "kind", RelationshipKind.DEPENDS_ON.value
-        ),  # default to generic link
+        kind=d.get("kind", RelationshipKind.DEPENDS_ON.value),  # default to generic link
         description=d.get("description", ""),
         interface_contract=d.get("interface_contract", ""),
         confidence=_from_dict_confidence(d.get("confidence")),
@@ -697,11 +688,11 @@ class ArchitectureState:
     macro_loop: int = 0  # starts at 0 and increments with each update
     created_at: str = field(
         # The creation timestamp never changes after the first save
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
     updated_at: str = field(
         # This gets refreshed every time we produce a new version
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
 
     # All collections use the item's `id` field as the dict key.
@@ -730,7 +721,7 @@ class ArchitectureState:
         return json.dumps(_to_dict(self), indent=indent)
 
     @classmethod
-    def model_validate_json(cls, text: str) -> "ArchitectureState":
+    def model_validate_json(cls, text: str) -> ArchitectureState:
         """
         Parse a JSON string (previously produced by model_dump_json) back
         into a live ArchitectureState object.
@@ -741,7 +732,7 @@ class ArchitectureState:
         return cls._from_dict(d)
 
     @classmethod
-    def _from_dict(cls, d: dict) -> "ArchitectureState":
+    def _from_dict(cls, d: dict) -> ArchitectureState:
         """
         Reconstruct an ArchitectureState from a plain Python dict.
 
@@ -756,14 +747,9 @@ class ArchitectureState:
         """
         # Reconstruct each collection by calling the appropriate helper
         comps = {k: _from_dict_component(v) for k, v in d.get("components", {}).items()}
-        rels = {
-            k: _from_dict_relationship(v) for k, v in d.get("relationships", {}).items()
-        }
+        rels = {k: _from_dict_relationship(v) for k, v in d.get("relationships", {}).items()}
         decs = {k: _from_dict_decision(v) for k, v in d.get("decisions", {}).items()}
-        rejas = {
-            k: _from_dict_rejected(v)
-            for k, v in d.get("rejected_alternatives", {}).items()
-        }
+        rejas = {k: _from_dict_rejected(v) for k, v in d.get("rejected_alternatives", {}).items()}
         qs = {k: _from_dict_question(v) for k, v in d.get("open_questions", {}).items()}
         subs = {k: _from_dict_subsystem(v) for k, v in d.get("subsystems", {}).items()}
         return cls(
@@ -773,8 +759,8 @@ class ArchitectureState:
             system_purpose=d.get("system_purpose", ""),
             system_scope=d.get("system_scope", ""),
             macro_loop=d.get("macro_loop", 0),
-            created_at=d.get("created_at", datetime.now(timezone.utc).isoformat()),
-            updated_at=d.get("updated_at", datetime.now(timezone.utc).isoformat()),
+            created_at=d.get("created_at", datetime.now(UTC).isoformat()),
+            updated_at=d.get("updated_at", datetime.now(UTC).isoformat()),
             components=comps,
             relationships=rels,
             decisions=decs,

@@ -59,7 +59,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import Optional
 
 import httpx
 
@@ -225,8 +224,7 @@ Output ONLY the compressed text — no preamble, no "here is the summary".
             )
         except Exception as exc:
             logger.warning(
-                "compress_context: unexpected error (%s) — "
-                "falling back to hard truncation for %s",
+                "compress_context: unexpected error (%s) — falling back to hard truncation for %s",
                 exc,
                 label,
             )

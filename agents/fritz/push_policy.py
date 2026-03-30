@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from .config import FritzConfig, PushPolicyConfig
+from .config import FritzConfig
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +87,7 @@ class PushPolicy:
                     ),
                     requires_pr=True,
                 )
-            logger.warning(
-                "Fritz is pushing directly to '%s'. allow_push_to_main=True.", branch
-            )
+            logger.warning("Fritz is pushing directly to '%s'. allow_push_to_main=True.", branch)
             return PolicyDecision(
                 allowed=True,
                 reason="Direct push to default branch allowed by policy.",
@@ -134,6 +132,7 @@ class PushPolicy:
         Always creates a feature branch (never pushes directly to main by default).
         """
         import re
+
         slug = re.sub(r"[^a-z0-9]+", "-", description.lower())[:40].strip("-")
         short_id = task_id[:8] if len(task_id) > 8 else task_id
         return f"fritz/{short_id}-{slug}"

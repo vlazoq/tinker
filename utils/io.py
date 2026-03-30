@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -17,28 +18,26 @@ def atomic_write(path: Path, content: str | bytes, mode: str = "w") -> None:
     partial write.
     """
     path = Path(path)
-    is_binary = "b" in mode
     dir_ = path.parent
     dir_.mkdir(parents=True, exist_ok=True)
 
-    fd = tempfile.NamedTemporaryFile(
-        mode=mode,
-        dir=dir_,
-        delete=False,
-        suffix=".tmp",
-    )
+    tmp_name: str | None = None
     try:
-        fd.write(content)
-        fd.flush()
-        os.fsync(fd.fileno())
-        fd.close()
-        os.replace(fd.name, path)
+        with tempfile.NamedTemporaryFile(
+            mode=mode,
+            dir=dir_,
+            delete=False,
+            suffix=".tmp",
+        ) as fd:
+            tmp_name = fd.name
+            fd.write(content)
+            fd.flush()
+            os.fsync(fd.fileno())
+        os.replace(tmp_name, path)
     except BaseException:
-        fd.close()
-        try:
-            os.unlink(fd.name)
-        except OSError:
-            pass
+        if tmp_name is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_name)
         raise
 
 

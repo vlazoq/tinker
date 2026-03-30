@@ -18,12 +18,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Union
 
 logger = logging.getLogger(__name__)
 
 
-def read_file(path: Union[str, Path]) -> tuple[bool, str]:
+def read_file(path: str | Path) -> tuple[bool, str]:
     """
     Read a text file.
 
@@ -48,7 +47,7 @@ def read_file(path: Union[str, Path]) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def write_file(path: Union[str, Path], content: str) -> tuple[bool, str]:
+def write_file(path: str | Path, content: str) -> tuple[bool, str]:
     """
     Write content to a file, creating parent directories if needed.
 
@@ -75,7 +74,7 @@ def write_file(path: Union[str, Path], content: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def append_file(path: Union[str, Path], content: str) -> tuple[bool, str]:
+def append_file(path: str | Path, content: str) -> tuple[bool, str]:
     """
     Append content to a file (creates the file if it doesn't exist).
 
@@ -102,7 +101,7 @@ def append_file(path: Union[str, Path], content: str) -> tuple[bool, str]:
 
 
 def list_files(
-    directory: Union[str, Path],
+    directory: str | Path,
     pattern: str = "**/*",
     include_dirs: bool = False,
 ) -> tuple[bool, list[str]]:
@@ -137,7 +136,7 @@ def list_files(
         return False, []
 
 
-def ensure_dir(path: Union[str, Path]) -> tuple[bool, str]:
+def ensure_dir(path: str | Path) -> tuple[bool, str]:
     """
     Create a directory and all parents if they don't exist.
 
@@ -157,7 +156,7 @@ def ensure_dir(path: Union[str, Path]) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def delete_file(path: Union[str, Path]) -> tuple[bool, str]:
+def delete_file(path: str | Path) -> tuple[bool, str]:
     """
     Delete a file.  Does NOT delete directories.
 

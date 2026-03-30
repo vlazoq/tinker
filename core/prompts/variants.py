@@ -226,9 +226,7 @@ VARIANT_REGISTRY: dict[VariantKey, PromptVariant] = {
 
 def get_variant(key: VariantKey) -> PromptVariant:
     if key not in VARIANT_REGISTRY:
-        raise KeyError(
-            f"Unknown variant key: '{key}'. Available: {list(VARIANT_REGISTRY.keys())}"
-        )
+        raise KeyError(f"Unknown variant key: '{key}'. Available: {list(VARIANT_REGISTRY.keys())}")
     return VARIANT_REGISTRY[key]
 
 

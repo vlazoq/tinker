@@ -62,14 +62,15 @@ import json
 import logging
 import sqlite3
 import time
+from datetime import UTC
 from typing import TYPE_CHECKING
 
-from .contracts.task import GrubTask
 from .contracts.result import MinionResult, ResultStatus
+from .contracts.task import GrubTask
 
 if TYPE_CHECKING:
-    from .registry import MinionRegistry
     from .config import GrubConfig
+    from .registry import MinionRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ logger = logging.getLogger(__name__)
 
 async def run_sequential(
     tasks: list[GrubTask],
-    pipeline: "PipelineRunner",
+    pipeline: PipelineRunner,
 ) -> list[MinionResult]:
     """
     Run tasks one at a time, in order.
@@ -123,7 +124,7 @@ async def run_sequential(
 
 async def run_parallel(
     tasks: list[GrubTask],
-    pipeline: "PipelineRunner",
+    pipeline: PipelineRunner,
     max_workers: int = 3,
 ) -> list[MinionResult]:
     """
@@ -235,9 +236,9 @@ class GrubQueue:
 
         Returns True on success.
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         try:
             con = sqlite3.connect(self._db_path, timeout=10)
             con.execute(
@@ -267,18 +268,16 @@ class GrubQueue:
         Returns the claimed GrubTask, or None if the queue is empty.
         Uses a SQLite transaction to prevent two workers claiming the same task.
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         try:
             con = sqlite3.connect(self._db_path, timeout=10)
             con.isolation_level = None  # autocommit off
             con.execute("BEGIN EXCLUSIVE")  # exclusive lock on the DB file
 
             # Find the next pending task (HIGH priority first, then FIFO)
-            priority_order = (
-                "CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END"
-            )
+            priority_order = "CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END"
             row = con.execute(
                 f"SELECT id, payload FROM grub_tasks "
                 f"WHERE status = 'pending' "
@@ -310,9 +309,9 @@ class GrubQueue:
     def complete(self, task_id: str, result: MinionResult, worker_id: str) -> None:
         """Mark a task as completed and store the result."""
         import uuid
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         try:
             con = sqlite3.connect(self._db_path, timeout=10)
             con.execute(
@@ -339,9 +338,9 @@ class GrubQueue:
 
     def fail(self, task_id: str, reason: str) -> None:
         """Mark a task as failed (will not be retried by workers)."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         try:
             con = sqlite3.connect(self._db_path, timeout=10)
             con.execute(
@@ -357,9 +356,7 @@ class GrubQueue:
         """Return number of pending tasks."""
         try:
             con = sqlite3.connect(self._db_path, timeout=5)
-            n = con.execute(
-                "SELECT COUNT(*) FROM grub_tasks WHERE status='pending'"
-            ).fetchone()[0]
+            n = con.execute("SELECT COUNT(*) FROM grub_tasks WHERE status='pending'").fetchone()[0]
             con.close()
             return n
         except Exception:
@@ -382,7 +379,7 @@ class GrubQueue:
 async def run_queue_worker(
     worker_id: str,
     queue: GrubQueue,
-    pipeline: "PipelineRunner",
+    pipeline: PipelineRunner,
     poll_interval: float = 2.0,
 ) -> None:
     """
@@ -427,9 +424,7 @@ async def run_queue_worker(
                 result.score,
             )
         except Exception as exc:
-            logger.error(
-                "Queue worker '%s': task failed with exception: %s", worker_id, exc
-            )
+            logger.error("Queue worker '%s': task failed with exception: %s", worker_id, exc)
             queue.fail(task.id, str(exc))
 
 
@@ -458,7 +453,7 @@ class PipelineRunner:
     Any stage can be skipped by setting skip_* = True in the config context.
     """
 
-    def __init__(self, registry: "MinionRegistry", config: "GrubConfig") -> None:
+    def __init__(self, registry: MinionRegistry, config: GrubConfig) -> None:
         self.registry = registry
         self.config = config
 
@@ -549,9 +544,7 @@ class PipelineRunner:
                     "test_output": test_result.test_results.output,
                     "failing_files": current_files,
                     "test_file": (
-                        test_result.files_written[0]
-                        if test_result.files_written
-                        else ""
+                        test_result.files_written[0] if test_result.files_written else ""
                     ),
                 },
             )
@@ -569,9 +562,7 @@ class PipelineRunner:
             context={
                 **task.context,
                 "files_to_refactor": current_files,
-                "test_file": (
-                    test_result.files_written[0] if test_result.files_written else ""
-                ),
+                "test_file": (test_result.files_written[0] if test_result.files_written else ""),
             },
         )
         final_result = await refactorer.run(refactor_task)

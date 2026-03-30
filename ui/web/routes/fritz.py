@@ -25,8 +25,8 @@ async def api_fritz_ship(request: Request):
     """Run Fritz commit-and-ship pipeline."""
     body = await request.json()
     try:
-        from agents.fritz.config import FritzConfig
         from agents.fritz.agent import FritzAgent
+        from agents.fritz.config import FritzConfig
 
         config = (
             FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -60,8 +60,8 @@ async def api_fritz_push(request: Request):
     """Push the current (or specified) branch."""
     body = await request.json()
     try:
-        from agents.fritz.config import FritzConfig
         from agents.fritz.agent import FritzAgent
+        from agents.fritz.config import FritzConfig
 
         config = (
             FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -82,8 +82,8 @@ async def api_fritz_create_pr(request: Request):
     """Create a pull request on GitHub or Gitea."""
     body = await request.json()
     try:
-        from agents.fritz.config import FritzConfig
         from agents.fritz.agent import FritzAgent
+        from agents.fritz.config import FritzConfig
 
         config = (
             FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -108,8 +108,8 @@ async def api_fritz_create_pr(request: Request):
 async def api_fritz_verify():
     """Test GitHub and Gitea credentials."""
     try:
-        from agents.fritz.config import FritzConfig
         from agents.fritz.agent import FritzAgent
+        from agents.fritz.config import FritzConfig
 
         config = (
             FritzConfig.from_file(FRITZ_CONFIG_FILE)
@@ -133,7 +133,7 @@ async def api_fritz_recent_diffs(limit: int = 5):
     try:
         cfg_path = FRITZ_CONFIG_FILE
         if cfg_path.exists():
-            with open(cfg_path, "r") as f:
+            with open(cfg_path) as f:
                 fritz_cfg = json.load(f)
             workspace = fritz_cfg.get("repo_path", workspace)
     except Exception:
@@ -142,18 +142,23 @@ async def api_fritz_recent_diffs(limit: int = 5):
     # Verify git repo
     try:
         proc = await asyncio.create_subprocess_exec(
-            "git", "rev-parse", "--is-inside-work-tree",
+            "git",
+            "rev-parse",
+            "--is-inside-work-tree",
             cwd=workspace,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+        stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
         if proc.returncode != 0:
             return JSONResponse(
-                {"error": "Not a git repository", "detail": f"'{workspace}' is not inside a git work tree."},
+                {
+                    "error": "Not a git repository",
+                    "detail": f"'{workspace}' is not inside a git work tree.",
+                },
                 status_code=400,
             )
-    except (asyncio.TimeoutError, FileNotFoundError) as exc:
+    except (TimeoutError, FileNotFoundError) as exc:
         return JSONResponse(
             {"error": "Git not available", "detail": str(exc)},
             status_code=500,
@@ -162,13 +167,16 @@ async def api_fritz_recent_diffs(limit: int = 5):
     # Fetch last N commits
     try:
         proc = await asyncio.create_subprocess_exec(
-            "git", "log", f"-{limit}", "--format=%H|%aI|%s",
+            "git",
+            "log",
+            f"-{limit}",
+            "--format=%H|%aI|%s",
             cwd=workspace,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
-    except (asyncio.TimeoutError, Exception) as exc:
+    except (TimeoutError, Exception) as exc:
         return JSONResponse(
             {"error": "git log failed", "detail": str(exc)},
             status_code=500,
@@ -187,7 +195,11 @@ async def api_fritz_recent_diffs(limit: int = 5):
 
         try:
             diff_proc = await asyncio.create_subprocess_exec(
-                "git", "diff", f"{sha}~1..{sha}", "--stat", "--patch",
+                "git",
+                "diff",
+                f"{sha}~1..{sha}",
+                "--stat",
+                "--patch",
                 cwd=workspace,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -197,7 +209,12 @@ async def api_fritz_recent_diffs(limit: int = 5):
         except Exception:
             try:
                 show_proc = await asyncio.create_subprocess_exec(
-                    "git", "show", sha, "--format=", "--stat", "--patch",
+                    "git",
+                    "show",
+                    sha,
+                    "--format=",
+                    "--stat",
+                    "--patch",
                     cwd=workspace,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -212,11 +229,13 @@ async def api_fritz_recent_diffs(limit: int = 5):
         if len(diff_text) > max_diff_chars:
             diff_text = diff_text[:max_diff_chars] + "\n\n... (diff truncated) ..."
 
-        commits.append({
-            "sha": sha,
-            "message": message,
-            "diff": diff_text,
-            "timestamp": timestamp,
-        })
+        commits.append(
+            {
+                "sha": sha,
+                "message": message,
+                "diff": diff_text,
+                "timestamp": timestamp,
+            }
+        )
 
     return {"commits": commits, "workspace": workspace}

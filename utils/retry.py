@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import functools
 import random
-from typing import Any, Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 
@@ -44,7 +45,7 @@ def retry_with_backoff(
                     last_exc = exc
                     if attempt == max_retries:
                         break
-                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    delay = min(base_delay * (2**attempt), max_delay)
                     delay *= 0.5 + random.random()  # jitter: [0.5x, 1.5x]
                     await asyncio.sleep(delay)
             raise last_exc  # type: ignore[misc]

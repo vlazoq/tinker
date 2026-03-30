@@ -7,25 +7,25 @@ All tests use tmp_path (pytest's built-in temporary directory fixture)
 so they never touch real project files.
 """
 
-import pytest
 import sys
 from pathlib import Path
 
-from agents.grub.tools.file_ops import (
-    read_file,
-    write_file,
-    append_file,
-    list_files,
-    ensure_dir,
-)
-from agents.grub.tools.shell import run_command, check_syntax
+import pytest
+
 from agents.grub.tools.code_analysis import (
     count_lines,
     extract_functions,
     extract_imports,
     summarise_file,
 )
-
+from agents.grub.tools.file_ops import (
+    append_file,
+    ensure_dir,
+    list_files,
+    read_file,
+    write_file,
+)
+from agents.grub.tools.shell import check_syntax, run_command
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # file_ops
@@ -35,7 +35,7 @@ from agents.grub.tools.code_analysis import (
 class TestFileOps:
     def test_write_then_read(self, tmp_path):
         p = tmp_path / "hello.txt"
-        ok, path = write_file(p, "hello world")
+        ok, _path = write_file(p, "hello world")
         assert ok is True
         ok2, content = read_file(p)
         assert ok2 is True
@@ -76,7 +76,7 @@ class TestFileOps:
 
     def test_ensure_dir_creates_nested(self, tmp_path):
         target = tmp_path / "x" / "y" / "z"
-        ok, path = ensure_dir(target)
+        ok, _path = ensure_dir(target)
         assert ok is True
         assert target.exists()
 

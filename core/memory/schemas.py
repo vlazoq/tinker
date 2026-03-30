@@ -41,18 +41,17 @@ Key concepts for beginners
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Any, Optional
-
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from enum import Enum, StrEnum
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Enumerations
 # ---------------------------------------------------------------------------
 
 
-class ArtifactType(str, Enum):
+class ArtifactType(StrEnum):
     """
     The category of content an Artifact contains.
 
@@ -85,7 +84,7 @@ class ArtifactType(str, Enum):
     RAW = "raw"
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """
     The lifecycle state of a Task.
 
@@ -175,12 +174,12 @@ class Artifact:
     content: str
     artifact_type: ArtifactType = ArtifactType.RAW
     session_id: str = field(default_factory=lambda: "")
-    task_id: Optional[str] = None
+    task_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # These three fields are set automatically — callers don't need to supply them
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     archived: bool = False  # True once the MemoryCompressor has processed this artifact
 
     def to_dict(self) -> dict[str, Any]:
@@ -205,7 +204,7 @@ class Artifact:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Artifact":
+    def from_dict(cls, d: dict[str, Any]) -> Artifact:
         """
         Reconstruct an Artifact from a plain dictionary (e.g. a database row).
 
@@ -223,9 +222,7 @@ class Artifact:
         d = dict(d)  # make a copy so we don't mutate the caller's dict
         d["artifact_type"] = ArtifactType(d["artifact_type"])  # string → enum
         if isinstance(d["created_at"], str):
-            d["created_at"] = datetime.fromisoformat(
-                d["created_at"]
-            )  # ISO string → datetime
+            d["created_at"] = datetime.fromisoformat(d["created_at"])  # ISO string → datetime
         return cls(**d)
 
 
@@ -269,12 +266,12 @@ class ResearchNote:
     source: str = "tinker-internal"
     tags: list[str] = field(default_factory=list)
     session_id: str = ""
-    task_id: Optional[str] = None
+    task_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # Auto-assigned fields
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         """
@@ -320,7 +317,7 @@ class ResearchNote:
         }
 
     @classmethod
-    def from_chroma(cls, doc_id: str, document: str, metadata: dict) -> "ResearchNote":
+    def from_chroma(cls, doc_id: str, document: str, metadata: dict) -> ResearchNote:
         """
         Reconstruct a ResearchNote from ChromaDB's query results.
 
@@ -351,7 +348,7 @@ class ResearchNote:
             task_id=metadata.get("task_id") or None,
             created_at=datetime.fromisoformat(
                 # Fall back to current time if created_at is missing (shouldn't happen)
-                metadata.get("created_at", datetime.now(timezone.utc).isoformat())
+                metadata.get("created_at", datetime.now(UTC).isoformat())
             ),
         )
 
@@ -399,17 +396,17 @@ class Task:
     description: str
     priority: TaskPriority = TaskPriority.NORMAL
     status: TaskStatus = TaskStatus.PENDING
-    parent_task_id: Optional[str] = None
+    parent_task_id: str | None = None
     session_id: str = ""
-    result: Optional[str] = None  # populated when status becomes COMPLETED
-    error: Optional[str] = None  # populated when status becomes FAILED
+    result: str | None = None  # populated when status becomes COMPLETED
+    error: str | None = None  # populated when status becomes FAILED
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # Auto-assigned fields
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None  # set by SQLiteAdapter when task finishes
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None  # set by SQLiteAdapter when task finishes
 
     def to_dict(self) -> dict[str, Any]:
         """
@@ -441,13 +438,11 @@ class Task:
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             # None if not yet completed; ISO string otherwise
-            "completed_at": self.completed_at.isoformat()
-            if self.completed_at
-            else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Task":
+    def from_dict(cls, d: dict[str, Any]) -> Task:
         """
         Reconstruct a Task from a plain dictionary (e.g. a SQLite row).
 
@@ -567,24 +562,22 @@ class MemoryConfig:
     sqlite_path: str = "tinker_tasks.sqlite"
 
     # --- Embedding model ---
-    embedding_model: str = "all-MiniLM-L6-v2"  # fast small model; try "nomic-embed-text" for better quality
+    embedding_model: str = (
+        "all-MiniLM-L6-v2"  # fast small model; try "nomic-embed-text" for better quality
+    )
     embedding_device: str = "cpu"  # change to "cuda" if an NVIDIA GPU is available
 
     # --- Compression thresholds ---
     compression_artifact_threshold: int = (
         500  # run compression when session exceeds this many artifacts
     )
-    compression_max_age_hours: int = (
-        24  # also compress artifacts older than this (in hours)
-    )
+    compression_max_age_hours: int = 24  # also compress artifacts older than this (in hours)
     compression_summary_chunk: int = 20  # summarise this many artifacts per LLM call
 
     def __post_init__(self) -> None:
         """Validate all configuration values at construction time."""
         if self.redis_default_ttl < 0:
-            raise ValueError(
-                f"redis_default_ttl must be >= 0, got {self.redis_default_ttl}"
-            )
+            raise ValueError(f"redis_default_ttl must be >= 0, got {self.redis_default_ttl}")
         if self.compression_artifact_threshold < 1:
             raise ValueError(
                 f"compression_artifact_threshold must be >= 1, "
@@ -592,13 +585,11 @@ class MemoryConfig:
             )
         if self.compression_max_age_hours < 1:
             raise ValueError(
-                f"compression_max_age_hours must be >= 1, "
-                f"got {self.compression_max_age_hours}"
+                f"compression_max_age_hours must be >= 1, got {self.compression_max_age_hours}"
             )
         if self.compression_summary_chunk < 1:
             raise ValueError(
-                f"compression_summary_chunk must be >= 1, "
-                f"got {self.compression_summary_chunk}"
+                f"compression_summary_chunk must be >= 1, got {self.compression_summary_chunk}"
             )
         if not self.redis_url:
             raise ValueError("redis_url must not be empty")

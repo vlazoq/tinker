@@ -41,14 +41,10 @@ class MCPConfig:
     # URL path prefix for the MCP HTTP endpoints added to the FastAPI app.
     # The SSE endpoint becomes: {server_path}/sse
     # The message endpoint becomes: {server_path}/messages
-    server_path: str = field(
-        default_factory=lambda: os.getenv("TINKER_MCP_SERVER_PATH", "/mcp")
-    )
+    server_path: str = field(default_factory=lambda: os.getenv("TINKER_MCP_SERVER_PATH", "/mcp"))
 
     # Name that Tinker advertises in the MCP initialize response.
-    server_name: str = field(
-        default_factory=lambda: os.getenv("TINKER_MCP_SERVER_NAME", "tinker")
-    )
+    server_name: str = field(default_factory=lambda: os.getenv("TINKER_MCP_SERVER_NAME", "tinker"))
 
     # Version string advertised in the MCP initialize response.
     server_version: str = field(
@@ -73,7 +69,7 @@ class MCPConfig:
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_env(cls) -> "MCPConfig":
+    def from_env(cls) -> MCPConfig:
         """
         Build MCPConfig from environment variables.
 

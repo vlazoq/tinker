@@ -50,7 +50,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +114,7 @@ class TokenBucketRateLimiter:
         """Number of calls that had to wait due to rate limiting."""
         return self._calls_throttled
 
-    async def acquire(self, cost: Optional[float] = None) -> None:
+    async def acquire(self, cost: float | None = None) -> None:
         """
         Acquire permission to make one call.
 
@@ -177,9 +176,7 @@ class TokenBucketRateLimiter:
     def stats(self) -> dict:
         """Return current rate limiter statistics for monitoring/alerting."""
         throttle_pct = (
-            round(self._calls_throttled / self._total_calls * 100, 1)
-            if self._total_calls
-            else 0.0
+            round(self._calls_throttled / self._total_calls * 100, 1) if self._total_calls else 0.0
         )
         return {
             "name": self.name,
@@ -200,7 +197,7 @@ class TokenBucketRateLimiter:
         self._total_tokens_used = 0
         self._calls_throttled = 0
 
-    async def try_acquire(self, cost: Optional[float] = None) -> tuple[bool, float]:
+    async def try_acquire(self, cost: float | None = None) -> tuple[bool, float]:
         """
         Non-blocking attempt to acquire a token.
 
@@ -243,8 +240,7 @@ class TokenBucketRateLimiter:
             wait_time = deficit / self._rate
             self._calls_throttled += 1
             logger.debug(
-                "RateLimiter '%s': try_acquire denied "
-                "(tokens=%.2f, need=%.2f, retry_after=%.2fs)",
+                "RateLimiter '%s': try_acquire denied (tokens=%.2f, need=%.2f, retry_after=%.2fs)",
                 self.name,
                 self._tokens,
                 effective_cost,
@@ -353,7 +349,7 @@ class RateLimiterRegistry:
         )
         return limiter
 
-    def get(self, name: str) -> Optional[TokenBucketRateLimiter]:
+    def get(self, name: str) -> TokenBucketRateLimiter | None:
         """Return a registered limiter, or None if not found."""
         return self._limiters.get(name)
 

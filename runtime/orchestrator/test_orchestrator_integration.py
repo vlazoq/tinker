@@ -22,13 +22,13 @@ from pathlib import Path
 # ── allow running from repo root ──────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from runtime.orchestrator.orchestrator import Orchestrator
 from runtime.orchestrator.config import OrchestratorConfig
+from runtime.orchestrator.orchestrator import Orchestrator
 from runtime.orchestrator.state import LoopStatus
 from runtime.orchestrator.stubs import (
-    build_stub_components,
-    StubMemoryManager,
     StubArchStateManager,
+    StubMemoryManager,
+    build_stub_components,
 )
 
 logging.basicConfig(
@@ -117,9 +117,7 @@ async def test_three_micro_loops():
     assert all(r.status == LoopStatus.SUCCESS for r in orch.state.micro_history), (
         f"Not all micro loops succeeded: {[r.status for r in orch.state.micro_history]}"
     )
-    assert memory.artifact_count == 3, (
-        f"Expected 3 stored artifacts, got {memory.artifact_count}"
-    )
+    assert memory.artifact_count == 3, f"Expected 3 stored artifacts, got {memory.artifact_count}"
 
     # Every record should have an artifact_id and task_id
     for record in orch.state.micro_history:
@@ -142,9 +140,10 @@ async def test_meso_escalation():
     logger.info("=" * 60)
 
     # Force all tasks to the same subsystem so the counter accumulates
-    from runtime.orchestrator.stubs import StubTaskEngine
-    import uuid
     import time as _time
+    import uuid
+
+    from runtime.orchestrator.stubs import StubTaskEngine
 
     class SingleSubsystemTaskEngine(StubTaskEngine):
         def _make_task(self, parent_id=None):
@@ -181,7 +180,7 @@ async def test_meso_escalation():
     import types
 
     async def _patched(self_: Orchestrator) -> bool:
-        from runtime.orchestrator.micro_loop import run_micro_loop, MicroLoopError
+        from runtime.orchestrator.micro_loop import MicroLoopError, run_micro_loop
         from runtime.orchestrator.state import LoopStatus
 
         try:
@@ -301,7 +300,8 @@ async def test_failure_recovery():
 
     # Shutdown after 1 successful micro loop (failures don't count)
     import types
-    from runtime.orchestrator.micro_loop import run_micro_loop, MicroLoopError
+
+    from runtime.orchestrator.micro_loop import MicroLoopError, run_micro_loop
     from runtime.orchestrator.state import LoopStatus
 
     async def _patched(self_: Orchestrator) -> bool:
@@ -325,15 +325,9 @@ async def test_failure_recovery():
     await orch.run()
     elapsed = time.monotonic() - start
 
-    assert call_count["n"] >= 3, (
-        f"Expected at least 3 architect calls, got {call_count['n']}"
-    )
-    assert orch.state.total_micro_loops >= 1, (
-        "Expected at least 1 successful micro loop"
-    )
-    success_records = [
-        r for r in orch.state.micro_history if r.status == LoopStatus.SUCCESS
-    ]
+    assert call_count["n"] >= 3, f"Expected at least 3 architect calls, got {call_count['n']}"
+    assert orch.state.total_micro_loops >= 1, "Expected at least 1 successful micro loop"
+    success_records = [r for r in orch.state.micro_history if r.status == LoopStatus.SUCCESS]
     assert len(success_records) >= 1
 
     logger.info(

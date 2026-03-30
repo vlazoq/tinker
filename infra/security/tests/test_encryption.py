@@ -2,7 +2,6 @@
 Tests for security/encryption.py
 """
 
-import pytest
 from infra.security.encryption import ArtifactEncryptor, NullEncryptor
 
 MASTER_KEY = "test-master-secret-key-for-unit-tests"

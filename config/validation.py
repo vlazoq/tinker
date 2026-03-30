@@ -25,6 +25,7 @@ _VALID_LLM_BACKENDS = {"ollama", "openai", "litellm"}
 # Helpers
 # ------------------------------------------------------------------
 
+
 def _check_url(url: str, label: str, warnings: list[str]) -> None:
     """Warn if *url* cannot be parsed into a scheme + host."""
     if not url:
@@ -33,9 +34,7 @@ def _check_url(url: str, label: str, warnings: list[str]) -> None:
     if not parsed.scheme:
         warnings.append(f"{label}: missing URL scheme (got {url!r})")
     elif parsed.scheme not in ("http", "https", "redis", "rediss"):
-        warnings.append(
-            f"{label}: unexpected URL scheme {parsed.scheme!r} in {url!r}"
-        )
+        warnings.append(f"{label}: unexpected URL scheme {parsed.scheme!r} in {url!r}")
     if not parsed.hostname:
         warnings.append(f"{label}: missing hostname in {url!r}")
 
@@ -68,6 +67,7 @@ def _check_dir_exists(path: str, label: str, warnings: list[str]) -> None:
 # Per-section validators
 # ------------------------------------------------------------------
 
+
 def _validate_llm(llm, warnings: list[str]) -> None:
     _check_url(llm.server_url, "llm.server_url", warnings)
     _check_url(llm.secondary_url, "llm.secondary_url", warnings)
@@ -98,9 +98,7 @@ def _validate_storage(storage, warnings: list[str]) -> None:
         )
 
     if storage.db_backend == "postgres" and not storage.postgres_dsn:
-        warnings.append(
-            "storage: db_backend is 'postgres' but no postgres_dsn provided"
-        )
+        warnings.append("storage: db_backend is 'postgres' but no postgres_dsn provided")
 
     if storage.session_backend and storage.session_backend not in _VALID_SESSION_BACKENDS:
         warnings.append(
@@ -109,9 +107,7 @@ def _validate_storage(storage, warnings: list[str]) -> None:
         )
 
     if storage.session_backend == "redis" and not storage.redis_url:
-        warnings.append(
-            "storage: session_backend is 'redis' but no redis_url provided"
-        )
+        warnings.append("storage: session_backend is 'redis' but no redis_url provided")
 
 
 def _validate_paths(paths, warnings: list[str]) -> None:
@@ -137,8 +133,7 @@ def _validate_orchestrator(orch, warnings: list[str]) -> None:
     _check_positive(orch.confirm_timeout, "orchestrator.confirm_timeout", warnings)
     if not 0.0 <= orch.temperature <= 2.0:
         warnings.append(
-            f"orchestrator.temperature: {orch.temperature} is outside "
-            "typical range 0.0-2.0"
+            f"orchestrator.temperature: {orch.temperature} is outside typical range 0.0-2.0"
         )
 
 
@@ -169,8 +164,7 @@ def _validate_grub(grub, warnings: list[str]) -> None:
     _check_positive(grub.context_target_chars, "grub.context_target_chars", warnings)
     if 0.0 < grub.quality_threshold > 1.0:
         warnings.append(
-            f"grub.quality_threshold: {grub.quality_threshold} is outside "
-            "expected range 0.0-1.0"
+            f"grub.quality_threshold: {grub.quality_threshold} is outside expected range 0.0-1.0"
         )
     if grub.context_target_chars > grub.context_max_chars:
         warnings.append(
@@ -204,6 +198,7 @@ def _validate_search(search, warnings: list[str]) -> None:
 # Public API
 # ------------------------------------------------------------------
 
+
 def validate_settings(settings: TinkerSettings) -> list[str]:
     """Return a list of warning strings for questionable config values.
 
@@ -236,10 +231,7 @@ def validate_settings(settings: TinkerSettings) -> list[str]:
     seen_ports: dict[int, str] = {}
     for port, label in port_labels:
         if port in seen_ports:
-            warnings.append(
-                f"port conflict: {label} and {seen_ports[port]} both use "
-                f"port {port}"
-            )
+            warnings.append(f"port conflict: {label} and {seen_ports[port]} both use port {port}")
         else:
             seen_ports[port] = label
 

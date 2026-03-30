@@ -36,7 +36,7 @@ async def api_audit(
         AUDIT_DB,
         f"SELECT id, event_type, actor, resource, outcome, trace_id, created_at, details "
         f"FROM audit_events {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-        tuple(params) + (limit, offset),
+        (*tuple(params), limit, offset),
     )
     types_rows = await db_query(
         AUDIT_DB, "SELECT DISTINCT event_type FROM audit_events ORDER BY event_type"

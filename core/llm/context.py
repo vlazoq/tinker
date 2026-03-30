@@ -37,7 +37,7 @@ much room is left for the input messages and trims if needed.
 from __future__ import annotations
 
 import logging
-from typing import Sequence
+from collections.abc import Sequence
 
 from .types import Message
 
@@ -103,9 +103,7 @@ except ImportError:
         """Estimate token count using the 3.5-chars-per-token heuristic."""
         return _count_heuristic(text)
 
-    logger.debug(
-        "tiktoken not installed — using character heuristic for token counting"
-    )
+    logger.debug("tiktoken not installed — using character heuristic for token counting")
 
 
 def count_messages_tokens(messages: Sequence[Message]) -> int:
@@ -127,9 +125,7 @@ def count_messages_tokens(messages: Sequence[Message]) -> int:
     total = 0
     for m in messages:
         total += count_tokens(m.content)
-        total += (
-            4  # each message has overhead: role name + chat-template formatting tokens
-        )
+        total += 4  # each message has overhead: role name + chat-template formatting tokens
     total += 2  # the model always "primes" its own reply with 2 tokens
     return total
 
@@ -194,9 +190,7 @@ def enforce_context_limit(
     if count_messages_tokens(messages) <= budget:
         return list(messages)
 
-    logger.warning(
-        "Message list exceeds context budget (%d tokens). Truncating history.", budget
-    )
+    logger.warning("Message list exceeds context budget (%d tokens). Truncating history.", budget)
 
     # Separate the system message (must keep) from everything else
     system_msgs = [m for m in messages if m.role == "system"]

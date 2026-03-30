@@ -42,15 +42,12 @@ from typing import Any
 
 from .base import BaseTool, ToolSchema
 
-
 # Read the SearXNG URL from the environment at module load time.
 # We check TINKER_SEARXNG_URL first (the canonical name with the "TINKER_" prefix),
 # then fall back to the bare SEARXNG_URL for backwards compatibility with older configs.
 # The "or" chains the two os.getenv calls: if the first returns None, try the second.
 # Honour both the Tinker-prefixed name (canonical) and the bare name (legacy)
-SEARXNG_URL = os.getenv("TINKER_SEARXNG_URL") or os.getenv(
-    "SEARXNG_URL", "http://localhost:8080"
-)
+SEARXNG_URL = os.getenv("TINKER_SEARXNG_URL") or os.getenv("SEARXNG_URL", "http://localhost:8080")
 
 
 class WebSearchTool(BaseTool):
@@ -154,14 +151,9 @@ class WebSearchTool(BaseTool):
                         "default": "en",
                     },
                 },
-                "required": [
-                    "query"
-                ],  # only "query" is mandatory; the rest have defaults
+                "required": ["query"],  # only "query" is mandatory; the rest have defaults
             },
-            returns=(
-                "List of dicts: [{title, url, snippet, engine, score}] "
-                "sorted by relevance."
-            ),
+            returns=("List of dicts: [{title, url, snippet, engine, score}] sorted by relevance."),
         )
 
     # ------------------------------------------------------------------
@@ -224,14 +216,16 @@ class WebSearchTool(BaseTool):
         # Import httpx here (inside the function) rather than at the top of the file.
         # This is "lazy importing" — if httpx isn't installed, this tool fails with
         # a clear ImportError when called, rather than breaking all of tools/ at import time.
-        import httpx
         import uuid as _uuid
+
+        import httpx
 
         # Propagate distributed trace context to the downstream SearXNG service
         # so that log aggregators can correlate Tinker's research calls with
         # SearXNG access logs for the same micro-loop iteration.
         try:
             from agents import _current_trace_id as _tid_var
+
             _trace_id = _tid_var.get("") or str(_uuid.uuid4())
         except Exception:
             _trace_id = str(_uuid.uuid4())
@@ -263,9 +257,7 @@ class WebSearchTool(BaseTool):
                     "snippet": r.get(
                         "content", ""
                     ),  # SearXNG calls it "content"; we call it "snippet"
-                    "engine": r.get(
-                        "engine", ""
-                    ),  # which underlying search engine returned this
+                    "engine": r.get("engine", ""),  # which underlying search engine returned this
                     "score": round(
                         r.get("score", 0.0), 4
                     ),  # relevance score, rounded for readability

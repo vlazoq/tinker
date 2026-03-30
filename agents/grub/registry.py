@@ -38,11 +38,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Type
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .minions.base import BaseMinion
     from .config import GrubConfig
+    from .minions.base import BaseMinion
 
 logger = logging.getLogger(__name__)
 
@@ -65,15 +65,15 @@ class MinionRegistry:
         skill_text = registry.get_skill("python_expert")
     """
 
-    def __init__(self, config: "GrubConfig") -> None:
+    def __init__(self, config: GrubConfig) -> None:
         self._config = config
-        self._minions: dict[str, Type["BaseMinion"]] = {}
+        self._minions: dict[str, type[BaseMinion]] = {}
         self._skills: dict[str, str] = {}
         self._skills_dir = Path(__file__).parent / "skills"
 
     # ── Minion management ─────────────────────────────────────────────────────
 
-    def register_minion(self, name: str, cls: Type["BaseMinion"]) -> None:
+    def register_minion(self, name: str, cls: type[BaseMinion]) -> None:
         """
         Register a Minion class under a name.
 
@@ -85,7 +85,7 @@ class MinionRegistry:
         self._minions[name] = cls
         logger.debug("Registered minion: %s → %s", name, cls.__name__)
 
-    def get_minion(self, name: str) -> "BaseMinion":
+    def get_minion(self, name: str) -> BaseMinion:
         """
         Instantiate and return a Minion by name.
 
@@ -211,10 +211,10 @@ class MinionRegistry:
         # ── Import and register all built-in Minions ──────────────────────────
         try:
             from .minions.coder import CoderMinion
-            from .minions.reviewer import ReviewerMinion
-            from .minions.tester import TesterMinion
             from .minions.debugger import DebuggerMinion
             from .minions.refactorer import RefactorerMinion
+            from .minions.reviewer import ReviewerMinion
+            from .minions.tester import TesterMinion
 
             self.register_minion("coder", CoderMinion)
             self.register_minion("reviewer", ReviewerMinion)

@@ -45,9 +45,7 @@ async def _main() -> None:
     group.add_argument(
         "--prune", action="store_true", help="Prune backups older than retention_days"
     )
-    parser.add_argument(
-        "--backup-id", default=None, help="Specific backup ID to restore"
-    )
+    parser.add_argument("--backup-id", default=None, help="Specific backup ID to restore")
     args = parser.parse_args()
 
     from infra.backup.backup_manager import BackupManager

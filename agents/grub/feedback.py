@@ -31,11 +31,11 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from .contracts.task import GrubTask, TaskPriority
 from .contracts.result import MinionResult
+from .contracts.task import GrubTask, TaskPriority
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,11 @@ class TinkerBridge:
             try:
                 meta = json.loads(row["metadata"] or "{}")
             except Exception as exc:
-                logger.debug("TinkerBridge: malformed metadata for row %s: %s", row["id"] if "id" in row.keys() else "?", exc)
+                logger.debug(
+                    "TinkerBridge: malformed metadata for row %s: %s",
+                    row.get("id", "?"),
+                    exc,
+                )
 
             artifact_path = meta.get("artifact_path", "")
             if not artifact_path:
@@ -135,9 +139,7 @@ class TinkerBridge:
                 row["id"][:8],
             )
 
-        logger.info(
-            "TinkerBridge: fetched %d implementation tasks from Tinker", len(tasks)
-        )
+        logger.info("TinkerBridge: fetched %d implementation tasks from Tinker", len(tasks))
         return tasks
 
     def _find_artifact(self, subsystem: str) -> str:
@@ -188,7 +190,7 @@ class TinkerBridge:
             return False
 
         try:
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             con = sqlite3.connect(str(self._tasks_db), timeout=10)
             # WAL mode: see fetch_implementation_tasks for rationale.
             con.execute("PRAGMA journal_mode=WAL")
@@ -198,9 +200,7 @@ class TinkerBridge:
                 "UPDATE tasks SET status='complete', updated_at=? WHERE id=?",
                 (now, tinker_task_id),
             )
-            logger.info(
-                "TinkerBridge: marked Tinker task %s as complete", tinker_task_id[:8]
-            )
+            logger.info("TinkerBridge: marked Tinker task %s as complete", tinker_task_id[:8])
 
             # 2. Always create a follow-up review task for Tinker so it knows
             #    what Grub produced and can decide whether to redesign.
@@ -263,7 +263,7 @@ class TinkerBridge:
         Returns the path of the written file.
         """
         note_path = self._grub_arts / f"impl_{task.subsystem}_{task.id[:8]}.md"
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         content = "\n".join(
             [

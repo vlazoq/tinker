@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .schema import ArchitectureState
 
@@ -33,7 +33,7 @@ class PersistenceMixin:
           - loop_XXXX   : zero-padded loop number (so files sort correctly)
           - YYYYMMDDTHHMMSSZ : UTC timestamp in ISO 8601 "compact" format
         """
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         # :04d pads the loop number with leading zeros to 4 digits
         fn = f"loop_{state.macro_loop:04d}_{ts}.json"
         dst = self._hist_dir / fn

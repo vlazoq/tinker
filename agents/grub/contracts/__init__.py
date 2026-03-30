@@ -14,12 +14,12 @@ This is the 'dependency inversion' principle: depend on abstractions,
 not on concrete implementations.
 """
 
-from .task import GrubTask, TaskPriority
 from .result import MinionResult, ResultStatus
+from .task import GrubTask, TaskPriority
 
 __all__ = [
     "GrubTask",
-    "TaskPriority",
     "MinionResult",
     "ResultStatus",
+    "TaskPriority",
 ]

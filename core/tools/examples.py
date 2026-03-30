@@ -19,11 +19,9 @@ All tools operate locally — no cloud services, no external APIs.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 from pathlib import Path
-from typing import Any
 
 from .base import BaseTool, ToolSchema
 
@@ -92,9 +90,7 @@ class FileReaderTool(BaseTool):
 
         size = resolved.stat().st_size
         if size > self._max_size:
-            raise ValueError(
-                f"File too large ({size} bytes, max {self._max_size})"
-            )
+            raise ValueError(f"File too large ({size} bytes, max {self._max_size})")
 
         content = resolved.read_text(encoding=encoding)
         return {
@@ -168,9 +164,7 @@ class ShellTool(BaseTool):
         if self._allowed:
             cmd_base = command.strip().split()[0] if command.strip() else ""
             if cmd_base not in self._allowed:
-                raise PermissionError(
-                    f"Command '{cmd_base}' not in allowed list: {self._allowed}"
-                )
+                raise PermissionError(f"Command '{cmd_base}' not in allowed list: {self._allowed}")
 
         try:
             proc = await asyncio.create_subprocess_shell(
@@ -179,16 +173,14 @@ class ShellTool(BaseTool):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
             )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=self._timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
             return {
                 "returncode": proc.returncode,
-                "stdout": stdout.decode(errors="replace")[:self._max_output],
-                "stderr": stderr.decode(errors="replace")[:self._max_output],
+                "stdout": stdout.decode(errors="replace")[: self._max_output],
+                "stderr": stderr.decode(errors="replace")[: self._max_output],
                 "timed_out": False,
             }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             return {
                 "returncode": -1,
@@ -214,9 +206,7 @@ class DatabaseQueryTool(BaseTool):
         db_path: str | None = None,
         max_rows: int = 100,
     ) -> None:
-        self._db_path = db_path or os.getenv(
-            "TINKER_TASK_DB", "tinker_tasks_engine.sqlite"
-        )
+        self._db_path = db_path or os.getenv("TINKER_TASK_DB", "tinker_tasks_engine.sqlite")
         self._max_rows = max_rows
 
     @property

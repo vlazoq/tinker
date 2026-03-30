@@ -14,7 +14,6 @@ import pytest
 from agents.fritz.config import FritzConfig
 from agents.fritz.credentials import FritzCredentials
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -38,10 +37,12 @@ def _make_creds(
 def _mock_secrets(github: str | None = "ghp_token", gitea: str | None = None):
     """Return a SecretManager mock whose get() returns the given values in order."""
     sm = MagicMock()
-    sm.get = AsyncMock(side_effect=lambda key: {
-        "FRITZ_GITHUB_TOKEN": github,
-        "FRITZ_GITEA_TOKEN": gitea,
-    }.get(key))
+    sm.get = AsyncMock(
+        side_effect=lambda key: {
+            "FRITZ_GITHUB_TOKEN": github,
+            "FRITZ_GITEA_TOKEN": gitea,
+        }.get(key)
+    )
     return sm
 
 
@@ -52,7 +53,9 @@ class TestLoadGitHubOnly:
     @pytest.mark.asyncio
     async def test_loads_github_token(self):
         creds = _make_creds(github_enabled=True, gitea_enabled=False)
-        with patch("agents.fritz.credentials.SecretManager", return_value=_mock_secrets("ghp_test")):
+        with patch(
+            "agents.fritz.credentials.SecretManager", return_value=_mock_secrets("ghp_test")
+        ):
             creds._secrets = _mock_secrets("ghp_test")
             await creds.load()
         assert creds.github_token == "ghp_test"
@@ -70,6 +73,7 @@ class TestLoadGitHubOnly:
     @pytest.mark.asyncio
     async def test_missing_token_logs_warning(self, caplog):
         import logging
+
         creds = _make_creds(github_enabled=True)
         sm = MagicMock()
         sm.get = AsyncMock(return_value=None)
@@ -88,9 +92,11 @@ class TestLoadGitea:
     async def test_loads_gitea_token(self):
         creds = _make_creds(github_enabled=False, gitea_enabled=True)
         sm = MagicMock()
-        sm.get = AsyncMock(side_effect=lambda key: {
-            "FRITZ_GITEA_TOKEN": "gitea_secret",
-        }.get(key))
+        sm.get = AsyncMock(
+            side_effect=lambda key: {
+                "FRITZ_GITEA_TOKEN": "gitea_secret",
+            }.get(key)
+        )
         creds._secrets = sm
         await creds.load()
         assert creds.gitea_token == "gitea_secret"
@@ -98,6 +104,7 @@ class TestLoadGitea:
     @pytest.mark.asyncio
     async def test_missing_gitea_token_logs_warning(self, caplog):
         import logging
+
         creds = _make_creds(github_enabled=False, gitea_enabled=True)
         sm = MagicMock()
         sm.get = AsyncMock(return_value=None)
@@ -116,10 +123,12 @@ class TestLoadBothPlatforms:
     async def test_loads_both_tokens(self):
         creds = _make_creds(github_enabled=True, gitea_enabled=True)
         sm = MagicMock()
-        sm.get = AsyncMock(side_effect=lambda key: {
-            "FRITZ_GITHUB_TOKEN": "ghp_xyz",
-            "FRITZ_GITEA_TOKEN": "gitea_abc",
-        }.get(key))
+        sm.get = AsyncMock(
+            side_effect=lambda key: {
+                "FRITZ_GITHUB_TOKEN": "ghp_xyz",
+                "FRITZ_GITEA_TOKEN": "gitea_abc",
+            }.get(key)
+        )
         creds._secrets = sm
         await creds.load()
         assert creds.github_token == "ghp_xyz"

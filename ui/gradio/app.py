@@ -19,24 +19,22 @@ ROOT = Path(__file__).parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import gradio as gr  # noqa: E402
+import gradio as gr
 
-from ui.core import (  # noqa: E402
-    ORCH_CONFIG_SCHEMA,
-    STAGNATION_CONFIG_SCHEMA,
-    FLAG_DEFAULTS,
-    FLAG_DESCRIPTIONS,
-    FLAG_GROUPS,
-    TASK_TYPES,
-    SUBSYSTEMS,
+from ui.core import (
     AUDIT_DB,
     BACKUP_DIR,
     DLQ_DB,
+    FLAG_DEFAULTS,
+    FLAG_DESCRIPTIONS,
+    FLAG_GROUPS,
     FLAGS_FILE,
     FRITZ_CONFIG_FILE,
+    ORCH_CONFIG_SCHEMA,
+    STAGNATION_CONFIG_SCHEMA,
+    SUBSYSTEMS,
+    TASK_TYPES,
     TASKS_DB,
-    db_query_sync as dbq,
-    db_execute_sync as dbe,
     fetch_fritz_status_sync,
     fetch_grub_status_sync,
     list_backups,
@@ -47,6 +45,12 @@ from ui.core import (  # noqa: E402
     now_iso,
     save_config,
     save_flags,
+)
+from ui.core import (
+    db_execute_sync as dbe,
+)
+from ui.core import (
+    db_query_sync as dbq,
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -151,7 +155,7 @@ def _audit_df(event_type="", actor="", limit=50):
         AUDIT_DB,
         f"SELECT event_type, actor, resource, outcome, trace_id, created_at "
         f"FROM audit_events {where} ORDER BY created_at DESC LIMIT ?",
-        tuple(params) + (limit,),
+        (*tuple(params), limit),
     )
     if not rows:
         return pd.DataFrame(
@@ -172,9 +176,7 @@ def _backup_df():
 
     bs = list_backups()
     if not bs:
-        return pd.DataFrame(
-            columns=["id", "created_at", "size_mb", "file_count", "errors"]
-        )
+        return pd.DataFrame(columns=["id", "created_at", "size_mb", "file_count", "errors"])
     return pd.DataFrame(bs)
 
 
@@ -214,14 +216,10 @@ def _grub_md() -> str:
         for a in artifacts:
             size_kb = round(a.get("size_bytes", 0) / 1024, 1)
             score = f"  score={a['score']:.2f}" if a.get("score") is not None else ""
-            lines.append(
-                f"- **{a['name']}** ({size_kb} KB){score} — {a.get('mtime', '')[:19]}"
-            )
+            lines.append(f"- **{a['name']}** ({size_kb} KB){score} — {a.get('mtime', '')[:19]}")
     else:
         arts_dir = status.get("artifacts_dir", "./grub_artifacts")
-        lines.append(
-            f"_No artifacts yet. Grub writes to `{arts_dir}` when tasks complete._"
-        )
+        lines.append(f"_No artifacts yet. Grub writes to `{arts_dir}` when tasks complete._")
 
     return "\n".join(lines)
 
@@ -278,15 +276,15 @@ def _fritz_md() -> str:
     ]
     gh = "✅" if s.get("github_enabled") else "❌"
     gt = "✅" if s.get("gitea_enabled") else "❌"
-    gh_target = f"{s.get('github_owner','')}/{s.get('github_repo','')}".strip("/")
+    gh_target = f"{s.get('github_owner', '')}/{s.get('github_repo', '')}".strip("/")
     gt_url = s.get("gitea_base_url", "")
     lines += [
         f"- GitHub {gh} {gh_target}",
         f"- Gitea  {gt} {gt_url}",
         "",
         "### Push Policy",
-        f"| Setting | Value |",
-        f"|---------|-------|",
+        "| Setting | Value |",
+        "|---------|-------|",
         f"| allow_push_to_main | `{pp.get('allow_push_to_main', False)}` |",
         f"| require_pr | `{pp.get('require_pr', True)}` |",
         f"| require_ci_green | `{pp.get('require_ci_green', True)}` |",
@@ -308,13 +306,11 @@ def _fritz_md() -> str:
 
 async def _fritz_ship_async(message: str, task_id: str, auto_merge: bool) -> str:
     """Async helper for commit-and-ship; returns a status string."""
-    from agents.fritz.config import FritzConfig
     from agents.fritz.agent import FritzAgent
+    from agents.fritz.config import FritzConfig
 
     config = (
-        FritzConfig.from_file(FRITZ_CONFIG_FILE)
-        if FRITZ_CONFIG_FILE.exists()
-        else FritzConfig()
+        FritzConfig.from_file(FRITZ_CONFIG_FILE) if FRITZ_CONFIG_FILE.exists() else FritzConfig()
     )
     agent = FritzAgent(config)
     await agent.setup()
@@ -336,13 +332,11 @@ async def _fritz_ship_async(message: str, task_id: str, auto_merge: bool) -> str
 
 
 async def _fritz_push_async(branch: str) -> str:
-    from agents.fritz.config import FritzConfig
     from agents.fritz.agent import FritzAgent
+    from agents.fritz.config import FritzConfig
 
     config = (
-        FritzConfig.from_file(FRITZ_CONFIG_FILE)
-        if FRITZ_CONFIG_FILE.exists()
-        else FritzConfig()
+        FritzConfig.from_file(FRITZ_CONFIG_FILE) if FRITZ_CONFIG_FILE.exists() else FritzConfig()
     )
     agent = FritzAgent(config)
     await agent.setup()
@@ -351,13 +345,11 @@ async def _fritz_push_async(branch: str) -> str:
 
 
 async def _fritz_pr_async(title: str, body: str, head: str, base: str) -> str:
-    from agents.fritz.config import FritzConfig
     from agents.fritz.agent import FritzAgent
+    from agents.fritz.config import FritzConfig
 
     config = (
-        FritzConfig.from_file(FRITZ_CONFIG_FILE)
-        if FRITZ_CONFIG_FILE.exists()
-        else FritzConfig()
+        FritzConfig.from_file(FRITZ_CONFIG_FILE) if FRITZ_CONFIG_FILE.exists() else FritzConfig()
     )
     agent = FritzAgent(config)
     await agent.setup()
@@ -366,13 +358,11 @@ async def _fritz_pr_async(title: str, body: str, head: str, base: str) -> str:
 
 
 async def _fritz_verify_async() -> str:
-    from agents.fritz.config import FritzConfig
     from agents.fritz.agent import FritzAgent
+    from agents.fritz.config import FritzConfig
 
     config = (
-        FritzConfig.from_file(FRITZ_CONFIG_FILE)
-        if FRITZ_CONFIG_FILE.exists()
-        else FritzConfig()
+        FritzConfig.from_file(FRITZ_CONFIG_FILE) if FRITZ_CONFIG_FILE.exists() else FritzConfig()
     )
     agent = FritzAgent(config)
     await agent.setup()
@@ -391,6 +381,7 @@ def _run_async(coro):
     deadlock when the outer loop holds resources the inner loop needs.
     """
     import asyncio
+
     return asyncio.run(coro)
 
 
@@ -434,7 +425,7 @@ def build_app() -> gr.Blocks:
                 orch_inputs: dict[str, gr.Number] = {}
                 with gr.Group():
                     gr.Markdown("### Orchestrator Config")
-                    for section_key, section in ORCH_CONFIG_SCHEMA.items():
+                    for _section_key, section in ORCH_CONFIG_SCHEMA.items():
                         gr.Markdown(f"**{section['label']}**")
                         with gr.Row():
                             for field_name, meta in section["fields"].items():
@@ -504,9 +495,7 @@ def build_app() -> gr.Blocks:
                 all_inputs = list(orch_inputs.values()) + [
                     w for s in stag_inputs.values() for w in s.values()
                 ]
-                cfg_save_btn.click(
-                    fn=save_all_config, inputs=all_inputs, outputs=cfg_msg
-                )
+                cfg_save_btn.click(fn=save_all_config, inputs=all_inputs, outputs=cfg_msg)
 
             # ── Feature Flags ─────────────────────────────────────────────────
             with gr.Tab("🚩 Feature Flags"):
@@ -525,9 +514,7 @@ def build_app() -> gr.Blocks:
                             for flag in flag_names:
                                 flag_widgets[flag] = gr.Checkbox(
                                     label=f"{flag}",
-                                    value=current_flags.get(
-                                        flag, FLAG_DEFAULTS.get(flag, False)
-                                    ),
+                                    value=current_flags.get(flag, FLAG_DEFAULTS.get(flag, False)),
                                     info=FLAG_DESCRIPTIONS.get(flag, ""),
                                 )
 
@@ -535,18 +522,14 @@ def build_app() -> gr.Blocks:
 
                 def save_all_flags(*args):
                     flag_names_ordered = [f for g in FLAG_GROUPS.values() for f in g]
-                    flags = {
-                        fn: bool(args[i]) for i, fn in enumerate(flag_names_ordered)
-                    }
+                    flags = {fn: bool(args[i]) for i, fn in enumerate(flag_names_ordered)}
                     save_flags(flags)
-                    return "✅ **Flags saved.** Orchestrator will pick up changes within 30 seconds."
+                    return (
+                        "✅ **Flags saved.** Orchestrator will pick up changes within 30 seconds."
+                    )
 
-                all_flag_widgets = [
-                    flag_widgets[f] for g in FLAG_GROUPS.values() for f in g
-                ]
-                flags_save_btn.click(
-                    fn=save_all_flags, inputs=all_flag_widgets, outputs=flags_msg
-                )
+                all_flag_widgets = [flag_widgets[f] for g in FLAG_GROUPS.values() for f in g]
+                flags_save_btn.click(fn=save_all_flags, inputs=all_flag_widgets, outputs=flags_msg)
 
             # ── Task Queue ────────────────────────────────────────────────────
             with gr.Tab("📋 Task Queue"):
@@ -564,12 +547,8 @@ def build_app() -> gr.Blocks:
                     )
                     inj_desc = gr.Textbox(label="Description", lines=3)
                     inj_type = gr.Dropdown(TASK_TYPES, value="design", label="Type")
-                    inj_sub = gr.Dropdown(
-                        SUBSYSTEMS, value="cross_cutting", label="Subsystem"
-                    )
-                    inj_gap = gr.Slider(
-                        0, 1, value=0.5, step=0.05, label="Confidence Gap"
-                    )
+                    inj_sub = gr.Dropdown(SUBSYSTEMS, value="cross_cutting", label="Subsystem")
+                    inj_gap = gr.Slider(0, 1, value=0.5, step=0.05, label="Confidence Gap")
                     inj_explore = gr.Checkbox(label="Exploration task", value=False)
                     inj_btn = gr.Button("Inject", variant="primary")
                     inj_msg = gr.Markdown("")
@@ -636,9 +615,7 @@ def build_app() -> gr.Blocks:
                     dlq_item_id = gr.Textbox(
                         label="Item ID (full UUID)", placeholder="Paste full item ID"
                     )
-                    dlq_notes = gr.Textbox(
-                        label="Notes", placeholder="Resolution reason…"
-                    )
+                    dlq_notes = gr.Textbox(label="Notes", placeholder="Resolution reason…")
                 with gr.Row():
                     dlq_resolve = gr.Button("✅ Mark Resolved", variant="primary")
                     dlq_discard = gr.Button("🗑 Mark Discarded", variant="stop")
@@ -693,9 +670,7 @@ def build_app() -> gr.Blocks:
                         _backup_df(),
                     )
 
-                backup_trigger.click(
-                    fn=trigger_backup, outputs=[backup_msg, backup_df_out]
-                )
+                backup_trigger.click(fn=trigger_backup, outputs=[backup_msg, backup_df_out])
                 backup_refresh.click(fn=_backup_df, outputs=backup_df_out)
 
             # ── Grub ──────────────────────────────────────────────────────────
@@ -720,7 +695,9 @@ def build_app() -> gr.Blocks:
                 fritz_refresh_btn.click(fn=_fritz_md, outputs=fritz_md_out)
 
                 with gr.Row():
-                    fritz_verify_btn = gr.Button("🔌 Verify Connections", variant="secondary", size="sm")
+                    fritz_verify_btn = gr.Button(
+                        "🔌 Verify Connections", variant="secondary", size="sm"
+                    )
                 fritz_verify_btn.click(
                     fn=lambda: _run_async(_fritz_verify_async()),
                     outputs=fritz_result_out,
@@ -733,8 +710,12 @@ def build_app() -> gr.Blocks:
                         placeholder="fix: correct off-by-one in parser",
                         scale=3,
                     )
-                    fritz_task = gr.Textbox(label="Task ID (optional)", placeholder="grub-abc123", scale=1)
-                fritz_auto_merge = gr.Checkbox(label="Auto-merge PR (if policy allows)", value=False)
+                    fritz_task = gr.Textbox(
+                        label="Task ID (optional)", placeholder="grub-abc123", scale=1
+                    )
+                fritz_auto_merge = gr.Checkbox(
+                    label="Auto-merge PR (if policy allows)", value=False
+                )
                 fritz_ship_btn = gr.Button("⚡ Commit & Ship", variant="primary")
                 fritz_ship_btn.click(
                     fn=lambda msg, tid, am: _run_async(_fritz_ship_async(msg, tid, am)),
@@ -759,8 +740,10 @@ def build_app() -> gr.Blocks:
                 gr.Markdown("### 🔀 Create Pull Request")
                 with gr.Row():
                     fritz_pr_title = gr.Textbox(label="Title", placeholder="fix: …", scale=3)
-                    fritz_pr_head  = gr.Textbox(label="Head branch", placeholder="feature/xyz", scale=1)
-                    fritz_pr_base  = gr.Textbox(label="Base branch", placeholder="main", scale=1)
+                    fritz_pr_head = gr.Textbox(
+                        label="Head branch", placeholder="feature/xyz", scale=1
+                    )
+                    fritz_pr_base = gr.Textbox(label="Base branch", placeholder="main", scale=1)
                 fritz_pr_body = gr.Textbox(
                     label="Description", placeholder="Describe what this PR does…", lines=3
                 )
@@ -784,16 +767,12 @@ def build_app() -> gr.Blocks:
 
                 with gr.Row():
                     audit_evt_filter = gr.Dropdown(
-                        [""] + audit_event_types, value="", label="Event Type"
+                        ["", *audit_event_types], value="", label="Event Type"
                     )
-                    audit_actor_filter = gr.Textbox(
-                        label="Actor", placeholder="e.g. micro_loop"
-                    )
+                    audit_actor_filter = gr.Textbox(label="Actor", placeholder="e.g. micro_loop")
                     audit_limit = gr.Slider(10, 200, value=50, step=10, label="Limit")
                 audit_search_btn = gr.Button("🔍 Search", variant="primary")
-                audit_df_out = gr.DataFrame(
-                    _audit_df(), label="Audit Events", interactive=False
-                )
+                audit_df_out = gr.DataFrame(_audit_df(), label="Audit Events", interactive=False)
 
                 audit_search_btn.click(
                     fn=_audit_df,

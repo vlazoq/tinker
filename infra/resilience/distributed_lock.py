@@ -52,8 +52,8 @@ import asyncio
 import logging
 import secrets
 import time
-from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ class DistributedLock:
         self._redis_url = redis_url
         self._key_prefix = key_prefix
         self._client = None  # Lazy Redis client
-        self._available: Optional[bool] = None  # None = unknown, True/False = tested
+        self._available: bool | None = None  # None = unknown, True/False = tested
 
     # ------------------------------------------------------------------
     # Context manager interface (preferred)
@@ -131,7 +131,7 @@ class DistributedLock:
                     return
                 task = await engine.select_task()
         """
-        token: Optional[str] = None
+        token: str | None = None
         acquired = False
 
         if wait:
@@ -156,7 +156,7 @@ class DistributedLock:
     # Low-level interface
     # ------------------------------------------------------------------
 
-    async def try_lock(self, resource: str, ttl: int = 30) -> Optional[str]:
+    async def try_lock(self, resource: str, ttl: int = 30) -> str | None:
         """
         Try to acquire a lock on ``resource`` atomically.
 
@@ -179,9 +179,7 @@ class DistributedLock:
         client = await self._get_client()
         if client is None:
             # Redis unavailable — return a dummy token (advisory-only mode)
-            logger.debug(
-                "DistributedLock: Redis unavailable — using advisory-only mode"
-            )
+            logger.debug("DistributedLock: Redis unavailable — using advisory-only mode")
             return f"advisory:{secrets.token_hex(8)}"
 
         key = self._key_prefix + resource
@@ -199,9 +197,7 @@ class DistributedLock:
                 logger.debug("Lock '%s' already held — skipping", resource)
                 return None
         except Exception as exc:
-            logger.warning(
-                "DistributedLock.try_lock failed for '%s': %s", resource, exc
-            )
+            logger.warning("DistributedLock.try_lock failed for '%s': %s", resource, exc)
             # On Redis error, fall through (advisory mode)
             return f"advisory:{secrets.token_hex(8)}"
 
@@ -223,7 +219,9 @@ class DistributedLock:
         False : Lock had already expired or token didn't match (no-op).
         """
         if token.startswith("advisory:"):
-            logger.debug("release_lock: advisory token for '%s' — no Redis release needed", resource)
+            logger.debug(
+                "release_lock: advisory token for '%s' — no Redis release needed", resource
+            )
             return True  # Advisory mode — nothing to release
 
         client = await self._get_client()
@@ -246,9 +244,7 @@ class DistributedLock:
                 logger.debug("Released lock '%s'", resource)
                 return True
             else:
-                logger.debug(
-                    "Lock '%s' had already expired or token mismatch", resource
-                )
+                logger.debug("Lock '%s' had already expired or token mismatch", resource)
                 return False
         except Exception as exc:
             logger.warning("DistributedLock.unlock failed for '%s': %s", resource, exc)
@@ -360,26 +356,20 @@ class DistributedLock:
             return self._client
         except ImportError:
             if self._available is None:
-                logger.info(
-                    "DistributedLock: redis package not installed — advisory-only mode"
-                )
+                logger.info("DistributedLock: redis package not installed — advisory-only mode")
             self._available = False
             return None
         except Exception as exc:
             if self._available is not False:
-                logger.warning(
-                    "DistributedLock: Redis unavailable (%s) — advisory-only mode", exc
-                )
+                logger.warning("DistributedLock: Redis unavailable (%s) — advisory-only mode", exc)
             self._available = False
             return None
 
     async def close(self) -> None:
         """Close the Redis connection. Call during shutdown."""
         if self._client is not None:
-            try:
+            with suppress(Exception):
                 await self._client.aclose()
-            except Exception:
-                pass
             self._client = None
 
 

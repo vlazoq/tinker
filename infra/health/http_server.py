@@ -60,6 +60,7 @@ Usage
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import shutil
@@ -121,9 +122,7 @@ class HealthServer:
         # ``TINKER_SERVER_MODEL`` env var if not provided explicitly.
         import os
 
-        self._ollama_model: str = ollama_model or os.getenv(
-            "TINKER_SERVER_MODEL", ""
-        )
+        self._ollama_model: str = ollama_model or os.getenv("TINKER_SERVER_MODEL", "")
 
         self._server = None
         self._start_time = time.monotonic()
@@ -144,9 +143,7 @@ class HealthServer:
         host : Bind address (default: all interfaces).
         port : Port number (default: 8080).
         """
-        self._server = await asyncio.start_server(
-            self._handle_request, host=host, port=port
-        )
+        self._server = await asyncio.start_server(self._handle_request, host=host, port=port)
         logger.info("Health server started on %s:%d", host, port)
 
     async def stop(self) -> None:
@@ -195,14 +192,12 @@ class HealthServer:
             else:
                 await self._send_response(writer, 404, {"error": "not found"})
 
-        except (asyncio.TimeoutError, ConnectionResetError):
+        except (TimeoutError, ConnectionResetError):
             pass
         except Exception as exc:
             logger.debug("Health server request error: %s", exc)
-            try:
+            with contextlib.suppress(Exception):
                 await self._send_response(writer, 500, {"error": str(exc)})
-            except Exception:
-                pass
         finally:
             writer.close()
 
@@ -245,9 +240,7 @@ class HealthServer:
         # Check memory manager
         if self._memory_manager and hasattr(self._memory_manager, "health_check"):
             try:
-                health = await asyncio.wait_for(
-                    self._memory_manager.health_check(), timeout=5.0
-                )
+                health = await asyncio.wait_for(self._memory_manager.health_check(), timeout=5.0)
                 for component, ok in health.items():
                     if not ok:
                         issues.append(f"memory:{component} is DOWN")
@@ -316,37 +309,33 @@ class HealthServer:
         try:
             import aiohttp  # type: ignore
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.get(
                     f"{self._ollama_url}/api/tags",
                     timeout=aiohttp.ClientTimeout(total=3),
-                ) as resp:
-                    if resp.status >= 500:
-                        return False
+                ) as resp,
+            ):
+                if resp.status >= 500:
+                    return False
 
-                    # If we know which model to expect, verify it's in the list
-                    if self._ollama_model:
-                        try:
-                            data = await resp.json()
-                            models = data.get("models", [])
-                            model_names = [
-                                m.get("name", "") for m in models
-                            ]
-                            if not any(
-                                self._ollama_model in name
-                                for name in model_names
-                            ):
-                                logger.warning(
-                                    "Ollama reachable but model '%s' not loaded "
-                                    "(available: %s)",
-                                    self._ollama_model,
-                                    [n for n in model_names[:5]],
-                                )
-                                return False
-                        except Exception:
-                            pass  # JSON parse failed — still count as reachable
+                # If we know which model to expect, verify it's in the list
+                if self._ollama_model:
+                    try:
+                        data = await resp.json()
+                        models = data.get("models", [])
+                        model_names = [m.get("name", "") for m in models]
+                        if not any(self._ollama_model in name for name in model_names):
+                            logger.warning(
+                                "Ollama reachable but model '%s' not loaded (available: %s)",
+                                self._ollama_model,
+                                [n for n in model_names[:5]],
+                            )
+                            return False
+                    except Exception:
+                        pass  # JSON parse failed — still count as reachable
 
-                    return True
+                return True
         except Exception:
             return False
 
@@ -357,8 +346,7 @@ class HealthServer:
             pct = usage.used / usage.total * 100
             if pct >= self._disk_warn_pct:
                 return (
-                    f"disk:{self._data_dir} is {pct:.1f}% full "
-                    f"({usage.free // (1024**3)}GB free)"
+                    f"disk:{self._data_dir} is {pct:.1f}% full ({usage.free // (1024**3)}GB free)"
                 )
         except Exception:
             pass
@@ -384,9 +372,7 @@ class HealthServer:
                 "micro": getattr(state, "total_micro_loops", 0),
                 "meso": getattr(state, "total_meso_loops", 0),
                 "macro": getattr(state, "total_macro_loops", 0),
-                "current_level": getattr(
-                    getattr(state, "current_level", None), "value", ""
-                ),
+                "current_level": getattr(getattr(state, "current_level", None), "value", ""),
                 "consecutive_failures": getattr(state, "consecutive_failures", 0),
                 "stagnation_events": getattr(state, "stagnation_events_total", 0),
             }
@@ -452,13 +438,9 @@ class HealthServer:
     async def _handle_status(self, writer) -> None:
         """Return the live orchestrator state dict."""
         if self._orchestrator and hasattr(self._orchestrator, "get_state_snapshot"):
-            await self._send_response(
-                writer, 200, self._orchestrator.get_state_snapshot()
-            )
+            await self._send_response(writer, 200, self._orchestrator.get_state_snapshot())
         else:
-            await self._send_response(
-                writer, 503, {"error": "orchestrator not available"}
-            )
+            await self._send_response(writer, 503, {"error": "orchestrator not available"})
 
     async def _handle_metrics(self, writer) -> None:
         """
@@ -483,9 +465,7 @@ class HealthServer:
         """
         lines: list[str] = []
 
-        def metric(
-            name: str, mtype: str, help_text: str, value: Any, labels: str = ""
-        ) -> None:
+        def metric(name: str, mtype: str, help_text: str, value: Any, labels: str = "") -> None:
             lines.append(f"# HELP {name} {help_text}")
             lines.append(f"# TYPE {name} {mtype}")
             label_str = f"{{{labels}}}" if labels else ""
@@ -598,9 +578,7 @@ class HealthServer:
     # Low-level HTTP response writer
     # ------------------------------------------------------------------
 
-    async def _send_response(
-        self, writer: asyncio.StreamWriter, status: int, body: dict
-    ) -> None:
+    async def _send_response(self, writer: asyncio.StreamWriter, status: int, body: dict) -> None:
         """Write a minimal HTTP response with a JSON body."""
         body_bytes = json.dumps(body, default=str).encode("utf-8")
         status_text = {

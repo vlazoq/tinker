@@ -12,12 +12,9 @@ Provides reusable fixtures that eliminate boilerplate across test files:
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # AI / LLM mocks
@@ -34,6 +31,7 @@ def mock_response():
         def test_something(mock_response):
             resp = mock_response(raw_text="hello", total_tokens=50)
     """
+
     def _factory(
         structured: dict | None = None,
         raw_text: str = "Mock AI response.",

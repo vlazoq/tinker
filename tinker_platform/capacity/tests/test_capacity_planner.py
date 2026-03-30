@@ -9,7 +9,6 @@ and report generation.
 
 from __future__ import annotations
 
-
 from tinker_platform.capacity.planner import CapacityPlanner, CapacitySnapshot
 
 
@@ -133,9 +132,7 @@ class TestDiskFreeProjection:
         planner._first_snapshot = snap
         # Add enough snapshots to trigger growth calculation
         for _ in range(6):
-            planner._snapshots.append(
-                CapacitySnapshot(disk_mb=1001.0, disk_free_gb=0.001)
-            )
+            planner._snapshots.append(CapacitySnapshot(disk_mb=1001.0, disk_free_gb=0.001))
 
         planner.set_threshold("disk_mb", 999999)  # won't trigger disk_mb alert
         alerts = planner.check_thresholds()

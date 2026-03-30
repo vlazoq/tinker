@@ -22,7 +22,6 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +52,9 @@ class CommandResult:
 
 def run_command(
     cmd: list[str],
-    cwd: Optional[Union[str, Path]] = None,
+    cwd: str | Path | None = None,
     timeout: float = 60.0,
-    env: Optional[dict] = None,
+    env: dict | None = None,
 ) -> CommandResult:
     """
     Run a command synchronously and return its output.
@@ -131,7 +130,7 @@ def run_command(
 
 async def run_command_async(
     cmd: list[str],
-    cwd: Optional[Union[str, Path]] = None,
+    cwd: str | Path | None = None,
     timeout: float = 60.0,
 ) -> CommandResult:
     """
@@ -148,10 +147,8 @@ async def run_command_async(
             cwd=str(cwd) if cwd else None,
         )
         try:
-            stdout_b, stderr_b = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
-        except asyncio.TimeoutError:
+            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except TimeoutError:
             proc.kill()
             await proc.communicate()
             return CommandResult(-1, "", f"Timed out after {timeout}s", cmd_str)
@@ -167,8 +164,8 @@ async def run_command_async(
 
 
 def run_tests(
-    test_path: Union[str, Path],
-    cwd: Optional[Union[str, Path]] = None,
+    test_path: str | Path,
+    cwd: str | Path | None = None,
     timeout: float = 120.0,
     extra_args: list[str] | None = None,
 ) -> CommandResult:
@@ -199,7 +196,7 @@ def run_tests(
     return run_command(cmd, cwd=cwd, timeout=timeout)
 
 
-def check_syntax(filepath: Union[str, Path]) -> CommandResult:
+def check_syntax(filepath: str | Path) -> CommandResult:
     """
     Check Python syntax without running the file.
 

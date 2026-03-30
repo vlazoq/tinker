@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from .schema import Task, TaskStatus, Subsystem
+from .schema import Subsystem, Task, TaskStatus
 
 
 class AbstractTaskRegistry(ABC):

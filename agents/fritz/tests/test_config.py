@@ -7,15 +7,11 @@ save/reload round-trip, and default creation.
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from agents.fritz.config import FritzConfig, PushPolicyConfig
-
 
 # ── FritzConfig defaults ──────────────────────────────────────────────────────
 
@@ -49,7 +45,9 @@ class TestFritzConfigDefaults:
 
 class TestCanPushDirect:
     def test_protected_branch_always_blocked(self):
-        pp = PushPolicyConfig(allow_push_to_main=True, require_pr=False, protected_branches=["prod"])
+        pp = PushPolicyConfig(
+            allow_push_to_main=True, require_pr=False, protected_branches=["prod"]
+        )
         assert pp.can_push_direct("prod") is False
 
     def test_main_blocked_by_default(self):

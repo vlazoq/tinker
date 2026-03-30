@@ -58,7 +58,8 @@ import asyncio
 import logging
 import os
 import time
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +113,8 @@ class AutoRecoveryManager:
         circuit_registry: Any = None,
         max_attempts: int = 3,
         base_delay: float = 5.0,
-        recovery_actions: Optional[dict[str, RecoveryCallable]] = None,
-        duckdb_path: Optional[str] = None,
+        recovery_actions: dict[str, RecoveryCallable] | None = None,
+        duckdb_path: str | None = None,
     ) -> None:
         self._memory_manager = memory_manager
         self._circuit_registry = circuit_registry
@@ -123,9 +124,7 @@ class AutoRecoveryManager:
         # Configurable recovery actions per service.  Operators can register
         # custom callables that override the built-in recovery methods.
         # Each callable signature: async (service_name, manager) -> bool
-        self._recovery_actions: dict[str, RecoveryCallable] = dict(
-            recovery_actions or {}
-        )
+        self._recovery_actions: dict[str, RecoveryCallable] = dict(recovery_actions or {})
 
         # Path to the DuckDB database file (used by _recover_duckdb).
         self._duckdb_path: str = duckdb_path or os.getenv(
@@ -142,9 +141,7 @@ class AutoRecoveryManager:
         # to decide whether to use in-process fallbacks.
         self.degraded_mode: bool = False
 
-    def register_recovery_action(
-        self, service_name: str, action: RecoveryCallable
-    ) -> None:
+    def register_recovery_action(self, service_name: str, action: RecoveryCallable) -> None:
         """
         Register (or replace) a custom recovery callable for a service.
 
@@ -182,9 +179,7 @@ class AutoRecoveryManager:
         from infra.resilience.circuit_breaker import CircuitState
 
         if new_state == CircuitState.OPEN:
-            logger.info(
-                "AutoRecovery: %s circuit opened — scheduling recovery", breaker.name
-            )
+            logger.info("AutoRecovery: %s circuit opened — scheduling recovery", breaker.name)
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(self.attempt_recovery(breaker.name))
@@ -227,9 +222,7 @@ class AutoRecoveryManager:
                     # Reset degraded mode when Redis recovers
                     if service_name == "redis" and self.degraded_mode:
                         self.degraded_mode = False
-                        logger.info(
-                            "AutoRecovery: Redis recovered — exiting degraded mode"
-                        )
+                        logger.info("AutoRecovery: Redis recovered — exiting degraded mode")
                     logger.info("AutoRecovery: %s recovered successfully", service_name)
                     return True
             except Exception as exc:
@@ -391,8 +384,7 @@ class AutoRecoveryManager:
             file_size = file_stat.st_size
             file_mode = stat.filemode(file_stat.st_mode)
             logger.info(
-                "AutoRecovery: DuckDB file diagnostics — "
-                "path='%s' size=%d bytes permissions=%s",
+                "AutoRecovery: DuckDB file diagnostics — path='%s' size=%d bytes permissions=%s",
                 db_path,
                 file_size,
                 file_mode,
@@ -437,15 +429,13 @@ class AutoRecoveryManager:
 
             if result and result[0] == 1:
                 logger.info(
-                    "AutoRecovery: DuckDB test connection succeeded "
-                    "(path='%s')",
+                    "AutoRecovery: DuckDB test connection succeeded (path='%s')",
                     db_path,
                 )
                 return True
             else:
                 logger.error(
-                    "AutoRecovery: DuckDB test query returned unexpected "
-                    "result: %s",
+                    "AutoRecovery: DuckDB test query returned unexpected result: %s",
                     result,
                 )
                 return False
@@ -493,14 +483,10 @@ class AutoRecoveryManager:
         # Determine the base URL and model name from environment variables.
         # These mirror the env vars used in core/llm/types.py.
         url_env = (
-            "TINKER_SERVER_URL"
-            if service_name == "ollama_server"
-            else "TINKER_SECONDARY_URL"
+            "TINKER_SERVER_URL" if service_name == "ollama_server" else "TINKER_SECONDARY_URL"
         )
         model_env = (
-            "TINKER_SERVER_MODEL"
-            if service_name == "ollama_server"
-            else "TINKER_SECONDARY_MODEL"
+            "TINKER_SERVER_MODEL" if service_name == "ollama_server" else "TINKER_SECONDARY_MODEL"
         )
         base_url = os.getenv(url_env, "http://localhost:11434")
         model_name = os.getenv(model_env, "unknown")
@@ -509,46 +495,44 @@ class AutoRecoveryManager:
         try:
             import aiohttp
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    health_url, timeout=aiohttp.ClientTimeout(total=5)
-                ) as resp:
-                    status = resp.status
+            async with (
+                aiohttp.ClientSession() as session,
+                session.get(health_url, timeout=aiohttp.ClientTimeout(total=5)) as resp,
+            ):
+                status = resp.status
 
-                    if status == 200:
-                        # Ollama is reachable — recovery succeeded.
-                        logger.info(
-                            "AutoRecovery: Ollama health check %s → HTTP 200 (OK)",
-                            service_name,
-                        )
-                        return True
-
-                    if status == 404:
-                        # 404 on /api/tags typically means the endpoint exists
-                        # but no models are loaded, or a model-specific endpoint
-                        # was not found.  Log an actionable message.
-                        logger.error(
-                            "AutoRecovery: Model '%s' not pulled — "
-                            "run 'ollama pull %s' to download it",
-                            model_name,
-                            model_name,
-                        )
-                        return False
-
-                    # Any other non-200 status — log it for diagnostics.
-                    logger.warning(
-                        "AutoRecovery: Ollama health check %s → HTTP %d "
-                        "(unexpected status)",
+                if status == 200:
+                    # Ollama is reachable — recovery succeeded.
+                    logger.info(
+                        "AutoRecovery: Ollama health check %s → HTTP 200 (OK)",
                         service_name,
-                        status,
+                    )
+                    return True
+
+                if status == 404:
+                    # 404 on /api/tags typically means the endpoint exists
+                    # but no models are loaded, or a model-specific endpoint
+                    # was not found.  Log an actionable message.
+                    logger.error(
+                        "AutoRecovery: Model '%s' not pulled — "
+                        "run 'ollama pull %s' to download it",
+                        model_name,
+                        model_name,
                     )
                     return False
+
+                # Any other non-200 status — log it for diagnostics.
+                logger.warning(
+                    "AutoRecovery: Ollama health check %s → HTTP %d (unexpected status)",
+                    service_name,
+                    status,
+                )
+                return False
 
         except (ConnectionRefusedError, OSError):
             # Connection refused means Ollama is not running at all.
             logger.error(
-                "AutoRecovery: Ollama unreachable at %s — "
-                "check if 'ollama serve' is running",
+                "AutoRecovery: Ollama unreachable at %s — check if 'ollama serve' is running",
                 base_url,
             )
             return False
@@ -559,14 +543,11 @@ class AutoRecoveryManager:
             exc_msg = str(exc).lower()
             if "connect" in exc_msg or "refused" in exc_msg:
                 logger.error(
-                    "AutoRecovery: Ollama unreachable at %s — "
-                    "check if 'ollama serve' is running",
+                    "AutoRecovery: Ollama unreachable at %s — check if 'ollama serve' is running",
                     base_url,
                 )
             else:
-                logger.debug(
-                    "AutoRecovery: Ollama health check failed: %s", exc
-                )
+                logger.debug("AutoRecovery: Ollama health check failed: %s", exc)
             return False
 
     async def _recover_searxng(self) -> bool:
@@ -577,12 +558,14 @@ class AutoRecoveryManager:
         try:
             import aiohttp
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
+            async with (
+                aiohttp.ClientSession() as session,
+                session.get(
                     f"{searxng_url}/healthz",
                     timeout=aiohttp.ClientTimeout(total=5),
-                ) as resp:
-                    return resp.status < 500
+                ) as resp,
+            ):
+                return resp.status < 500
         except Exception as exc:
             logger.debug("AutoRecovery: SearXNG health check failed: %s", exc)
             return False

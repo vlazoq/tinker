@@ -5,7 +5,7 @@ from utils.retry import retry_with_backoff
 
 __all__ = [
     "atomic_write",
+    "retry_with_backoff",
     "safe_json_dump",
     "safe_json_load",
-    "retry_with_backoff",
 ]

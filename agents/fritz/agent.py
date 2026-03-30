@@ -41,7 +41,6 @@ from .gitea_ops import FritzGitea
 from .github_ops import FritzGitHub, FritzRemoteResult
 from .identity import FritzIdentity, build_identity
 from .metrics import FritzMetrics, get_metrics
-from .platform import GitPlatform, detect_platform, extract_owner_repo
 from .push_policy import PolicyViolation, PushPolicy
 
 logger = logging.getLogger(__name__)
@@ -97,9 +96,7 @@ class FritzAgent:
         self._ready = False
 
     @classmethod
-    async def from_config(
-        cls, path: str | Path = "fritz_config.json"
-    ) -> "FritzAgent":
+    async def from_config(cls, path: str | Path = "fritz_config.json") -> FritzAgent:
         """Convenience: load config from file and call setup()."""
         config = FritzConfig.from_file(path)
         agent = cls(config)
@@ -256,9 +253,7 @@ class FritzAgent:
         commit_result = await self.git.commit(message, files)
         self._metrics.on_commit(commit_result.ok)
         if not commit_result.ok:
-            return FritzShipResult(
-                ok=False, branch=branch, errors=[commit_result.stderr]
-            )
+            return FritzShipResult(ok=False, branch=branch, errors=[commit_result.stderr])
 
         sha = await self.git.head_sha()
 
@@ -313,9 +308,7 @@ class FritzAgent:
         commit_result = await self.git.commit(message, files)
         self._metrics.on_commit(commit_result.ok)
         if not commit_result.ok:
-            return FritzShipResult(
-                ok=False, branch=feature_branch, errors=[commit_result.stderr]
-            )
+            return FritzShipResult(ok=False, branch=feature_branch, errors=[commit_result.stderr])
 
         sha = await self.git.head_sha()
 
@@ -476,9 +469,12 @@ class FritzAgent:
         try:
             # Support both package-relative and standalone import styles.
             try:
-                from ..observability.audit_log import AuditLog, AuditEventType
+                from ..observability.audit_log import AuditEventType, AuditLog
             except ImportError:
-                from infra.observability.audit_log import AuditLog, AuditEventType  # type: ignore[no-redef]
+                from infra.observability.audit_log import (  # type: ignore[no-redef]
+                    AuditEventType,
+                    AuditLog,
+                )
 
             log_path = self.config.audit_log_path or None
             audit = AuditLog(db_path=log_path) if log_path else AuditLog()

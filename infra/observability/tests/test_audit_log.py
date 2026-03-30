@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from infra.observability.audit_log import AuditLog, AuditEventType
+from infra.observability.audit_log import AuditEventType, AuditLog
 
 
 @pytest.fixture
@@ -50,9 +50,7 @@ class TestAuditLog:
         await audit_log._flush_buffer()
         events = await audit_log.query(event_type=AuditEventType.TASK_SELECTED)
         assert len(events) >= 1
-        assert all(
-            e["event_type"] == AuditEventType.TASK_SELECTED.value for e in events
-        )
+        assert all(e["event_type"] == AuditEventType.TASK_SELECTED.value for e in events)
 
     @pytest.mark.asyncio
     async def test_query_by_trace_id(self, audit_log):

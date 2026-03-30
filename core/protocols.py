@@ -41,7 +41,7 @@ Relationship to concrete classes
 
 from __future__ import annotations
 
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -57,7 +57,7 @@ class TaskEngineProtocol(Protocol):
     All methods are async so the orchestrator can await them uniformly.
     """
 
-    async def select_task(self) -> Optional[dict]:
+    async def select_task(self) -> dict | None:
         """
         Return the highest-priority pending task as a plain dict, or None
         if there are no tasks available.
@@ -67,8 +67,8 @@ class TaskEngineProtocol(Protocol):
     async def complete_task(
         self,
         task_id: str,
-        artifact_id: Optional[str] = None,
-        outputs: Optional[list[str]] = None,
+        artifact_id: str | None = None,
+        outputs: list[str] | None = None,
         tokens_used: int = 0,
         duration_seconds: float = 0.0,
     ) -> None:

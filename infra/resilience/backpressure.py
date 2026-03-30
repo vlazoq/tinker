@@ -52,7 +52,6 @@ import enum
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +133,7 @@ class BackpressureController:
         self._total_evaluations: int = 0
         self._pauses_triggered: int = 0
         self._slow_downs_triggered: int = 0
-        self._last_pause_at: Optional[float] = None
+        self._last_pause_at: float | None = None
 
     def evaluate(
         self,
@@ -208,8 +207,7 @@ class BackpressureController:
                 action=BackpressureAction.SLOW_DOWN,
                 wait_seconds=self._slow_seconds,
                 reason=(
-                    f"Consecutive failure streak={failure_streak} — "
-                    "slowing down task generation"
+                    f"Consecutive failure streak={failure_streak} — slowing down task generation"
                 ),
                 signals=signals,
             )
@@ -253,8 +251,6 @@ class BackpressureController:
             "pauses_triggered": self._pauses_triggered,
             "slow_downs_triggered": self._slow_downs_triggered,
             "last_pause_ago": (
-                round(time.monotonic() - self._last_pause_at, 1)
-                if self._last_pause_at
-                else None
+                round(time.monotonic() - self._last_pause_at, 1) if self._last_pause_at else None
             ),
         }

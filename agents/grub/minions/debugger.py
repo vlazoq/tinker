@@ -24,11 +24,11 @@ from __future__ import annotations
 
 import time
 
-from .base import BaseMinion
-from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus, TestSummary
+from ..contracts.task import GrubTask
 from ..tools.file_ops import read_file, write_file
-from ..tools.shell import run_tests, check_syntax
+from ..tools.shell import check_syntax, run_tests
+from .base import BaseMinion
 
 
 class DebuggerMinion(BaseMinion):
@@ -99,9 +99,7 @@ Rules:
         if test_file:
             ok, content = read_file(test_file)
             if ok:
-                test_section = (
-                    f"\n### Test File: {test_file}\n```python\n{content}\n```"
-                )
+                test_section = f"\n### Test File: {test_file}\n```python\n{content}\n```"
 
         max_iter = min(self.config.max_iterations, 3)
         files_fixed = []
@@ -127,7 +125,8 @@ Rules:
             )
 
             response = await self._llm(
-                prompt, temperature=0.1,
+                prompt,
+                temperature=0.1,
                 timeout=self.config.timeouts.get(self.name, 120.0),
             )
 
@@ -151,12 +150,10 @@ Rules:
 
                 if fpath:
                     # Syntax check before writing
-                    import tempfile
                     import os
+                    import tempfile
 
-                    with tempfile.NamedTemporaryFile(
-                        suffix=".py", delete=False, mode="w"
-                    ) as tmp:
+                    with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w") as tmp:
                         tmp.write(block)
                         tmp_path = tmp.name
                     chk = check_syntax(tmp_path)

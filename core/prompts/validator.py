@@ -20,15 +20,15 @@ from typing import Any
 
 try:
     import jsonschema  # noqa: F401
-    from jsonschema import validate as _jv_validate, ValidationError as _JVError
+    from jsonschema import ValidationError as _JVError
+    from jsonschema import validate as _jv_validate
 
     _JSONSCHEMA_AVAILABLE = True
 except ImportError:
     _JSONSCHEMA_AVAILABLE = False
 
 from .schemas import SCHEMA_REGISTRY
-from .templates import Role, LoopLevel
-
+from .templates import LoopLevel, Role
 
 # ---------------------------------------------------------------------------
 # Result dataclass
@@ -102,17 +102,13 @@ class OutputValidator:
 
         # Step 2: Auto-repair
         if auto_repair:
-            extracted, repair_warnings, repaired = self._auto_repair(
-                extracted, role, loop_level
-            )
+            extracted, repair_warnings, repaired = self._auto_repair(extracted, role, loop_level)
             warnings.extend(repair_warnings)
 
         # Step 3: Schema validation
         schema = SCHEMA_REGISTRY.get(key)
         if schema is None:
-            warnings.append(
-                f"No schema registered for key '{key}' — skipping schema check."
-            )
+            warnings.append(f"No schema registered for key '{key}' — skipping schema check.")
             return ValidationResult(
                 valid=True, data=extracted, warnings=warnings, auto_repaired=repaired
             )
@@ -128,9 +124,7 @@ class OutputValidator:
             )
 
         # Step 4: Semantic checks (beyond JSON schema)
-        semantic_errors, semantic_warnings = self._semantic_checks(
-            extracted, role, loop_level
-        )
+        semantic_errors, semantic_warnings = self._semantic_checks(extracted, role, loop_level)
         warnings.extend(semantic_warnings)
         if semantic_errors:
             return ValidationResult(
@@ -181,7 +175,7 @@ class OutputValidator:
             except json.JSONDecodeError:
                 pass
 
-        return None, warnings + ["All JSON extraction attempts failed."]
+        return None, [*warnings, "All JSON extraction attempts failed."]
 
     # ------------------------------------------------------------------
     # Auto-repair
@@ -249,9 +243,7 @@ class OutputValidator:
                 repaired = True
 
         # Ensure revision_required is boolean
-        if "revision_required" in data and not isinstance(
-            data["revision_required"], bool
-        ):
+        if "revision_required" in data and not isinstance(data["revision_required"], bool):
             data["revision_required"] = data["verdict"] in ("revise", "reject")
             warnings.append("revision_required was non-boolean; derived from verdict.")
             repaired = True
@@ -321,9 +313,7 @@ class OutputValidator:
 
         # Minimum 3 weaknesses
         if len(weaknesses) < 3:
-            errors.append(
-                f"Critic must identify at least 3 weaknesses; found {len(weaknesses)}."
-            )
+            errors.append(f"Critic must identify at least 3 weaknesses; found {len(weaknesses)}.")
 
         # Check for generic/non-specific weakness statements
         generic_phrases = [
@@ -349,15 +339,11 @@ class OutputValidator:
         if verdict == "accept" and revision_required is True:
             errors.append("Inconsistency: verdict='accept' but revision_required=True.")
         if verdict in ("revise", "reject") and revision_required is False:
-            errors.append(
-                f"Inconsistency: verdict='{verdict}' but revision_required=False."
-            )
+            errors.append(f"Inconsistency: verdict='{verdict}' but revision_required=False.")
 
         # confidence_score should not be too high given weaknesses
         confidence = data.get("confidence_score", 0.0)
-        critical_or_high = [
-            w for w in weaknesses if w.get("severity") in ("critical", "high")
-        ]
+        critical_or_high = [w for w in weaknesses if w.get("severity") in ("critical", "high")]
         if critical_or_high and confidence > 0.8:
             errors.append(
                 f"confidence_score={confidence:.2f} is too high given "
@@ -366,9 +352,7 @@ class OutputValidator:
 
         return errors
 
-    def _check_architect_semantics(
-        self, data: dict, loop_level: LoopLevel
-    ) -> list[str]:
+    def _check_architect_semantics(self, data: dict, loop_level: LoopLevel) -> list[str]:
         errors: list[str] = []
 
         # Reasoning chain minimum depth
@@ -391,22 +375,16 @@ class OutputValidator:
         # candidate_next_tasks must have at least 2 tasks
         tasks = data.get("candidate_next_tasks", [])
         if len(tasks) < 2:
-            errors.append(
-                f"candidate_next_tasks has {len(tasks)} entries; minimum 2 required."
-            )
+            errors.append(f"candidate_next_tasks has {len(tasks)} entries; minimum 2 required.")
 
         # At least one high priority task
         priorities = [t.get("priority") for t in tasks]
         if tasks and "high" not in priorities:
-            errors.append(
-                "candidate_next_tasks must contain at least one 'high' priority task."
-            )
+            errors.append("candidate_next_tasks must contain at least one 'high' priority task.")
 
         return errors
 
-    def _check_synthesizer_semantics(
-        self, data: dict, loop_level: LoopLevel
-    ) -> list[str]:
+    def _check_synthesizer_semantics(self, data: dict, loop_level: LoopLevel) -> list[str]:
         warnings: list[str] = []
 
         # Warn if no contradictions were found (might mean synthesis was too shallow)
@@ -421,9 +399,7 @@ class OutputValidator:
         narrative = data.get("compressed_narrative", "")
         min_len = 200 if loop_level == "macro" else 100
         if len(narrative.split()) < min_len // 5:  # rough word count check
-            warnings.append(
-                f"compressed_narrative may be too brief for {loop_level} synthesis."
-            )
+            warnings.append(f"compressed_narrative may be too brief for {loop_level} synthesis.")
 
         return warnings
 

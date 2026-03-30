@@ -52,7 +52,6 @@ from typing import Any, Protocol, runtime_checkable
 
 from .base import BaseTool, ToolSchema
 
-
 # ---------------------------------------------------------------------------
 # Protocol — matches whatever MemoryManager exposes
 # ---------------------------------------------------------------------------

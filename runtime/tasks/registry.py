@@ -50,12 +50,12 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator
 
 from .abstract_registry import AbstractTaskRegistry
-from .schema import Task, TaskStatus, Subsystem
+from .schema import Subsystem, Task, TaskStatus
 
 log = logging.getLogger(__name__)
 
@@ -319,9 +319,7 @@ class SQLiteTaskRegistry(AbstractTaskRegistry):
         Returns None if no task with that ID exists, rather than raising
         an exception.  Callers should check for None.
         """
-        row = self._conn.execute(
-            "SELECT * FROM tasks WHERE id = ?", (task_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if row is None:
             return None
         return Task.from_dict(_row_to_dict(row))

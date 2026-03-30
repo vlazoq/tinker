@@ -1,13 +1,12 @@
 """Task queue and Dead Letter Queue endpoints."""
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
 
 from ui.core import (
-    TASKS_DB,
     DLQ_DB,
-    TASK_TYPES,
     SUBSYSTEMS,
+    TASK_TYPES,
+    TASKS_DB,
     db_execute,
     db_query,
     new_id,
@@ -18,6 +17,7 @@ router = APIRouter()
 
 
 # ── Task Queue ──────────────────────────────────────────────────────────────
+
 
 @router.get("/api/tasks")
 async def api_tasks():
@@ -69,6 +69,7 @@ async def api_tasks_inject(request: Request):
 
 
 # ── Dead Letter Queue ───────────────────────────────────────────────────────
+
 
 @router.get("/api/dlq")
 async def api_dlq():

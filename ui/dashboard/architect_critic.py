@@ -58,7 +58,7 @@ def _score_style(score: float) -> str:
 
 
 def _score_bar(score: float, width: int = 20) -> str:
-    filled = int(round(score / 10.0 * width))
+    filled = round(score / 10.0 * width)
     empty = width - filled
     bar = "█" * filled + "░" * empty
     return bar

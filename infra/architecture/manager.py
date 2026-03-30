@@ -73,18 +73,12 @@ Responsibilities
 from __future__ import annotations
 
 import logging
-import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .merger import merge_update
 from .schema import (
     ArchitectureState,
-    Component,
-    ConfidenceTier,
-    DesignDecision,
-    OpenQuestion,
 )
 
 # Module-level logger.  Log messages from this file will be labelled
@@ -92,11 +86,11 @@ from .schema import (
 logger = logging.getLogger(__name__)
 
 
-from ._persistence import PersistenceMixin
-from ._git_integration import GitIntegrationMixin
-from ._summarizer import SummarizerMixin
 from ._diffing import DiffingMixin
+from ._git_integration import GitIntegrationMixin
+from ._persistence import PersistenceMixin
 from ._queries import QueriesMixin
+from ._summarizer import SummarizerMixin
 
 
 class ArchitectureStateManager(
@@ -167,9 +161,7 @@ class ArchitectureStateManager(
         # Load existing state from disk, or create a fresh one
         if self._state_path.exists():
             # There's an existing state file — load it
-            self._state = ArchitectureState.model_validate_json(
-                self._state_path.read_text()
-            )
+            self._state = ArchitectureState.model_validate_json(self._state_path.read_text())
             logger.info("Loaded existing state (loop %d)", self._state.macro_loop)
         else:
             # First run — create a blank state document
@@ -213,9 +205,7 @@ class ArchitectureStateManager(
         if payload.get("content"):
             version = payload.get("version", "?")
             micro = payload.get("total_micro_loops", "?")
-            update["loop_note"] = (
-                f"[macro v{version} micro={micro}] {payload['content'][:200]}"
-            )
+            update["loop_note"] = f"[macro v{version} micro={micro}] {payload['content'][:200]}"
 
         self.apply_update(update)
 
@@ -228,6 +218,7 @@ class ArchitectureStateManager(
         # Deterministic fallback: ISO timestamp prefix instead of random UUID
         # so the hash is meaningful and reproducible for debugging.
         import time as _time
+
         return f"t{int(_time.time())}"
 
     def apply_update(self, update: dict[str, Any]) -> ArchitectureState:
@@ -275,4 +266,3 @@ class ArchitectureStateManager(
             len(new_state.open_questions),
         )
         return new_state
-

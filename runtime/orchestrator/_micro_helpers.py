@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from .state import MicroLoopRecord
 
@@ -53,16 +53,14 @@ def _enrich_review_context(task: dict, context: dict) -> dict:
                 grub_result.get("score", 0.0),
             )
     except Exception as exc:
-        logger.debug(
-            "_enrich_review_context: could not parse grub result (non-fatal): %s", exc
-        )
+        logger.debug("_enrich_review_context: could not parse grub result (non-fatal): %s", exc)
     return enriched
 
 
 def _maybe_fire_quality_gate(
-    orch: "Orchestrator",
-    record: "MicroLoopRecord",
-    alerter: Optional[object],
+    orch: Orchestrator,
+    record: MicroLoopRecord,
+    alerter: object | None,
     iteration: int,
 ) -> None:
     """
@@ -77,9 +75,7 @@ def _maybe_fire_quality_gate(
     dispatched as a fire-and-forget asyncio Task.
     """
     threshold = getattr(getattr(orch, "config", None), "quality_gate_threshold", 0.4)
-    escalation_count = getattr(
-        getattr(orch, "config", None), "quality_gate_escalation_count", 3
-    )
+    escalation_count = getattr(getattr(orch, "config", None), "quality_gate_escalation_count", 3)
     if threshold <= 0.0 or alerter is None:
         return
 
@@ -93,15 +89,11 @@ def _maybe_fire_quality_gate(
     orch.__dict__["_quality_gate_fails"] = fails
 
     try:
-        from infra.observability.alerting import AlertType, AlertSeverity
+        from infra.observability.alerting import AlertSeverity, AlertType
     except ImportError:
         return
 
-    severity = (
-        AlertSeverity.ERROR
-        if fails >= escalation_count
-        else AlertSeverity.WARNING
-    )
+    severity = AlertSeverity.ERROR if fails >= escalation_count else AlertSeverity.WARNING
     asyncio.create_task(
         alerter.alert(  # type: ignore[union-attr]
             alert_type=AlertType.CUSTOM,
@@ -145,7 +137,7 @@ def _architect_result_is_thin(result: dict) -> bool:
 
 
 async def _call_architect_with_validation_retry(
-    orch: "Orchestrator",
+    orch: Orchestrator,
     task: dict,
     context: dict,
     timeout: float,

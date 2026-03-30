@@ -65,12 +65,11 @@ import time
 
 # ``asdict`` converts a dataclass instance into a plain Python dict, which
 # we need before we can call ``json.dumps()``.
-from dataclasses import dataclass, field, asdict
-from enum import Enum
-from typing import Optional
+from dataclasses import asdict, dataclass, field
+from enum import StrEnum
 
 
-class LoopLevel(str, Enum):
+class LoopLevel(StrEnum):
     """
     Which of the three reasoning loops (or no loop) is currently active.
 
@@ -92,7 +91,7 @@ class LoopLevel(str, Enum):
     IDLE = "idle"
 
 
-class LoopStatus(str, Enum):
+class LoopStatus(StrEnum):
     """
     The outcome (or current state) of a single loop run.
 
@@ -148,7 +147,7 @@ class MicroLoopRecord:
     # Monotonic start time — used to compute duration, not for display.
     started_at: float
     # Set to None while the loop is still running, then filled on completion.
-    finished_at: Optional[float] = None
+    finished_at: float | None = None
     # Starts as RUNNING, updated to SUCCESS or FAILED at the end.
     status: LoopStatus = LoopStatus.RUNNING
     # Token counts from each AI call — useful for billing / cost monitoring.
@@ -157,15 +156,15 @@ class MicroLoopRecord:
     # Critic quality score for this loop (0.0 – 1.0).
     # Populated from critic_result["score"] in micro_loop.py so the stagnation
     # monitor can detect Critique Collapse (critic scores trending too high).
-    critic_score: Optional[float] = None
+    critic_score: float | None = None
     # The ID of the artifact stored in memory when the loop succeeds.
-    artifact_id: Optional[str] = None
+    artifact_id: str | None = None
     # Number of new tasks the task engine queued as follow-ups to this one.
     new_tasks_generated: int = 0
     # How many Tool Layer lookups were triggered to fill knowledge gaps.
     researcher_calls: int = 0
     # Human-readable error string, populated only when status == FAILED.
-    error: Optional[str] = None
+    error: str | None = None
 
     def duration(self) -> float:
         """
@@ -212,11 +211,11 @@ class MesoLoopRecord:
     started_at: float
     # Filled in after we fetch artifacts from core.memory.
     artifacts_synthesised: int = 0
-    finished_at: Optional[float] = None
+    finished_at: float | None = None
     status: LoopStatus = LoopStatus.RUNNING
     # The memory store ID of the resulting subsystem design document.
-    document_id: Optional[str] = None
-    error: Optional[str] = None
+    document_id: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -248,11 +247,11 @@ class MacroLoopRecord:
     # The total micro-loop count when this snapshot was triggered.
     trigger_iteration: int
     started_at: float
-    finished_at: Optional[float] = None
+    finished_at: float | None = None
     status: LoopStatus = LoopStatus.RUNNING
     # Short hash returned by arch_state_manager.commit() on success.
-    commit_hash: Optional[str] = None
-    error: Optional[str] = None
+    commit_hash: str | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -325,9 +324,9 @@ class OrchestratorState:
     # Which level of the hierarchy is active right now.
     current_level: LoopLevel = LoopLevel.IDLE
     # The task ID currently being processed (None between loops).
-    current_task_id: Optional[str] = None
+    current_task_id: str | None = None
     # The subsystem of the current task (None between loops).
-    current_subsystem: Optional[str] = None
+    current_subsystem: str | None = None
 
     # ── History ──────────────────────────────────────────────────────────────
 
@@ -354,13 +353,13 @@ class OrchestratorState:
     # When the FORCE_BRANCH directive fires, the monitor records the subsystem
     # to avoid.  The orchestrator forces an early meso synthesis on that
     # subsystem (triggering a natural pivot to new work) then clears this field.
-    stagnation_avoid_subsystem: Optional[str] = None
+    stagnation_avoid_subsystem: str | None = None
 
     # When ALTERNATIVE_FORCING or INJECT_CONTRADICTION fires, a short
     # instruction string is stored here.  micro_loop.py injects it into the
     # Architect's context on the *next* call, then clears this field so that
     # the prompt injection is one-shot (it doesn't persist across many loops).
-    pending_stagnation_hint: Optional[str] = None
+    pending_stagnation_hint: str | None = None
 
     # ── Pause / resume ────────────────────────────────────────────────────────
 
@@ -389,7 +388,7 @@ class OrchestratorState:
 
     # One-shot human directive — injected into the next Architect context and
     # then cleared.  Similar to pending_stagnation_hint but from human input.
-    pending_human_directive: Optional[str] = None
+    pending_human_directive: str | None = None
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
 
@@ -419,9 +418,7 @@ class OrchestratorState:
         """
         # dict.get(key, 0) safely returns 0 if the key doesn't exist yet,
         # so we don't need a separate "if subsystem not in dict" check.
-        self.subsystem_micro_counts[subsystem] = (
-            self.subsystem_micro_counts.get(subsystem, 0) + 1
-        )
+        self.subsystem_micro_counts[subsystem] = self.subsystem_micro_counts.get(subsystem, 0) + 1
         return self.subsystem_micro_counts[subsystem]
 
     def reset_subsystem_count(self, subsystem: str) -> None:
@@ -503,9 +500,7 @@ class OrchestratorState:
             # ``started_at`` is a monotonic value; convert it to a wall-clock
             # Unix timestamp by finding how far it is from our reference point.
             if "started_at" in d:
-                d["started_at_wall"] = self.wall_start + (
-                    d["started_at"] - self.started_at
-                )
+                d["started_at_wall"] = self.wall_start + (d["started_at"] - self.started_at)
             return d
 
         return {

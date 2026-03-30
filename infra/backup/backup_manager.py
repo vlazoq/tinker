@@ -95,7 +95,7 @@ import logging
 import shutil
 import tarfile
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -191,14 +191,12 @@ class BackupManager:
         ------
         RuntimeError : If the backup fails critically (disk full, permission denied).
         """
-        backup_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        backup_id = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
         snapshot_dir = self._backup_dir / backup_id
         snapshot_dir.mkdir(parents=True)
 
         mode = "incremental" if incremental else "full"
-        logger.info(
-            "Starting %s backup snapshot '%s' → %s", mode, backup_id, snapshot_dir
-        )
+        logger.info("Starting %s backup snapshot '%s' → %s", mode, backup_id, snapshot_dir)
         t0 = time.monotonic()
 
         # Load previous checksums for incremental comparison
@@ -209,7 +207,7 @@ class BackupManager:
         manifest = {
             "id": backup_id,
             "mode": mode,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "files": {},
             "errors": [],
         }
@@ -273,9 +271,7 @@ class BackupManager:
     def _load_latest_checksums(self) -> dict[str, str]:
         """Load checksums from the most recent backup for incremental comparison."""
         try:
-            backups = sorted(
-                [d for d in self._backup_dir.iterdir() if d.is_dir()], reverse=True
-            )
+            backups = sorted([d for d in self._backup_dir.iterdir() if d.is_dir()], reverse=True)
             for backup_dir in backups:
                 checksum_file = backup_dir / self._CHECKSUM_FILE
                 if checksum_file.exists():
@@ -322,8 +318,7 @@ class BackupManager:
             expected = info["sha256"]
             if actual != expected:
                 failures.append(
-                    f"{label}: checksum mismatch (expected {expected[:8]}…, "
-                    f"got {actual[:8]}…)"
+                    f"{label}: checksum mismatch (expected {expected[:8]}…, got {actual[:8]}…)"
                 )
 
         if failures:
@@ -415,9 +410,7 @@ class BackupManager:
                 "size_bytes": size,
                 "compressed": self._compress,
             }
-            logger.debug(
-                "Backed up directory %s → %s (%d bytes)", label, archive_name, size
-            )
+            logger.debug("Backed up directory %s → %s (%d bytes)", label, archive_name, size)
         except Exception as exc:
             msg = f"Failed to archive {label}: {exc}"
             logger.warning(msg)
@@ -514,7 +507,7 @@ class BackupManager:
     def _extract_archive(self, archive: Path, dest_dir: Path) -> None:
         """Synchronous archive extraction (runs in executor)."""
         with tarfile.open(archive, "r:*") as tar:
-            tar.extractall(dest_dir)
+            tar.extractall(dest_dir, filter="data")
 
     async def restore_latest(self) -> bool:
         """
@@ -577,7 +570,7 @@ class BackupManager:
         """
         import datetime as dt
 
-        cutoff = datetime.now(timezone.utc) - dt.timedelta(days=self._retention_days)
+        cutoff = datetime.now(dt.UTC) - dt.timedelta(days=self._retention_days)
         deleted = 0
 
         # Collect and sort all valid backups newest-first

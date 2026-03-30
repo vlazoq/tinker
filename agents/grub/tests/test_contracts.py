@@ -8,9 +8,8 @@ They verify that the contracts serialise/deserialise correctly and that
 helper properties work as expected.
 """
 
-from agents.grub.contracts.task import GrubTask, TaskPriority
 from agents.grub.contracts.result import MinionResult, ResultStatus, TestSummary
-
+from agents.grub.contracts.task import GrubTask, TaskPriority
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # GrubTask
@@ -114,9 +113,7 @@ class TestMinionResult:
         assert r.needs_retry is True
 
     def test_needs_retry_for_needs_retry_status(self):
-        r = MinionResult(
-            task_id="t1", minion_name="coder", status=ResultStatus.NEEDS_RETRY
-        )
+        r = MinionResult(task_id="t1", minion_name="coder", status=ResultStatus.NEEDS_RETRY)
         assert r.needs_retry is True
 
     def test_not_needs_retry_for_success(self):

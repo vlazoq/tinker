@@ -47,10 +47,10 @@ import logging
 import uuid
 
 from agents._shared import (
+    _build_synthesizer_prompts,
     _current_trace_id,
     _get_rate_limiter_registry,
     _get_retry_async,
-    _build_synthesizer_prompts,
 )
 
 logger = logging.getLogger("tinker.agents")
@@ -105,9 +105,7 @@ class SynthesizerAgent:
         trace_id = kwargs.pop("trace_id", None) or str(uuid.uuid4())
         _current_trace_id.set(trace_id)
 
-        logger.info(
-            "SynthesizerAgent.call start [level=%s trace_id=%s]", level, trace_id
-        )
+        logger.info("SynthesizerAgent.call start [level=%s trace_id=%s]", level, trace_id)
 
         system_prompt, user_prompt = _build_synthesizer_prompts(level, **kwargs)
 

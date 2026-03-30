@@ -69,7 +69,6 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-
 # ===========================================================================
 # Base
 # ===========================================================================
@@ -348,8 +347,7 @@ class CircuitBreakerOpenError(ResilienceError):
         self.recovery_at = recovery_at
         remaining = max(0.0, recovery_at - time.monotonic())
         super().__init__(
-            f"Circuit '{name}' is OPEN — service unavailable. "
-            f"Recovery probe in {remaining:.1f}s.",
+            f"Circuit '{name}' is OPEN — service unavailable. Recovery probe in {remaining:.1f}s.",
             context={"circuit": name, "recovery_in_seconds": round(remaining, 1)},
         )
 
@@ -516,45 +514,45 @@ class ExperimentError(TinkerError):
 # ===========================================================================
 
 __all__ = [
-    # Base
-    "TinkerError",
+    # Architecture
+    "ArchitectureError",
+    "CircuitBreakerOpenError",
+    "ConfigurationError",
+    # Context
+    "ContextError",
+    "DependencyCycleError",
+    # Experiments
+    "ExperimentError",
+    # Grub
+    "GrubError",
     # LLM
     "LLMError",
-    "ModelClientError",
-    "ModelConnectionError",
-    "ModelTimeoutError",
-    "ModelRateLimitError",
-    "ModelServerError",
-    "ModelNotFoundError",
-    "ResponseParseError",
-    "ModelRouterError",
-    "PromptBuilderError",
-    # Orchestrator
-    "OrchestratorError",
-    "MicroLoopError",
-    "ConfigurationError",
     # Memory
     "MemoryStoreError",
-    # Tasks
-    "TaskError",
-    "DependencyCycleError",
+    "MicroLoopError",
+    "MinionExecutionError",
+    "MinionTimeoutError",
+    "ModelClientError",
+    "ModelConnectionError",
+    "ModelNotFoundError",
+    "ModelRateLimitError",
+    "ModelRouterError",
+    "ModelServerError",
+    "ModelTimeoutError",
+    # Orchestrator
+    "OrchestratorError",
+    "PromptBuilderError",
     # Resilience
     "ResilienceError",
-    "CircuitBreakerOpenError",
+    "ResponseParseError",
+    "SyntaxCheckError",
+    # Tasks
+    "TaskError",
+    # Base
+    "TinkerError",
     # Tools
     "ToolError",
     "ToolNotFoundError",
-    # Grub
-    "GrubError",
-    "MinionExecutionError",
-    "SyntaxCheckError",
-    "MinionTimeoutError",
-    # Context
-    "ContextError",
-    # Architecture
-    "ArchitectureError",
     # Validation
     "ValidationError",
-    # Experiments
-    "ExperimentError",
 ]

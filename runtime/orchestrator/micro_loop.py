@@ -58,13 +58,15 @@ only to help type checkers and IDEs understand what ``orch`` is.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
+
+from exceptions import MicroLoopError
 
 from .compat import coroutine_if_needed
-from .state import MicroLoopRecord, LoopStatus
-from exceptions import MicroLoopError  # noqa: F401  (re-exported for callers)
+from .state import LoopStatus, MicroLoopRecord
 
 # This import only happens when a static analysis tool runs, not at runtime.
 # It allows us to annotate function parameters with the Orchestrator type
@@ -91,7 +93,7 @@ except ImportError:
     _RATE_LIMITER_AVAILABLE = False
 
 try:
-    from infra.observability.tracing import default_tracer  # noqa: F401
+    from infra.observability.tracing import default_tracer
 
     _TRACING_AVAILABLE = True
 except ImportError:
@@ -111,7 +113,7 @@ except ImportError:
 logger = logging.getLogger("tinker.orchestrator.micro")
 
 
-async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
+async def run_micro_loop(orch: Orchestrator) -> MicroLoopRecord:
     """
     Execute one complete micro-loop iteration from task selection to new tasks.
 
@@ -151,11 +153,11 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
     # main.py.  When running without enterprise wiring (e.g. in unit tests),
     # it defaults to an empty dict and all enterprise features are no-ops.
     enterprise: dict = getattr(orch, "enterprise", {})
-    rate_limiters: Optional[object] = enterprise.get("rate_limiters")
-    idempotency_cache: Optional[object] = enterprise.get("idempotency_cache")
-    lineage_tracker: Optional[object] = enterprise.get("lineage_tracker")
-    _audit_log: Optional[object] = enterprise.get("audit_log")
-    alerter: Optional[object] = enterprise.get("alerter")
+    rate_limiters: object | None = enterprise.get("rate_limiters")
+    idempotency_cache: object | None = enterprise.get("idempotency_cache")
+    lineage_tracker: object | None = enterprise.get("lineage_tracker")
+    _audit_log: object | None = enterprise.get("audit_log")
+    alerter: object | None = enterprise.get("alerter")
 
     # ── 1. Task Selection ────────────────────────────────────────────────────
     # Ask the task engine for the next task to work on.  If there's nothing
@@ -216,13 +218,17 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
 
     # ── Tracing: wrap the entire micro loop in a trace ─────────────────────
     from contextlib import nullcontext
+
     _trace_ctx = None
     _trace = None
     if _TRACING_AVAILABLE:
         _trace_ctx = default_tracer.start_trace(
             "micro_loop",
-            attributes={"iteration": iteration, "task_id": task["id"],
-                        "subsystem": task.get("subsystem", "unknown")},
+            attributes={
+                "iteration": iteration,
+                "task_id": task["id"],
+                "subsystem": task.get("subsystem", "unknown"),
+            },
         )
         _trace = _trace_ctx.__enter__()
 
@@ -283,9 +289,7 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                 if arch_limiter is not None:
                     arch_limiter.record_tokens(record.architect_tokens)
             except Exception as exc:
-                logger.debug(
-                    "Architect rate limiter record_tokens failed (non-fatal): %s", exc
-                )
+                logger.debug("Architect rate limiter record_tokens failed (non-fatal): %s", exc)
 
         # ── 4. Researcher Routing (optional) ─────────────────────────────────
         # The Architect may say "I'm not sure about X — I have a knowledge gap."
@@ -306,18 +310,25 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
             # Emit research event if bus is wired
             if researcher_calls > 0 and hasattr(orch, "emit_event"):
                 from core.events import EventType
-                await orch.emit_event(EventType.RESEARCH_COMPLETED, {
-                    "task_id": task.get("id"),
-                    "gaps_requested": len(architect_result.get("knowledge_gaps", [])),
-                    "gaps_resolved": researcher_calls,
-                })
+
+                await orch.emit_event(
+                    EventType.RESEARCH_COMPLETED,
+                    {
+                        "task_id": task.get("id"),
+                        "gaps_requested": len(architect_result.get("knowledge_gaps", [])),
+                        "gaps_resolved": researcher_calls,
+                    },
+                )
 
             # Only re-run the Architect if the Tool Layer actually found
             # something useful (i.e., at least one call succeeded).
             if researcher_calls > 0:
                 _refinement_context = enriched_context
                 architect_result = await _call_architect_with_validation_retry(
-                    orch, task, _refinement_context, cfg.architect_timeout,
+                    orch,
+                    task,
+                    _refinement_context,
+                    cfg.architect_timeout,
                     cfg.max_validation_retries,
                 )
                 # Add the second call's token count to the running total.
@@ -350,9 +361,7 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                         if critic_limiter is not None:
                             await critic_limiter.acquire()
                     except Exception as exc:
-                        logger.debug(
-                            "Critic rate limiter acquire failed (non-fatal): %s", exc
-                        )
+                        logger.debug("Critic rate limiter acquire failed (non-fatal): %s", exc)
 
                 with _span("critic_call", {"refinement_iter": _refinement_iter}):
                     critic_result = await _call_critic(
@@ -400,8 +409,7 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                 llm_content = critic_result.get("content", "") if critic_result else ""
                 if llm_content and human_content:
                     combined_content = (
-                        f"[LLM Critic]\n{llm_content}\n\n"
-                        f"[Human Judge]\n{human_content}"
+                        f"[LLM Critic]\n{llm_content}\n\n[Human Judge]\n{human_content}"
                     )
                 else:
                     combined_content = human_content or llm_content
@@ -478,7 +486,10 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
                 ),
             }
             architect_result = await _call_architect_with_validation_retry(
-                orch, task, _refinement_context, cfg.architect_timeout,
+                orch,
+                task,
+                _refinement_context,
+                cfg.architect_timeout,
                 cfg.max_validation_retries,
             )
             record.architect_tokens += architect_result.get("tokens_used", 0)
@@ -544,7 +555,7 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         # All steps succeeded — mark the record as a success.
         record.status = LoopStatus.SUCCESS
 
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         # An AI call timed out.  Log it, mark the record as failed, and
         # re-raise as MicroLoopError so the orchestrator can handle backoff.
         msg = f"Timeout in micro loop iteration {iteration}: {exc}"
@@ -576,10 +587,8 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         )
         # Close the trace context manager if tracing is active.
         if _trace_ctx is not None:
-            try:
+            with contextlib.suppress(Exception):
                 _trace_ctx.__exit__(None, None, None)
-            except Exception:
-                pass
 
     return record
 
@@ -590,7 +599,7 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
 # call them — they are implementation details, not part of any public API.
 
 
-async def _select_task(orch: "Orchestrator") -> Optional[dict]:
+async def _select_task(orch: Orchestrator) -> dict | None:
     """
     Ask the task engine for the next task to work on.
 
@@ -615,7 +624,7 @@ async def _select_task(orch: "Orchestrator") -> Optional[dict]:
         raise MicroLoopError(f"task_engine.select_task failed: {exc}") from exc
 
 
-async def _assemble_context(orch: "Orchestrator", task: dict) -> dict:
+async def _assemble_context(orch: Orchestrator, task: dict) -> dict:
     """
     Build the context bundle that will be passed to the Architect AI.
 
@@ -680,9 +689,7 @@ async def _assemble_context(orch: "Orchestrator", task: dict) -> dict:
     return ctx
 
 
-async def _call_architect(
-    orch: "Orchestrator", task: dict, context: dict, timeout: float
-) -> dict:
+async def _call_architect(orch: Orchestrator, task: dict, context: dict, timeout: float) -> dict:
     """
     Call the Architect AI and return its response.
 
@@ -707,7 +714,7 @@ async def _call_architect(
             coroutine_if_needed(orch.architect_agent.call)(task=task, context=context),
             timeout=timeout,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # Let TimeoutError bubble up unchanged — the caller distinguishes it
         # from other exceptions to produce a cleaner error message.
         raise
@@ -716,7 +723,7 @@ async def _call_architect(
 
 
 async def _route_researcher(
-    orch: "Orchestrator",
+    orch: Orchestrator,
     task: dict,
     context: dict,
     knowledge_gaps: list[str],
@@ -785,7 +792,7 @@ async def _route_researcher(
                 calls_made,
                 len(gaps_to_process),
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("researcher: ResearchTeam timed out — falling back to sequential")
             research_results = []
             calls_made = 0
@@ -817,8 +824,9 @@ async def _route_researcher(
                 if enhancer is not None:
                     # Enhanced pipeline: query rewriting → memory-first →
                     # search + deep scrape → summarize → iterate
-                    async def _research_fn(*, query, max_scrape=max_scrape,
-                                           max_content_chars=max_content_chars):
+                    async def _research_fn(
+                        *, query, max_scrape=max_scrape, max_content_chars=max_content_chars
+                    ):
                         return await coroutine_if_needed(orch.tool_layer.research)(
                             query=query,
                             max_results=num_results,
@@ -854,10 +862,14 @@ async def _route_researcher(
                 # Cache the result for deduplication within this session
                 orch._research_cache[norm] = result
 
-                from_memory = result.get("from_memory", False) if isinstance(result, dict) else False
+                from_memory = (
+                    result.get("from_memory", False) if isinstance(result, dict) else False
+                )
                 logger.debug(
                     "researcher: gap=%r resolved (%d chars, from_memory=%s)",
-                    gap, len(str(result)), from_memory,
+                    gap,
+                    len(str(result)),
+                    from_memory,
                 )
 
                 # Auto-archive research to memory for cross-session reuse
@@ -865,7 +877,7 @@ async def _route_researcher(
                 if not from_memory:
                     await _archive_research(orch, task, gap, result)
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("researcher: timeout on gap=%r — skipping", gap)
             except Exception as exc:
                 logger.warning("researcher: error on gap=%r: %s — skipping", gap, exc)
@@ -879,7 +891,7 @@ async def _route_researcher(
 
 
 async def _archive_research(
-    orch: "Orchestrator",
+    orch: Orchestrator,
     task: dict,
     gap: str,
     result: dict,
@@ -919,7 +931,7 @@ async def _archive_research(
 
 
 async def _call_critic(
-    orch: "Orchestrator", task: dict, architect_result: dict, timeout: float
+    orch: Orchestrator, task: dict, architect_result: dict, timeout: float
 ) -> dict:
     """
     Call the Critic AI and return its review of the Architect's proposal.
@@ -944,14 +956,14 @@ async def _call_critic(
             ),
             timeout=timeout,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raise
     except Exception as exc:
         raise MicroLoopError(f"critic_agent.call failed: {exc}") from exc
 
 
 async def _store_artifact(
-    orch: "Orchestrator", task: dict, architect_result: dict, critic_result: dict
+    orch: Orchestrator, task: dict, architect_result: dict, critic_result: dict
 ) -> str:
     """
     Combine the Architect's proposal and the Critic's review into one artifact
@@ -1012,7 +1024,7 @@ async def _store_artifact(
         raise MicroLoopError(f"memory_manager.store_artifact failed: {exc}") from exc
 
 
-async def _complete_task(orch: "Orchestrator", task: dict, artifact_id: str) -> None:
+async def _complete_task(orch: Orchestrator, task: dict, artifact_id: str) -> None:
     """
     Tell the task engine that this task has been completed.
 
@@ -1053,7 +1065,7 @@ async def _complete_task(orch: "Orchestrator", task: dict, artifact_id: str) -> 
 
 
 async def _generate_tasks(
-    orch: "Orchestrator",
+    orch: Orchestrator,
     task: dict,
     architect_result: dict,
     critic_result: dict,
@@ -1127,16 +1139,14 @@ def _enrich_review_context(task: dict, context: dict) -> dict:
                 grub_result.get("score", 0.0),
             )
     except Exception as exc:
-        logger.debug(
-            "_enrich_review_context: could not parse grub result (non-fatal): %s", exc
-        )
+        logger.debug("_enrich_review_context: could not parse grub result (non-fatal): %s", exc)
     return enriched
 
 
 def _maybe_fire_quality_gate(
-    orch: "Orchestrator",
-    record: "MicroLoopRecord",
-    alerter: Optional[object],
+    orch: Orchestrator,
+    record: MicroLoopRecord,
+    alerter: object | None,
     iteration: int,
 ) -> None:
     """
@@ -1151,9 +1161,7 @@ def _maybe_fire_quality_gate(
     dispatched as a fire-and-forget asyncio Task.
     """
     threshold = getattr(getattr(orch, "config", None), "quality_gate_threshold", 0.4)
-    escalation_count = getattr(
-        getattr(orch, "config", None), "quality_gate_escalation_count", 3
-    )
+    escalation_count = getattr(getattr(orch, "config", None), "quality_gate_escalation_count", 3)
     if threshold <= 0.0 or alerter is None:
         return
 
@@ -1167,15 +1175,11 @@ def _maybe_fire_quality_gate(
     orch.__dict__["_quality_gate_fails"] = fails
 
     try:
-        from infra.observability.alerting import AlertType, AlertSeverity
+        from infra.observability.alerting import AlertSeverity, AlertType
     except ImportError:
         return
 
-    severity = (
-        AlertSeverity.ERROR
-        if fails >= escalation_count
-        else AlertSeverity.WARNING
-    )
+    severity = AlertSeverity.ERROR if fails >= escalation_count else AlertSeverity.WARNING
     asyncio.create_task(
         alerter.alert(  # type: ignore[union-attr]
             alert_type=AlertType.CUSTOM,
@@ -1219,7 +1223,7 @@ def _architect_result_is_thin(result: dict) -> bool:
 
 
 async def _call_architect_with_validation_retry(
-    orch: "Orchestrator",
+    orch: Orchestrator,
     task: dict,
     context: dict,
     timeout: float,

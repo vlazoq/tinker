@@ -38,14 +38,15 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import httpx
 
 from exceptions import MinionTimeoutError
-from ..contracts.task import GrubTask
-from ..contracts.result import MinionResult, ResultStatus
+
 from ..context_summarizer import MinionContextSummarizer
+from ..contracts.result import MinionResult, ResultStatus
+from ..contracts.task import GrubTask
 
 if TYPE_CHECKING:
     from ..config import GrubConfig
@@ -74,7 +75,7 @@ class BaseMinion(ABC):
     def __init__(
         self,
         name: str,
-        config: "GrubConfig",
+        config: GrubConfig,
         skills: list[str] | None = None,
     ) -> None:
         """
@@ -93,9 +94,8 @@ class BaseMinion(ABC):
         # Context summarizer — compresses large inputs instead of truncating.
         # Uses the reviewer's model (fast 7B) or the minion's own model if
         # context_summarizer_model is not set.
-        _summarizer_model = (
-            config.context_summarizer_model
-            or config.models.get("reviewer", config.models.get(name, "qwen3:7b"))
+        _summarizer_model = config.context_summarizer_model or config.models.get(
+            "reviewer", config.models.get(name, "qwen3:7b")
         )
         _summarizer_url = config.ollama_urls.get(name, "http://localhost:11434")
         self._summarizer = MinionContextSummarizer(
@@ -157,7 +157,7 @@ class BaseMinion(ABC):
     async def _llm(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         temperature: float = 0.3,
         max_tokens: int = 4096,
         timeout: float = 120.0,
@@ -232,12 +232,10 @@ class BaseMinion(ABC):
 
             content = await asyncio.wait_for(_do_request(), timeout=timeout)
             elapsed = time.monotonic() - t0
-            self.logger.debug(
-                "_llm OK: %.1fs, %d chars returned", elapsed, len(content)
-            )
+            self.logger.debug("_llm OK: %.1fs, %d chars returned", elapsed, len(content))
             return content
 
-        except asyncio.TimeoutError:
+        except TimeoutError as err:
             # asyncio.wait_for exceeded the deadline — raise a structured
             # MinionTimeoutError so the caller can decide to retry or fail.
             elapsed = time.monotonic() - t0
@@ -250,7 +248,7 @@ class BaseMinion(ABC):
                     "model": model,
                     "ollama_url": ollama_url,
                 },
-            )
+            ) from err
         except httpx.ConnectError:
             msg = f"ERROR: Cannot connect to Ollama at {ollama_url}. Is it running?"
             self.logger.error(msg)
@@ -301,7 +299,11 @@ class BaseMinion(ABC):
         """
         logger.info(
             "minion_metrics | minion=%s task=%s status=%s score=%.3f duration=%.2fs",
-            self.name, task_id, status, score, duration_s,
+            self.name,
+            task_id,
+            status,
+            score,
+            duration_s,
             extra={
                 "event": "minion_metrics",
                 "minion": self.name,

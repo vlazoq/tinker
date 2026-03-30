@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -110,7 +110,7 @@ async def api_logs_stream(request: Request, level: str = "INFO"):
                     while not queue.empty():
                         yield queue.get_nowait()
                     continue
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
 
                 # Fallback: poll tinker_state.json for external changes
@@ -120,9 +120,7 @@ async def api_logs_stream(request: Request, level: str = "INFO"):
                 if micro != last_micro:
                     last_micro = micro
                     micro_hist = state.get("micro_history", [])
-                    critic = (
-                        micro_hist[-1].get("critic_score") if micro_hist else None
-                    )
+                    critic = micro_hist[-1].get("critic_score") if micro_hist else None
                     evt = json.dumps(
                         {
                             "type": "state_update",
@@ -135,9 +133,7 @@ async def api_logs_stream(request: Request, level: str = "INFO"):
                             "critic_score": critic,
                             "current_level": state.get("current_level"),
                             "current_subsystem": state.get("current_subsystem"),
-                            "consecutive_failures": totals.get(
-                                "consecutive_failures", 0
-                            ),
+                            "consecutive_failures": totals.get("consecutive_failures", 0),
                             "status": state.get("status"),
                         }
                     )

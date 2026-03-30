@@ -46,7 +46,7 @@ Then inject the real implementations when available::
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -76,12 +76,12 @@ class NoopAuditLog:
         self,
         event_type: Any,
         actor: str,
-        resource: Optional[str] = None,
-        outcome: Optional[str] = None,
-        details: Optional[dict] = None,
-        trace_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-    ) -> Optional[str]:
+        resource: str | None = None,
+        outcome: str | None = None,
+        details: dict | None = None,
+        trace_id: str | None = None,
+        session_id: str | None = None,
+    ) -> str | None:
         return None
 
     async def query(self, **kwargs: Any) -> list:
@@ -110,7 +110,7 @@ class NoopLineageTracker:
         parent_id: str,
         child_id: str,
         operation: str = "",
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> None:
         pass
 
@@ -150,7 +150,7 @@ class NoopRateLimiter:
     def total_tokens_used(self) -> int:
         return 0
 
-    async def __aenter__(self) -> "NoopRateLimiter":
+    async def __aenter__(self) -> NoopRateLimiter:
         return self
 
     async def __aexit__(self, *_: Any) -> None:
@@ -181,7 +181,7 @@ class NoopTracer:
     Accepts spans without storing anything.
     """
 
-    def start_span(self, name: str, **kwargs: Any) -> "NoopSpan":
+    def start_span(self, name: str, **kwargs: Any) -> NoopSpan:
         return NoopSpan()
 
     def record(self, *args: Any, **kwargs: Any) -> None:
@@ -191,7 +191,7 @@ class NoopTracer:
 class NoopSpan:
     """Null Object for a tracing span — supports context-manager usage."""
 
-    def __enter__(self) -> "NoopSpan":
+    def __enter__(self) -> NoopSpan:
         return self
 
     def __exit__(self, *_: Any) -> None:

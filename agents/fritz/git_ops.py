@@ -18,9 +18,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 from .config import FritzConfig
 from .identity import FritzIdentity, apply_git_identity
@@ -82,7 +82,12 @@ class FritzGitOps:
             )
             ok = result.returncode == 0
             if not ok:
-                logger.warning("git %s failed (rc=%d): %s", operation, result.returncode, result.stderr.strip())
+                logger.warning(
+                    "git %s failed (rc=%d): %s",
+                    operation,
+                    result.returncode,
+                    result.stderr.strip(),
+                )
             return FritzGitResult(
                 ok=ok,
                 operation=operation,
@@ -151,9 +156,7 @@ class FritzGitOps:
 
     # ── Branches ─────────────────────────────────────────────────────────────
 
-    async def create_branch(
-        self, name: str, from_branch: str | None = None
-    ) -> FritzGitResult:
+    async def create_branch(self, name: str, from_branch: str | None = None) -> FritzGitResult:
         """Create a new branch, optionally from a specific base branch."""
         if from_branch:
             return await self._run("checkout", "-b", name, from_branch)
@@ -194,7 +197,9 @@ class FritzGitOps:
                 message=f"Push branch '{branch}' to remote '{remote}'",
             )
             if not allowed:
-                logger.info("git push cancelled by operator (branch=%s, remote=%s)", branch, remote)
+                logger.info(
+                    "git push cancelled by operator (branch=%s, remote=%s)", branch, remote
+                )
                 return FritzGitResult(
                     ok=False,
                     operation="push",
@@ -225,18 +230,14 @@ class FritzGitOps:
         )
 
         outcome: dict[str, FritzGitResult] = {}
-        for remote, result in zip(remotes, results):
+        for remote, result in zip(remotes, results, strict=False):
             if isinstance(result, Exception):
-                outcome[remote] = FritzGitResult(
-                    ok=False, operation="push", stderr=str(result)
-                )
+                outcome[remote] = FritzGitResult(ok=False, operation="push", stderr=str(result))
             else:
                 outcome[remote] = result  # type: ignore[assignment]
         return outcome
 
-    async def pull(
-        self, branch: str | None = None, remote: str = "origin"
-    ) -> FritzGitResult:
+    async def pull(self, branch: str | None = None, remote: str = "origin") -> FritzGitResult:
         branch = branch or await self.current_branch()
         return await self._run("pull", remote, branch)
 

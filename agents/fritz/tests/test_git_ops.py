@@ -7,14 +7,13 @@ Tests for FritzGitOps. Subprocess calls are mocked so no real git repo is needed
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agents.fritz.config import FritzConfig
 from agents.fritz.git_ops import FritzGitOps, FritzGitResult
 from agents.fritz.identity import FritzIdentity, IdentityMode
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -120,9 +119,11 @@ class TestCommit:
     @pytest.mark.asyncio
     async def test_commit_specific_files(self, git_ops):
         calls = []
+
         def fake_run(cmd, **kwargs):
             calls.append(cmd)
             return _ok()
+
         with patch("subprocess.run", side_effect=fake_run):
             await git_ops.commit("fix: test", files=["src/a.py", "src/b.py"])
         # First call: git add -- src/a.py src/b.py
@@ -138,16 +139,20 @@ class TestPush:
     async def test_push_success(self, git_ops):
         with patch("subprocess.run", return_value=_ok()):
             # Need current_branch to work too
-            git_ops._run_sync = lambda op, args: FritzGitResult(ok=True, operation=op, stdout="main")
+            git_ops._run_sync = lambda op, args: FritzGitResult(
+                ok=True, operation=op, stdout="main"
+            )
             result = await git_ops.push("feature/test")
         assert result.ok
 
     @pytest.mark.asyncio
     async def test_push_uses_force_with_lease(self, git_ops):
         cmds = []
+
         def fake_run(cmd, **kwargs):
             cmds.append(cmd)
             return _ok()
+
         with patch("subprocess.run", side_effect=fake_run):
             await git_ops.push("feature/test", force=True)
         assert any("--force-with-lease" in " ".join(c) for c in cmds)
@@ -161,9 +166,11 @@ class TestPush:
     @pytest.mark.asyncio
     async def test_push_all_remotes(self, git_ops):
         calls = []
+
         def fake_run(cmd, **kwargs):
             calls.append(cmd)
             return _ok()
+
         with patch("subprocess.run", side_effect=fake_run):
             results = await git_ops.push_all_remotes("feature/test")
         # all remotes succeed (no remotes → empty dict is fine too)
@@ -183,9 +190,11 @@ class TestBranchOps:
     @pytest.mark.asyncio
     async def test_create_branch_from(self, git_ops):
         cmds = []
+
         def fake_run(cmd, **kwargs):
             cmds.append(cmd)
             return _ok()
+
         with patch("subprocess.run", side_effect=fake_run):
             await git_ops.create_branch("feature/new", from_branch="main")
         assert "main" in " ".join(cmds[-1])
@@ -229,9 +238,11 @@ class TestMerge:
     async def test_squash_merge_commits(self, git_ops):
         """Squash merge calls git merge --squash then git commit."""
         cmds = []
+
         def fake_run(cmd, **kwargs):
             cmds.append(cmd)
             return _ok()
+
         with patch("subprocess.run", side_effect=fake_run):
             await git_ops.merge("feature/x", method="squash", message="squashed")
         cmd_strings = [" ".join(c) for c in cmds]

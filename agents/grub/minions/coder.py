@@ -24,11 +24,11 @@ import re
 import time
 from pathlib import Path
 
-from .base import BaseMinion
-from ..contracts.task import GrubTask
 from ..contracts.result import MinionResult, ResultStatus
-from ..tools.file_ops import read_file, write_file, ensure_dir
+from ..contracts.task import GrubTask
+from ..tools.file_ops import ensure_dir, read_file, write_file
 from ..tools.shell import check_syntax
+from .base import BaseMinion
 
 
 class CoderMinion(BaseMinion):
@@ -96,18 +96,14 @@ Quality requirements:
                     len(design_text),
                 )
             else:
-                self.logger.warning(
-                    "Could not load artifact %s: %s", task.artifact_path, content
-                )
+                self.logger.warning("Could not load artifact %s: %s", task.artifact_path, content)
 
         # ── 2. Load existing target files ─────────────────────────────────────
         existing_code = ""
         for fpath in task.target_files:
             ok, content = read_file(fpath)
             if ok:
-                existing_code += (
-                    f"\n\n# Existing file: {fpath}\n```python\n{content}\n```"
-                )
+                existing_code += f"\n\n# Existing file: {fpath}\n```python\n{content}\n```"
 
         # ── 3. Build prompt ───────────────────────────────────────────────────
         prompt_parts = [
@@ -117,9 +113,7 @@ Quality requirements:
         if design_text:
             prompt_parts.append(f"\n## Design Document\n{design_text}")
         if existing_code:
-            prompt_parts.append(
-                f"\n## Existing Code (extend/modify as needed)\n{existing_code}"
-            )
+            prompt_parts.append(f"\n## Existing Code (extend/modify as needed)\n{existing_code}")
         if task.target_files:
             files_str = "\n".join(f"  - {f}" for f in task.target_files)
             prompt_parts.append(f"\n## Files to Create/Modify\n{files_str}")
@@ -138,7 +132,9 @@ Quality requirements:
 
         # ── 4. Call LLM ───────────────────────────────────────────────────────
         response = await self._llm(
-            prompt, system_prompt=system, temperature=0.2,
+            prompt,
+            system_prompt=system,
+            temperature=0.2,
             timeout=self.config.timeouts.get(self.name, 120.0),
         )
 
@@ -162,8 +158,7 @@ Quality requirements:
                 minion_name=self.name,
                 status=ResultStatus.NEEDS_RETRY,
                 score=0.1,
-                notes="LLM did not produce any code blocks. Response:\n"
-                + response[:500],
+                notes="LLM did not produce any code blocks. Response:\n" + response[:500],
                 summary="No code blocks found in LLM output.",
                 raw_llm_output=response,
                 duration_seconds=duration,
@@ -209,9 +204,7 @@ Quality requirements:
             elif filepath is None:
                 # Default: write to output_dir with a generated name
                 ext = ".py" if task.language == "python" else f".{task.language}"
-                filepath = str(
-                    Path(self.config.output_dir) / f"{task.subsystem}_{i}{ext}"
-                )
+                filepath = str(Path(self.config.output_dir) / f"{task.subsystem}_{i}{ext}")
 
             ok, result_path = write_file(filepath, block)
             if ok:
@@ -224,9 +217,7 @@ Quality requirements:
                     if not check.succeeded:
                         syntax_errors.append(f"{filepath}: {check.stderr.strip()}")
             else:
-                self.logger.warning(
-                    "CoderMinion: could not write %s: %s", filepath, result_path
-                )
+                self.logger.warning("CoderMinion: could not write %s: %s", filepath, result_path)
 
         # ── 7. Build result ───────────────────────────────────────────────────
         duration = time.monotonic() - t0
@@ -253,9 +244,7 @@ Quality requirements:
             if task.target_files
             else (1.0 if files_written else 0.0)
         )
-        score = min(
-            0.75, 0.5 + 0.25 * target_coverage
-        )  # max 0.75 (Reviewer will score higher)
+        score = min(0.75, 0.5 + 0.25 * target_coverage)  # max 0.75 (Reviewer will score higher)
 
         # Log structured metrics for observability dashboards.
         final_status = ResultStatus.SUCCESS if files_written else ResultStatus.FAILED

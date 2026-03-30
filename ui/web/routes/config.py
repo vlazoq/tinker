@@ -6,12 +6,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ui.core import (
-    ORCH_CONFIG_SCHEMA,
-    STAGNATION_CONFIG_SCHEMA,
     FLAG_DEFAULTS,
     FLAG_DESCRIPTIONS,
     FLAG_GROUPS,
     FLAGS_FILE,
+    ORCH_CONFIG_SCHEMA,
+    STAGNATION_CONFIG_SCHEMA,
     load_config,
     load_flags,
     save_config,
@@ -29,16 +29,16 @@ async def api_config_get():
         "orchestrator": {},
         "stagnation": {},
     }
-    for section_key, section in ORCH_CONFIG_SCHEMA.items():
+    for _section_key, section in ORCH_CONFIG_SCHEMA.items():
         for field_name, meta in section["fields"].items():
             result["orchestrator"][field_name] = saved.get(field_name, meta["default"])
     for section_key, section in STAGNATION_CONFIG_SCHEMA.items():
         result["stagnation"][section_key] = {}
         for field_name, meta in section["fields"].items():
             stag = saved.get("stagnation", {})
-            result["stagnation"][section_key][field_name] = stag.get(
-                section_key, {}
-            ).get(field_name, meta["default"])
+            result["stagnation"][section_key][field_name] = stag.get(section_key, {}).get(
+                field_name, meta["default"]
+            )
     result["_schema"] = {
         "orchestrator": ORCH_CONFIG_SCHEMA,
         "stagnation": STAGNATION_CONFIG_SCHEMA,
@@ -47,12 +47,12 @@ async def api_config_get():
 
 
 @router.post("/api/config")
-async def api_config_save(body: dict = None, request: Request = None):
+async def api_config_save(body: dict | None = None, request: Request = None):
     data = await request.json()
     errors: list[str] = []
     to_save: dict[str, Any] = {}
 
-    for section_key, section in ORCH_CONFIG_SCHEMA.items():
+    for _section_key, section in ORCH_CONFIG_SCHEMA.items():
         for field_name, meta in section["fields"].items():
             raw = data.get("orchestrator", {}).get(field_name)
             if raw is None:
@@ -84,9 +84,7 @@ async def api_config_save(body: dict = None, request: Request = None):
                 else:
                     stagnation_save[section_key][field_name] = val
             except (ValueError, TypeError):
-                errors.append(
-                    f"Stagnation {section_key}.{meta['label']}: invalid value '{raw}'"
-                )
+                errors.append(f"Stagnation {section_key}.{meta['label']}: invalid value '{raw}'")
 
     if errors:
         return JSONResponse({"ok": False, "errors": errors}, status_code=422)
@@ -116,9 +114,7 @@ async def api_flags_toggle(flag_name: str, request: Request):
     enabled = bool(body.get("enabled", False))
     flags = load_flags()
     if flag_name not in FLAG_DEFAULTS:
-        return JSONResponse(
-            {"ok": False, "error": f"Unknown flag: {flag_name}"}, status_code=404
-        )
+        return JSONResponse({"ok": False, "error": f"Unknown flag: {flag_name}"}, status_code=404)
     flags[flag_name] = enabled
     save_flags(flags)
     return {

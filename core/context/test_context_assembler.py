@@ -18,17 +18,17 @@ import textwrap
 import time
 import unittest
 
+from exceptions import ConfigurationError
+
 from .assembler import (
+    SECTION_PRIORITY,
     AgentRole,
     AssembledContext,
     ContextAssembler,
     Task,
     TokenBudgetManager,
-    SECTION_PRIORITY,
 )
 from .stubs import StubMemoryManager, StubPromptBuilder
-from exceptions import ConfigurationError
-
 
 # ---------------------------------------------------------------------------
 # Helpers

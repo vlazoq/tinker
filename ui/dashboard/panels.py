@@ -28,9 +28,7 @@ from textual.widgets import Static
 _BASE = Path(os.getenv("TINKER_BASE_DIR", Path(__file__).parent.parent))
 _GRUB_QUEUE_DB = Path(os.getenv("GRUB_QUEUE_DB", _BASE / "grub_queue.sqlite"))
 _GRUB_ARTIFACTS = Path(os.getenv("GRUB_ARTIFACTS_DIR", _BASE / "grub_artifacts"))
-_TINKER_TASKS_DB = Path(
-    os.getenv("TINKER_TASK_DB", _BASE / "tinker_tasks_engine.sqlite")
-)
+_TINKER_TASKS_DB = Path(os.getenv("TINKER_TASK_DB", _BASE / "tinker_tasks_engine.sqlite"))
 
 
 def _query_db(db_path: Path, sql: str, params: tuple = ()) -> list[dict]:
@@ -58,7 +56,7 @@ def _score_style(score: float) -> str:
 
 
 def _score_bar(score: float, width: int = 12) -> str:
-    filled = int(round(score * width))
+    filled = round(score * width)
     empty = width - filled
     return "█" * filled + "░" * empty
 
@@ -125,9 +123,7 @@ class GrubPanel(Widget):
         tbl.add_row(Text("TINKER TASKS", style="bold dim"), Text(""), Text(""))
 
         if not rows:
-            tbl.add_row(
-                "", Text("no implementation tasks", style="dim italic"), Text("")
-            )
+            tbl.add_row("", Text("no implementation tasks", style="dim italic"), Text(""))
         else:
             counts: dict[str, dict[str, int]] = {}
             for r in rows:
@@ -171,9 +167,7 @@ class GrubPanel(Widget):
         tbl.add_row(Text("GRUB QUEUE", style="bold dim"), Text(""), Text(""))
 
         if not rows:
-            tbl.add_row(
-                "", Text("queue empty / not started", style="dim italic"), Text("")
-            )
+            tbl.add_row("", Text("queue empty / not started", style="dim italic"), Text(""))
         else:
             status_styles = {
                 "pending": "yellow",

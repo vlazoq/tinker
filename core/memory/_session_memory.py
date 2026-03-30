@@ -7,10 +7,9 @@ Split from manager.py to keep each memory layer in its own focused module.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
-from .schemas import Artifact, ArtifactType
 from .compression import _cosine_similarity
+from .schemas import Artifact, ArtifactType
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +53,9 @@ class SessionMemoryMixin:
         self,
         content: str,
         artifact_type: ArtifactType = ArtifactType.RAW,
-        task_id: Optional[str] = None,
-        metadata: Optional[dict] = None,
-        session_id: Optional[str] = None,
+        task_id: str | None = None,
+        metadata: dict | None = None,
+        session_id: str | None = None,
         auto_compress: bool = True,
     ) -> Artifact:
         """
@@ -104,7 +103,7 @@ class SessionMemoryMixin:
         self,
         new_content: str,
         session_id: str,
-    ) -> Optional[Artifact]:
+    ) -> Artifact | None:
         """
         Check if *new_content* is semantically near-identical to any of the
         last ``_DEDUP_RECENT_WINDOW`` artifacts in the session.
@@ -165,9 +164,7 @@ class SessionMemoryMixin:
                     _parse_row_metadata(row)
                     merged_artifact = Artifact(
                         content=merged_content,
-                        artifact_type=ArtifactType(
-                            row.get("artifact_type", "raw")
-                        ),
+                        artifact_type=ArtifactType(row.get("artifact_type", "raw")),
                         session_id=session_id,
                         task_id=row.get("task_id"),
                         metadata=row.get("metadata", {}),
@@ -181,13 +178,11 @@ class SessionMemoryMixin:
         except Exception as exc:
             # Dedup is best-effort — if embeddings fail or anything goes wrong,
             # fall through and store the artifact normally.
-            logger.debug(
-                "[dedup] Semantic dedup check failed (non-fatal): %s", exc
-            )
+            logger.debug("[dedup] Semantic dedup check failed (non-fatal): %s", exc)
 
         return None
 
-    async def get_artifact(self, artifact_id: str) -> Optional[Artifact]:
+    async def get_artifact(self, artifact_id: str) -> Artifact | None:
         """Retrieve an artifact by its UUID. Returns None if not found."""
         row = await self._duckdb.get_artifact(artifact_id)
         if not row:
@@ -196,10 +191,10 @@ class SessionMemoryMixin:
 
     async def get_recent_artifacts(
         self,
-        artifact_type: Optional[ArtifactType] = None,
+        artifact_type: ArtifactType | None = None,
         limit: int = 20,
         include_archived: bool = False,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> list[Artifact]:
         """
         Return the most recent artifacts for the current (or specified) session.
@@ -249,7 +244,7 @@ class SessionMemoryMixin:
         return [Artifact.from_dict(_parse_row_metadata(row)) for row in rows]
 
     async def count_artifacts(
-        self, session_id: Optional[str] = None, include_archived: bool = False
+        self, session_id: str | None = None, include_archived: bool = False
     ) -> int:
         sid = session_id or self.session_id
         return await self._duckdb.count_session_artifacts(sid, include_archived)

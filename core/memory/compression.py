@@ -25,12 +25,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from datetime import datetime, timedelta, timezone
-from typing import Callable, Awaitable, Optional
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 
-from .schemas import Artifact, ArtifactType, ResearchNote, MemoryConfig
-from .storage import DuckDBAdapter, ChromaAdapter
 from .embeddings import EmbeddingPipeline
+from .schemas import Artifact, ArtifactType, MemoryConfig, ResearchNote
+from .storage import ChromaAdapter, DuckDBAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -145,24 +145,26 @@ class OllamaSummarizer:
             "stream": False,  # We want the full response at once
         }
 
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
 
         for attempt in range(1, self._MAX_ATTEMPTS + 1):
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
+                async with (
+                    aiohttp.ClientSession() as session,
+                    session.post(
                         url,
                         json=payload,
                         timeout=aiohttp.ClientTimeout(total=self.timeout),
-                    ) as resp:
-                        resp.raise_for_status()
-                        data = await resp.json()
-                        # Ollama returns the generated text in the "response" field
-                        response_text = data.get("response", "").strip()
-                        if response_text:
-                            return response_text
-                        # Empty response — treat as a failure and retry
-                        last_error = ValueError("Ollama returned empty response")
+                    ) as resp,
+                ):
+                    resp.raise_for_status()
+                    data = await resp.json()
+                    # Ollama returns the generated text in the "response" field
+                    response_text = data.get("response", "").strip()
+                    if response_text:
+                        return response_text
+                    # Empty response — treat as a failure and retry
+                    last_error = ValueError("Ollama returned empty response")
             except Exception as exc:
                 last_error = exc
                 logger.warning(
@@ -209,12 +211,13 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two equal-length vectors."""
     if not a or not b or len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
     if norm_a == 0.0 or norm_b == 0.0:
         return 0.0
     return dot / (norm_a * norm_b)
+
 
 # Type alias for "any async function that takes a prompt string and returns text"
 SummariserFn = Callable[[str], Awaitable[str]]
@@ -240,8 +243,8 @@ class MemoryCompressor:
         duckdb: DuckDBAdapter,
         chroma: ChromaAdapter,
         embeddings: EmbeddingPipeline,
-        summariser: Optional[SummariserFn] = None,
-        config: Optional[MemoryConfig] = None,
+        summariser: SummariserFn | None = None,
+        config: MemoryConfig | None = None,
     ):
         self.duckdb = duckdb
         self.chroma = chroma
@@ -279,9 +282,7 @@ class MemoryCompressor:
                 len(aged_out),
                 session_id,
             )
-            total_archived += await self._compress_chunk(
-                session_id, aged_out, "age-based"
-            )
+            total_archived += await self._compress_chunk(session_id, aged_out, "age-based")
 
         # Archive excess artifacts (oldest first)
         if excess > 0:
@@ -325,18 +326,14 @@ class MemoryCompressor:
     # ------------------------------------------------------------------
 
     async def _get_aged_out_artifacts(self, session_id: str) -> list[dict]:
-        cutoff = datetime.now(timezone.utc) - timedelta(
-            hours=self.config.compression_max_age_hours
-        )
+        cutoff = datetime.now(UTC) - timedelta(hours=self.config.compression_max_age_hours)
         return await self.duckdb.get_old_artifacts(
             session_id,
             older_than=cutoff,
             limit=self.config.compression_summary_chunk * 5,
         )
 
-    async def _compress_chunk(
-        self, session_id: str, artifacts: list[dict], reason: str
-    ) -> int:
+    async def _compress_chunk(self, session_id: str, artifacts: list[dict], reason: str) -> int:
         """
         Break artifacts into sub-chunks, summarise each, store summaries,
         and mark originals archived.
@@ -361,9 +358,7 @@ class MemoryCompressor:
             # summary.  If it still fails, we log a WARNING and proceed rather
             # than blocking the compression pipeline.
             try:
-                original_text = " ".join(
-                    str(a.get("content", ""))[:500] for a in chunk
-                )
+                original_text = " ".join(str(a.get("content", ""))[:500] for a in chunk)
                 orig_emb = await self.embeddings.embed(original_text)
                 summ_emb = await self.embeddings.embed(summary_text)
                 similarity = _cosine_similarity(orig_emb, summ_emb)
@@ -373,8 +368,7 @@ class MemoryCompressor:
                 # nudge the model toward higher fidelity.
                 quality_retries = 0
                 while (
-                    similarity < _MIN_SUMMARY_SIMILARITY
-                    and quality_retries < _MAX_QUALITY_RETRIES
+                    similarity < _MIN_SUMMARY_SIMILARITY and quality_retries < _MAX_QUALITY_RETRIES
                 ):
                     quality_retries += 1
                     logger.info(
@@ -408,17 +402,12 @@ class MemoryCompressor:
                     )
                 else:
                     logger.debug(
-                        "[compression] Summary quality OK: cosine_similarity=%.3f"
-                        "%s",
+                        "[compression] Summary quality OK: cosine_similarity=%.3f%s",
                         similarity,
-                        f" (after {quality_retries} retry/retries)"
-                        if quality_retries > 0
-                        else "",
+                        f" (after {quality_retries} retry/retries)" if quality_retries > 0 else "",
                     )
             except Exception as exc:
-                logger.debug(
-                    "[compression] Quality check failed (non-fatal): %s", exc
-                )
+                logger.debug("[compression] Quality check failed (non-fatal): %s", exc)
 
             # Store summary as a new DuckDB artifact
             summary_artifact = Artifact(

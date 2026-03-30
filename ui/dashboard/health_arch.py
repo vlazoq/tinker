@@ -17,7 +17,6 @@ from textual.widgets import Static
 
 from .state import TinkerState
 
-
 # ─────────────────────────────────────────────────────────────────
 # Architecture State
 # ─────────────────────────────────────────────────────────────────
@@ -44,11 +43,7 @@ class ArchStatePanel(Widget):
             )
             return
 
-        ts = (
-            arch.last_commit_time.strftime("%Y-%m-%d %H:%M:%S")
-            if arch.last_commit_time
-            else "—"
-        )
+        ts = arch.last_commit_time.strftime("%Y-%m-%d %H:%M:%S") if arch.last_commit_time else "—"
 
         tbl = Table.grid(padding=(0, 1))
         tbl.add_column(style="dim", width=12)
@@ -128,9 +123,7 @@ class HealthPanel(Widget):
 
         s_tbl.add_row(Text("STAGNATION", style="bold dim"), Text(""))
         s_tbl.add_row("status", stag_flag)
-        s_tbl.add_row(
-            "score", Text(f"{stag.stagnation_score:.2f}  {bar}", style=stag_score_style)
-        )
+        s_tbl.add_row("score", Text(f"{stag.stagnation_score:.2f}  {bar}", style=stag_score_style))
         s_tbl.add_row("monitor", Text(stag.monitor_status, style="dim"))
         self.query_one("#hp-stagnation", Static).update(s_tbl)
 
@@ -142,15 +135,11 @@ class HealthPanel(Widget):
         m_tbl.add_row(Text("MODEL METRICS", style="bold dim"), Text(""))
         m_tbl.add_row(
             "avg latency",
-            Text(
-                f"{mm.avg_latency_ms:.0f} ms", style=_latency_style(mm.avg_latency_ms)
-            ),
+            Text(f"{mm.avg_latency_ms:.0f} ms", style=_latency_style(mm.avg_latency_ms)),
         )
         m_tbl.add_row(
             "p99 latency",
-            Text(
-                f"{mm.p99_latency_ms:.0f} ms", style=_latency_style(mm.p99_latency_ms)
-            ),
+            Text(f"{mm.p99_latency_ms:.0f} ms", style=_latency_style(mm.p99_latency_ms)),
         )
         m_tbl.add_row(
             "error rate",
