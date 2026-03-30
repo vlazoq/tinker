@@ -588,7 +588,201 @@ curl -X POST http://localhost:9321/api/reviews/abc123 \
 
 ---
 
-## 12. Troubleshooting
+## 12. Webhooks & Local Automation (n8n, Node-RED)
+
+Tinker can push events to local automation platforms via outbound webhooks.
+
+### Setup
+
+1. Deploy n8n locally (e.g. `docker run -p 5678:5678 n8nio/n8n`)
+2. Create a webhook trigger node in n8n — note the URL
+3. Configure Tinker:
+
+```bash
+export TINKER_WEBHOOK_ENDPOINTS='[
+  {"url": "http://localhost:5678/webhook/tinker-events",
+   "events": ["micro_loop_completed", "stagnation_detected"]}
+]'
+```
+
+### Event Filtering
+
+Each endpoint can filter by event type. Use `["*"]` or omit `events` to receive all.
+
+Available event types: `micro_loop_completed`, `meso_loop_completed`, `macro_loop_completed`,
+`stagnation_detected`, `human_review_requested`, `human_review_submitted`, etc.
+
+### Webhook Payload
+
+```json
+{
+  "event_type": "micro_loop_completed",
+  "event_id": "abc-123",
+  "timestamp": "2026-03-30T10:15:00",
+  "source": "micro_loop",
+  "payload": { "iteration": 5, "critic_score": 0.82 }
+}
+```
+
+### WebhookTool (Manual)
+
+The AI model can also fire webhooks directly:
+
+```python
+result = await registry.execute("webhook",
+    url="http://localhost:5678/webhook/custom",
+    payload={"message": "Architecture redesigned"},
+)
+```
+
+### Configuration
+
+| Env Variable | Default | Description |
+|---|---|---|
+| `TINKER_WEBHOOK_ENDPOINTS` | `[]` | JSON array of endpoint configs |
+| `TINKER_WEBHOOK_TIMEOUT` | `10` | HTTP timeout per webhook (seconds) |
+| `TINKER_WEBHOOK_MAX_CONCURRENT` | `5` | Max parallel outbound webhooks |
+
+---
+
+## 13. Workflow Viewer
+
+The web UI includes a **Workflow** tab that shows a live Mermaid diagram of
+the orchestrator's current state — which loop is active, how many iterations
+have run, and whether stagnation has been detected.
+
+### Endpoints
+
+- `GET /api/workflow` — System flow diagram + loop counters
+- `GET /api/workflow/task-graph` — Active tasks grouped by status
+
+The diagram source is standard Mermaid syntax. Copy it into
+[mermaid.live](https://mermaid.live) or any local Mermaid renderer to get
+a graphical flowchart. The dashboard auto-refreshes every 5 seconds.
+
+### Local Mermaid Rendering
+
+Tinker also has a `diagram_generator` tool that uses the `mmdc` CLI:
+
+```bash
+npm install -g @mermaid-js/mermaid-cli   # install once
+# The diagram_generator tool will use mmdc to render .png files
+```
+
+---
+
+## 14. Research Enhancements
+
+Tinker's research pipeline goes beyond basic "search + scrape" with four
+LLM-powered enhancements that use the Judge model (small, fast, 2-3B):
+
+### Query Rewriting
+
+Vague knowledge gaps like "CQRS patterns" are rewritten into precise queries
+like "CQRS event sourcing implementation patterns distributed systems 2024".
+The Judge model generates 1-2 optimized search queries per gap.
+
+### Memory-First Lookup
+
+Before hitting the web, Tinker checks ChromaDB for previously archived
+research. If a high-confidence match exists (score >= 0.7), the web search
+is skipped entirely — saving time and reducing redundant scraping.
+
+### Content Summarization
+
+Instead of blindly truncating at N characters, scraped content is summarized
+by the Judge model. This preserves key technical details while removing
+boilerplate, navigation text, and ads.
+
+### Iterative Deepening
+
+After initial research, the Judge model assesses quality. If the results are
+insufficient, it generates a refined query and the system searches again.
+Up to 2 rounds by default (configurable).
+
+### Configurable Research Depth
+
+Control how deep research goes via the Web UI Config page or environment:
+
+| Setting | Default | Description |
+|---|---|---|
+| `research_num_results` | 10 | Search results per query (1-50+) |
+| `research_max_scrape` | 5 | URLs to deep-scrape per query |
+| `research_max_content_chars` | 8000 | Max chars of combined content |
+
+For deep-dive research, increase `research_num_results` to 30-50 in the
+Config tab. The search tool supports up to 50 results by default, and the
+ceiling itself is configurable via `TINKER_SEARCH_MAX_RESULTS`.
+
+### Disabling Enhancements
+
+Each enhancement can be toggled independently:
+
+```bash
+export TINKER_RESEARCH_QUERY_REWRITE=false    # disable query rewriting
+export TINKER_RESEARCH_MEMORY_FIRST=false     # disable memory-first lookup
+export TINKER_RESEARCH_SUMMARIZE=false        # disable LLM summarization
+export TINKER_RESEARCH_ITERATIVE_ROUNDS=0     # disable iterative deepening
+```
+
+---
+
+## 15. Custom Tools (Plugin Pattern)
+
+Tinker uses a simple plugin pattern — subclass `BaseTool`, implement `schema`
+and `_execute()`, and register in the `ToolRegistry`.
+
+### Built-in Example Tools
+
+Three example tools ship in `core/tools/examples.py`:
+
+| Tool | Name | Description |
+|---|---|---|
+| `FileReaderTool` | `file_reader` | Read local files (directory-restricted) |
+| `ShellTool` | `shell` | Execute shell commands (whitelist-able) |
+| `DatabaseQueryTool` | `database_query` | Read-only SQLite queries |
+
+### Registering Example Tools
+
+```python
+from core.tools.examples import FileReaderTool, ShellTool, DatabaseQueryTool
+
+registry.register(FileReaderTool(allowed_dirs=["./tinker_workspace"]))
+registry.register(ShellTool(allowed_commands=["ls", "cat", "grep"]))
+registry.register(DatabaseQueryTool())
+```
+
+### Writing Your Own Tool
+
+```python
+from core.tools.base import BaseTool, ToolSchema
+
+class MyTool(BaseTool):
+    @property
+    def schema(self) -> ToolSchema:
+        return ToolSchema(
+            name="my_tool",
+            description="Does something useful.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string", "description": "The input."}
+                },
+                "required": ["input"],
+            },
+            returns="A result dict.",
+        )
+
+    async def _execute(self, input: str, **_) -> dict:
+        return {"result": f"Processed: {input}"}
+```
+
+Register it: `registry.register(MyTool())` — that's it. The AI model can
+now call it, and the registry handles timing, error catching, and concurrency.
+
+---
+
+## 16. Troubleshooting
 
 ### "Connection refused" to Ollama
 
@@ -673,7 +867,7 @@ rm -rf tinker_workspace/ tinker_artifacts/ tinker_diagrams/ chroma_db/
 
 ---
 
-## 13. FAQ
+## 17. FAQ
 
 **Q: How long should I let Tinker run?**
 A: For a simple system (URL shortener, todo app), 30–60 minutes produces a

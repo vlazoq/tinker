@@ -277,6 +277,9 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         metrics=metrics,
         snapshot_callback=_dashboard_snapshot_cb,
         checkpoint_manager=checkpoint_manager,
+        event_bus=components.get("event_bus"),
+        research_team=components.get("research_team"),
+        research_enhancer=components.get("research_enhancer"),
     )
 
     # ── Self-improvement engine ─────────────────────────────────────────────

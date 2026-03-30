@@ -581,8 +581,9 @@ class ToolRegistry:
         self,
         query: str,
         *,
-        max_scrape: int = 3,
-        max_content_chars: int = 5000,
+        max_results: int = 10,
+        max_scrape: int = 5,
+        max_content_chars: int = 8000,
     ) -> dict:
         """
         High-level research helper expected by the Orchestrator.
@@ -608,8 +609,9 @@ class ToolRegistry:
 
         Args:
             query: A natural-language search query string.
-            max_scrape: How many top results to scrape (default 3).
-            max_content_chars: Max chars of combined scraped content (default 5000).
+            max_results: How many search results to fetch (default 10, max 50+).
+            max_scrape: How many top results to deep-scrape (default 5).
+            max_content_chars: Max chars of combined scraped content (default 8000).
 
         Returns:
             A dict with keys:
@@ -619,7 +621,7 @@ class ToolRegistry:
               - "raw_search": the full raw search result data (optional)
         """
         # Step 1: run the web search.
-        result = await self.execute("web_search", query=query, max_results=5)
+        result = await self.execute("web_search", query=query, num_results=max_results)
 
         search_data: dict = {}
         urls_to_scrape: list[str] = []
@@ -700,6 +702,8 @@ def build_default_registry(
     artifact_output_dir: str | None = None,
     diagram_output_dir: str | None = None,
     memory_manager=None,  # MemoryManagerProtocol | None
+    search_default_results: int = 10,
+    search_max_results: int = 50,
 ) -> ToolRegistry:
     """
     Create and return a ToolRegistry pre-loaded with all built-in Tinker tools.
@@ -754,10 +758,14 @@ def build_default_registry(
     from .artifact_writer import ArtifactWriterTool
     from .diagram_generator import DiagramGeneratorTool
     from .memory_query import MemoryQueryTool
+    from .webhook import WebhookTool
 
     # Build keyword args for WebSearchTool — only pass searxng_url if provided,
     # otherwise let the tool use its own default from the environment.
-    kwargs: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {
+        "default_results": search_default_results,
+        "max_results": search_max_results,
+    }
     if searxng_url:
         kwargs["searxng_url"] = searxng_url
 
@@ -782,6 +790,9 @@ def build_default_registry(
     # it falls back to a stub that warns but doesn't crash.
     memory_tool = MemoryQueryTool(memory_manager=memory_manager)
 
+    # WebhookTool sends HTTP POST to local automation endpoints (n8n, etc.).
+    webhook_tool = WebhookTool()
+
     # Create the registry and register all tools in one shot.
     registry = ToolRegistry()
     registry.register_many(
@@ -790,5 +801,6 @@ def build_default_registry(
         writer_tool,
         diagram_tool,
         memory_tool,
+        webhook_tool,
     )
     return registry

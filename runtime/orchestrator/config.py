@@ -225,6 +225,20 @@ class OrchestratorConfig:
     # from a very confused Architect.
     max_researcher_calls_per_loop: int = 3
 
+    # ── Research depth ───────────────────────────────────────────────────────
+    # How many search results to fetch per query and how many to deep-scrape.
+    # Higher values = broader coverage but more latency and resource usage.
+    # These can be overridden at runtime via the web UI config page.
+    research_num_results: int = field(
+        default_factory=lambda: int(os.getenv("TINKER_RESEARCH_NUM_RESULTS", "10"))
+    )
+    research_max_scrape: int = field(
+        default_factory=lambda: int(os.getenv("TINKER_RESEARCH_MAX_SCRAPE", "5"))
+    )
+    research_max_content_chars: int = field(
+        default_factory=lambda: int(os.getenv("TINKER_RESEARCH_MAX_CONTENT_CHARS", "8000"))
+    )
+
     # ── Timeouts (seconds) ──────────────────────────────────────────────────
     # Every AI call is wrapped in ``asyncio.wait_for`` with these timeouts.
     # If the call doesn't respond in time, it's treated as a failure and the
@@ -425,6 +439,17 @@ class OrchestratorConfig:
         )
         self.max_validation_retries = _positive_int(
             self.max_validation_retries, "max_validation_retries", min_val=0
+        )
+
+        # Research depth
+        self.research_num_results = _positive_int(
+            self.research_num_results, "research_num_results", min_val=1
+        )
+        self.research_max_scrape = _positive_int(
+            self.research_max_scrape, "research_max_scrape", min_val=1
+        )
+        self.research_max_content_chars = _positive_int(
+            self.research_max_content_chars, "research_max_content_chars", min_val=500
         )
 
         # Confirmation gate timeout must be non-negative (0 = wait forever)

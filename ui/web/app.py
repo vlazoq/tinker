@@ -117,6 +117,7 @@ from ui.web.routes.models import router as models_router
 from ui.web.routes.backups import router as backups_router
 from ui.web.routes.streaming import router as streaming_router
 from ui.web.routes.reviews import router as reviews_router
+from ui.web.routes.workflow import router as workflow_router
 
 app.include_router(health_router)
 app.include_router(config_router)
@@ -128,6 +129,7 @@ app.include_router(models_router)
 app.include_router(backups_router)
 app.include_router(streaming_router)
 app.include_router(reviews_router)
+app.include_router(workflow_router)
 
 
 # ── SPA shell ─────────────────────────────────────────────────────────────────

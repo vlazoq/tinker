@@ -111,6 +111,7 @@ class Orchestrator(
         checkpoint_manager: Optional[Any] = None,
         event_bus: Optional[Any] = None,
         research_team: Optional[Any] = None,
+        research_enhancer: Optional[Any] = None,
     ) -> None:
         self.config = config or OrchestratorConfig()
 
@@ -141,6 +142,11 @@ class Orchestrator(
         # of sequentially.  Created automatically in bootstrap if tool_layer
         # is available.
         self.research_team = research_team
+
+        # Research enhancer — optional LLM-powered research pipeline with
+        # query rewriting, memory-first lookup, content summarization, and
+        # iterative deepening.
+        self.research_enhancer = research_enhancer
 
         # Enterprise components dictionary — populated by bootstrap layer.
         self.enterprise: dict = {}

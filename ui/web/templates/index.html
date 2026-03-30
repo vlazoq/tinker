@@ -1784,6 +1784,65 @@ const HumanReview = () => {
   );
 };
 
+// ── Workflow Viewer tab ──────────────────────────────────────────────────────
+const WorkflowViewer = () => {
+  const [data, setData] = useState(null);
+  const [taskGraph, setTaskGraph] = useState(null);
+  const [view, setView] = useState('system'); // 'system' or 'tasks'
+
+  const refresh = useCallback(() => {
+    api.get('/api/workflow').then(setData);
+    api.get('/api/workflow/task-graph').then(setTaskGraph);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 5000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  if (!data) return <div className="card"><Spinner /> Loading workflow…</div>;
+
+  const mermaidSrc = view === 'system' ? data.mermaid : (taskGraph?.mermaid || '');
+
+  return (
+    <div>
+      <div className="grid-4 mb-16">
+        <StatBox value={data.current_level || 'idle'} label="Current Level" />
+        <StatBox value={data.micro_count ?? 0} label="Micro Loops" />
+        <StatBox value={data.meso_count ?? 0} label="Meso Loops" />
+        <StatBox value={data.stagnation_events ?? 0} label="Stagnation" />
+      </div>
+
+      <div className="card">
+        <div className="card-title" style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+          <span>Workflow Diagram</span>
+          <div>
+            <button className={`btn btn-sm ${view==='system'?'btn-primary':'btn-ghost'}`}
+              onClick={() => setView('system')}>System Flow</button>
+            {' '}
+            <button className={`btn btn-sm ${view==='tasks'?'btn-primary':'btn-ghost'}`}
+              onClick={() => setView('tasks')}>Task Graph</button>
+          </div>
+        </div>
+        <pre className="mermaid-src" style={{
+          background:'var(--bg-card)', border:'1px solid var(--border)',
+          borderRadius:8, padding:16, overflow:'auto', fontSize:13,
+          whiteSpace:'pre-wrap', lineHeight:1.6, maxHeight:500,
+        }}>{mermaidSrc}</pre>
+        <p className="muted" style={{fontSize:11, marginTop:8}}>
+          Mermaid source — paste into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> or
+          any Mermaid renderer to visualize. Auto-refreshes every 5s.
+        </p>
+      </div>
+
+      <div style={{textAlign:'right', marginTop:8}}>
+        <button className="btn btn-ghost btn-sm" onClick={refresh}>Refresh</button>
+      </div>
+    </div>
+  );
+};
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'dashboard', label: '📊 Dashboard',     Component: Dashboard },
@@ -1791,6 +1850,7 @@ const TABS = [
   { id: 'grub',      label: '🐛 Grub',           Component: GrubStatus },
   { id: 'fritz',     label: '🔀 Fritz',           Component: FritzPanel },
   { id: 'review',    label: '👤 Review',          Component: HumanReview },
+  { id: 'workflow',  label: '🔀 Workflow',        Component: WorkflowViewer },
   { id: 'config',    label: '⚙️ Config',         Component: Config },
   { id: 'flags',     label: '🚩 Feature Flags',  Component: FeatureFlags },
   { id: 'tasks',     label: '📋 Task Queue',     Component: TaskQueue },

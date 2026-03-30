@@ -153,6 +153,27 @@ ORCH_CONFIG_SCHEMA: dict[str, Any] = {
                 "min": 0,
                 "label": "Max Researcher Calls/Loop",
             },
+            "research_num_results": {
+                "type": "int",
+                "default": 10,
+                "min": 1,
+                "label": "Search Results per Query",
+                "help": "Number of search results to fetch (1-50+). Higher = broader coverage.",
+            },
+            "research_max_scrape": {
+                "type": "int",
+                "default": 5,
+                "min": 1,
+                "label": "Deep Scrape Count",
+                "help": "How many top results to deep-scrape for full text.",
+            },
+            "research_max_content_chars": {
+                "type": "int",
+                "default": 8000,
+                "min": 500,
+                "label": "Max Research Content (chars)",
+                "help": "Max chars of combined scraped content per gap.",
+            },
             "context_max_artifacts": {
                 "type": "int",
                 "default": 10,
