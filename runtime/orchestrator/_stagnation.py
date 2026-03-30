@@ -14,6 +14,8 @@ import asyncio
 import logging
 from typing import Any
 
+from core.events import EventType
+
 logger = logging.getLogger("tinker.orchestrator")
 
 
@@ -79,6 +81,13 @@ class StagnationMixin:
         self.state.stagnation_events_total += 1
         if self.metrics is not None:
             self.metrics.on_stagnation(directive)
+
+        await self.emit_event(EventType.STAGNATION_DETECTED, {
+            "intervention_type": directive.intervention_type.value,
+            "stagnation_type": directive.stagnation_type.value,
+            "severity": directive.severity,
+            "subsystem": self.state.current_subsystem,
+        })
 
         logger.warning(
             "[Stagnation] %s directive triggered (type=%s, severity=%.2f)",

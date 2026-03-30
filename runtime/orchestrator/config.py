@@ -289,6 +289,37 @@ class OrchestratorConfig:
         default_factory=lambda: float(os.getenv("TINKER_CONFIRM_TIMEOUT", "300"))
     )
 
+    # ── Human Judge (quality control) ────────────────────────────────────────
+    # The Human Judge lets a human operator step in as a Critic, scoring
+    # Architect proposals and optionally injecting steering directives.
+    #
+    # Modes:
+    #   "llm"       — LLM critic only (default, current behaviour)
+    #   "human"     — Human replaces LLM critic entirely
+    #   "hybrid"    — LLM runs first; human reviews when score < threshold
+    #                 or every N loops
+    #   "on_demand" — LLM-only by default; human can trigger via API
+    judge_mode: str = field(
+        default_factory=lambda: os.getenv("TINKER_JUDGE_MODE", "llm")
+    )
+
+    # How long (seconds) to wait for a human review before falling back to
+    # LLM critic result.  0 = wait forever.  Default: 10 minutes.
+    human_judge_timeout: float = field(
+        default_factory=lambda: float(os.getenv("TINKER_HUMAN_JUDGE_TIMEOUT", "600"))
+    )
+
+    # In hybrid mode: request human review when LLM score is below this.
+    hybrid_score_threshold: float = field(
+        default_factory=lambda: float(os.getenv("TINKER_HYBRID_SCORE_THRESHOLD", "0.6"))
+    )
+
+    # In hybrid mode: request human review every N micro loops regardless
+    # of score.  0 = only review on low scores.
+    hybrid_review_interval: int = field(
+        default_factory=lambda: int(os.getenv("TINKER_HYBRID_REVIEW_INTERVAL", "5"))
+    )
+
     # ── Checkpoint / pause-resume ─────────────────────────────────────────────
     # Checkpoint saves the current micro loop state to disk so that if the
     # process is killed or paused, the next run can resume where it left off
@@ -399,6 +430,20 @@ class OrchestratorConfig:
         # Confirmation gate timeout must be non-negative (0 = wait forever)
         self.confirm_timeout_seconds = _positive_float(
             self.confirm_timeout_seconds, "confirm_timeout_seconds", min_val=0.0
+        )
+
+        # Human judge validation
+        valid_modes = ("llm", "human", "hybrid", "on_demand")
+        if self.judge_mode not in valid_modes:
+            raise ConfigurationError(
+                f"judge_mode must be one of {valid_modes}, got {self.judge_mode!r}",
+                context={"field": "judge_mode", "value": self.judge_mode},
+            )
+        self.human_judge_timeout = _positive_float(
+            self.human_judge_timeout, "human_judge_timeout", min_val=0.0
+        )
+        self.hybrid_score_threshold = _positive_float(
+            self.hybrid_score_threshold, "hybrid_score_threshold", min_val=0.0
         )
 
         logger.debug(

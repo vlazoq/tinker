@@ -36,12 +36,29 @@ class EventType(str, Enum):
     MICRO_LOOP_COMPLETED = "micro_loop_completed"
     MICRO_LOOP_FAILED = "micro_loop_failed"
     MESO_LOOP_COMPLETED = "meso_loop_completed"
+    MESO_LOOP_FAILED = "meso_loop_failed"
     MACRO_LOOP_COMPLETED = "macro_loop_completed"
+    MACRO_LOOP_FAILED = "macro_loop_failed"
 
     # ── Task events ───────────────────────────────────────────────────────────
     TASK_SELECTED = "task_selected"
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"
+    TASKS_GENERATED = "tasks_generated"
+
+    # ── Agent events ──────────────────────────────────────────────────────────
+    ARCHITECT_COMPLETED = "architect_completed"
+    CRITIC_SCORED = "critic_scored"
+    SYNTHESIZER_COMPLETED = "synthesizer_completed"
+    REFINEMENT_ITERATION = "refinement_iteration"
+
+    # ── Research events ───────────────────────────────────────────────────────
+    RESEARCH_COMPLETED = "research_completed"
+
+    # ── Human Judge events ────────────────────────────────────────────────────
+    HUMAN_REVIEW_REQUESTED = "human_review_requested"
+    HUMAN_REVIEW_SUBMITTED = "human_review_submitted"
+    HUMAN_REVIEW_TIMEOUT = "human_review_timeout"
 
     # ── Artifact events ───────────────────────────────────────────────────────
     ARTIFACT_STORED = "artifact_stored"
@@ -49,11 +66,13 @@ class EventType(str, Enum):
     # ── Stagnation ────────────────────────────────────────────────────────────
     STAGNATION_DETECTED = "stagnation_detected"
     STAGNATION_RESOLVED = "stagnation_resolved"
+    STAGNATION_INTERVENTION = "stagnation_intervention"
 
     # ── Resilience ────────────────────────────────────────────────────────────
     CIRCUIT_OPENED = "circuit_opened"
     CIRCUIT_CLOSED = "circuit_closed"
     SLA_BREACHED = "sla_breached"
+    BACKPRESSURE_APPLIED = "backpressure_applied"
 
     # ── System lifecycle ──────────────────────────────────────────────────────
     SYSTEM_STARTED = "system_started"

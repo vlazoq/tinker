@@ -577,14 +577,21 @@ class ToolRegistry:
     # Orchestrator convenience method
     # ------------------------------------------------------------------
 
-    async def research(self, query: str) -> dict:
+    async def research(
+        self,
+        query: str,
+        *,
+        max_scrape: int = 3,
+        max_content_chars: int = 5000,
+    ) -> dict:
         """
         High-level research helper expected by the Orchestrator.
 
         This method bundles two tool calls into one convenient operation:
           1. Search the web for the query using "web_search".
-          2. If results are found, scrape the top result for its full text
-             using "web_scraper" (provides richer content than a snippet).
+          2. If results are found, scrape the top ``max_scrape`` results for
+             their full text using "web_scraper" (provides richer content than
+             a snippet).
 
         The result is a unified dict the micro loop can inject into the AI's
         context so it knows what research was found.
@@ -592,7 +599,7 @@ class ToolRegistry:
         Why combine two tools here?
         ---------------------------
         A web search returns short snippets (a sentence or two per result).
-        Scraping the top result gives the full article text, which is much more
+        Scraping the top results gives the full article text, which is much more
         useful for architecture analysis.  Doing both in one call saves the
         Orchestrator from orchestrating this pattern itself every time.
 
@@ -601,11 +608,13 @@ class ToolRegistry:
 
         Args:
             query: A natural-language search query string.
+            max_scrape: How many top results to scrape (default 3).
+            max_content_chars: Max chars of combined scraped content (default 5000).
 
         Returns:
             A dict with keys:
               - "query":      the original query string
-              - "result":     the scraped text (up to 2000 chars) or search data
+              - "result":     the scraped text (up to max_content_chars) or search data
               - "sources":    list of URLs found in search results
               - "raw_search": the full raw search result data (optional)
         """
@@ -613,19 +622,23 @@ class ToolRegistry:
         result = await self.execute("web_search", query=query, max_results=5)
 
         search_data: dict = {}
-        top_url: str = ""
+        urls_to_scrape: list[str] = []
 
         # Step 2: extract search results — handle both list and dict formats
         # because WebSearchTool can return either depending on its version.
         if result.success and isinstance(result.data, list) and result.data:
             # Most common case: data is a list of result dicts.
             search_data = {"results": result.data}
-            top_url = result.data[0].get("url", "") if result.data else ""
+            urls_to_scrape = [
+                r.get("url", "") for r in result.data if r.get("url")
+            ][:max_scrape]
         elif result.success and isinstance(result.data, dict):
             # Alternative case: data is a dict with a "results" key.
             search_data = result.data
             items = result.data.get("results", [])
-            top_url = items[0].get("url", "") if items else ""
+            urls_to_scrape = [
+                r.get("url", "") for r in items if r.get("url")
+            ][:max_scrape]
         else:
             # Web search unavailable — return a minimal stub
             # so callers always get a usable dict even when tools are down.
@@ -635,17 +648,24 @@ class ToolRegistry:
                 "sources": [],
             }
 
-        # Step 3: optionally scrape the top result for richer content.
-        # We only try this if we have a URL and the scraper tool is registered.
-        scraped_text = ""
-        if top_url and "web_scraper" in self._tools:
-            scrape_result = await self.execute("web_scraper", url=top_url)
-            if scrape_result.success:
-                data = scrape_result.data or {}
-                # The scraper returns a dict; pull the "text" field.
-                scraped_text = (
-                    data.get("text", "") if isinstance(data, dict) else str(data)
-                )
+        # Step 3: scrape top results for richer content.
+        # Scrape multiple results (not just top 1) for broader coverage.
+        scraped_sections: list[str] = []
+        if urls_to_scrape and "web_scraper" in self._tools:
+            for url in urls_to_scrape:
+                try:
+                    scrape_result = await self.execute("web_scraper", url=url)
+                    if scrape_result.success:
+                        data = scrape_result.data or {}
+                        text = (
+                            data.get("text", "") if isinstance(data, dict)
+                            else str(data)
+                        )
+                        if text.strip():
+                            scraped_sections.append(text)
+                except Exception:
+                    # Individual scrape failures are non-fatal
+                    continue
 
         # Step 4: build the list of source URLs from all search results.
         sources = []
@@ -654,10 +674,13 @@ class ToolRegistry:
             if url:
                 sources.append(url)
 
-        # Truncate the content so it doesn't overwhelm the AI's context window.
-        # If we got scraped text, use up to 2000 chars; otherwise fall back to
-        # the raw search data summary (capped at 1000 chars).
-        summary = scraped_text[:2000] if scraped_text else str(search_data)[:1000]
+        # Step 5: combine scraped content with increased truncation limit.
+        # Join multiple scraped results with separators for clarity.
+        if scraped_sections:
+            combined = "\n\n---\n\n".join(scraped_sections)
+            summary = combined[:max_content_chars]
+        else:
+            summary = str(search_data)[:2000]
 
         return {
             "query": query,
