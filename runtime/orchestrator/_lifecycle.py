@@ -32,9 +32,11 @@ class LifecycleMixin:
 
         Steps:
           1. Log a summary of what was accomplished.
-          2. Stop the DLQ auto-replayer.
-          3. Update the state status to SHUTDOWN.
-          4. Write a final snapshot so the Dashboard shows the terminal state.
+          2. Save a checkpoint so the next run can resume.
+          3. Flush auto-memory to disk.
+          4. Stop the DLQ auto-replayer.
+          5. Update the state status to SHUTDOWN.
+          6. Write a final snapshot so the Dashboard shows the terminal state.
         """
         logger.info(
             "Orchestrator shutting down — micro=%d meso=%d macro=%d",
@@ -42,6 +44,27 @@ class LifecycleMixin:
             self.state.total_meso_loops,
             self.state.total_macro_loops,
         )
+
+        # Save checkpoint so the next run can resume where we left off
+        if getattr(self, "checkpoint_manager", None) is not None:
+            try:
+                self.checkpoint_manager.save(self._build_checkpoint_data())
+                logger.info("Checkpoint saved for resume")
+            except Exception as exc:
+                logger.warning("Checkpoint save failed (non-fatal): %s", exc)
+
+        # Flush auto-memory state to disk
+        if getattr(self, "event_bus", None) is not None:
+            try:
+                # Auto-memory listens on the bus; give it a final flush signal
+                from core.events import Event, EventType
+                await self.event_bus.publish(Event(
+                    type=EventType.SYSTEM_STOPPING,
+                    source="orchestrator",
+                    payload={"flush": True},
+                ))
+            except Exception as exc:
+                logger.debug("Event bus flush notification failed: %s", exc)
 
         if self._dlq_replayer is not None:
             try:

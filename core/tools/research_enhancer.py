@@ -68,6 +68,7 @@ class ResearchEnhancer:
         summarize_threshold: int = 3000,
         memory_min_score: float = 0.7,
         llm_timeout: float = 15.0,
+        llm_max_concurrent: int = 2,
     ) -> None:
         self._router = router
         self._memory = memory_manager
@@ -78,6 +79,18 @@ class ResearchEnhancer:
         self._summarize_threshold = summarize_threshold
         self._memory_min_score = memory_min_score
         self._llm_timeout = llm_timeout
+        self._llm_semaphore = asyncio.Semaphore(llm_max_concurrent)
+        self._stats = {
+            "queries_rewritten": 0,
+            "memory_hits": 0,
+            "memory_misses": 0,
+            "summaries_generated": 0,
+            "iterative_rounds": 0,
+            "total_enhanced": 0,
+        }
+
+    def get_stats(self) -> dict:
+        return {**self._stats}
 
     # ------------------------------------------------------------------
     # 1. Query Rewriting
@@ -104,18 +117,20 @@ class ResearchEnhancer:
                 "queries, one per line, no numbering or explanation.\n\n"
                 f"Knowledge gap: {gap}"
             )
-            resp = await asyncio.wait_for(
-                self._router.complete_text(
-                    role=AgentRole.CRITIC,
-                    prompt=prompt,
-                    system="Output only search queries, one per line.",
-                    temperature=0.3,
-                ),
-                timeout=self._llm_timeout,
-            )
+            async with self._llm_semaphore:
+                resp = await asyncio.wait_for(
+                    self._router.complete_text(
+                        role=AgentRole.CRITIC,
+                        prompt=prompt,
+                        system="Output only search queries, one per line.",
+                        temperature=0.3,
+                    ),
+                    timeout=self._llm_timeout,
+                )
             raw = resp.raw_text.strip()
             queries = [q.strip() for q in raw.splitlines() if q.strip()]
             if queries:
+                self._stats["queries_rewritten"] += 1
                 logger.debug(
                     "query_rewrite: %r → %s", gap, queries
                 )
@@ -170,6 +185,7 @@ class ResearchEnhancer:
                     else:
                         content = getattr(best, "content", "")
                     if content and len(content) > 50:
+                        self._stats["memory_hits"] += 1
                         logger.info(
                             "memory_first: hit for %r (score=%.3f, %d chars)",
                             gap, score, len(content),
@@ -184,6 +200,7 @@ class ResearchEnhancer:
         except Exception as exc:
             logger.debug("memory_first: lookup failed for %r: %s", gap, exc)
 
+        self._stats["memory_misses"] += 1
         return None
 
     # ------------------------------------------------------------------
@@ -219,17 +236,19 @@ class ResearchEnhancer:
                 f"---\n{input_text}\n---\n\n"
                 "Provide a focused technical summary:"
             )
-            resp = await asyncio.wait_for(
-                self._router.complete_text(
-                    role=AgentRole.CRITIC,
-                    prompt=prompt,
-                    system="You are a technical research summarizer. Be concise but thorough.",
-                    temperature=0.2,
-                ),
-                timeout=self._llm_timeout,
-            )
+            async with self._llm_semaphore:
+                resp = await asyncio.wait_for(
+                    self._router.complete_text(
+                        role=AgentRole.CRITIC,
+                        prompt=prompt,
+                        system="You are a technical research summarizer. Be concise but thorough.",
+                        temperature=0.2,
+                    ),
+                    timeout=self._llm_timeout,
+                )
             summary = resp.raw_text.strip()
             if summary and len(summary) > 50:
+                self._stats["summaries_generated"] += 1
                 logger.debug(
                     "summarize: %d chars → %d chars for %r",
                     len(content), len(summary), gap,
@@ -276,19 +295,21 @@ class ResearchEnhancer:
                 "- SUFFICIENT (if the research adequately covers the topic)\n"
                 "- REFINE: <new search query> (if more/better research is needed)"
             )
-            resp = await asyncio.wait_for(
-                self._router.complete_text(
-                    role=AgentRole.CRITIC,
-                    prompt=prompt,
-                    system="Evaluate research quality. Reply SUFFICIENT or REFINE: <query>.",
-                    temperature=0.2,
-                ),
-                timeout=self._llm_timeout,
-            )
+            async with self._llm_semaphore:
+                resp = await asyncio.wait_for(
+                    self._router.complete_text(
+                        role=AgentRole.CRITIC,
+                        prompt=prompt,
+                        system="Evaluate research quality. Reply SUFFICIENT or REFINE: <query>.",
+                        temperature=0.2,
+                    ),
+                    timeout=self._llm_timeout,
+                )
             text = resp.raw_text.strip()
             if text.upper().startswith("REFINE"):
                 refined = text.split(":", 1)[-1].strip() if ":" in text else None
                 if refined:
+                    self._stats["iterative_rounds"] += 1
                     logger.info(
                         "iterative: round %d — refining %r → %r",
                         round_num + 1, gap, refined,
@@ -338,6 +359,8 @@ class ResearchEnhancer:
         -------
         dict with keys: query, result, sources, from_memory (bool).
         """
+        self._stats["total_enhanced"] += 1
+
         # Step 1: Memory-first lookup
         cached = await self.check_memory(gap)
         if cached is not None:

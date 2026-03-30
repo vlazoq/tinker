@@ -178,6 +178,7 @@ class AutoMemory:
         bus.subscribe_handler(EventType.CRITIC_SCORED, self._on_critic_scored)
         bus.subscribe_handler(EventType.REFINEMENT_ITERATION, self._on_refinement)
         bus.subscribe_handler(EventType.HUMAN_REVIEW_SUBMITTED, self._on_human_review)
+        bus.subscribe_handler(EventType.SYSTEM_STOPPING, self._on_shutdown)
         logger.info("AutoMemory attached to EventBus")
 
     # ── Event handlers ──────────────────────────────────────────────────────
@@ -343,6 +344,12 @@ class AutoMemory:
             ))
 
         self._save_state()
+
+    async def _on_shutdown(self, event: Any) -> None:
+        """Flush all state to disk on graceful shutdown."""
+        logger.info("AutoMemory: flushing state to disk on shutdown")
+        self._save_state()
+        self._write_markdown_summary()
 
     # ── Query API ───────────────────────────────────────────────────────────
 

@@ -155,6 +155,9 @@ def build_real_components(problem: str) -> dict:
         tool_layer=tool_layer,
         memory_manager=memory_manager,
         max_concurrent=int(os.getenv("TINKER_RESEARCH_CONCURRENCY", "3")),
+        research_num_results=int(os.getenv("TINKER_RESEARCH_NUM_RESULTS", "10")),
+        research_max_scrape=int(os.getenv("TINKER_RESEARCH_MAX_SCRAPE", "5")),
+        research_max_content_chars=int(os.getenv("TINKER_RESEARCH_MAX_CONTENT_CHARS", "8000")),
     )
 
     # ── Auto-Memory (cross-session learning) ─────────────────────────────────
@@ -179,6 +182,7 @@ def build_real_components(problem: str) -> dict:
         iterative_max_rounds=int(os.getenv("TINKER_RESEARCH_ITERATIVE_ROUNDS", "2")),
         summarize_threshold=int(os.getenv("TINKER_RESEARCH_SUMMARIZE_THRESHOLD", "3000")),
         memory_min_score=float(os.getenv("TINKER_RESEARCH_MEMORY_MIN_SCORE", "0.7")),
+        llm_max_concurrent=int(os.getenv("TINKER_RESEARCH_LLM_MAX_CONCURRENT", "2")),
     )
 
     # ── Webhook Dispatcher (n8n / local automation integration) ──────────────

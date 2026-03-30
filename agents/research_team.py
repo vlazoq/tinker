@@ -67,11 +67,17 @@ class ResearchTeam:
         tool_layer: Any,
         memory_manager: Any = None,
         max_concurrent: int = 3,
+        research_num_results: int = 10,
+        research_max_scrape: int = 5,
+        research_max_content_chars: int = 8000,
     ) -> None:
         self._tool_layer = tool_layer
         self._memory_manager = memory_manager
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._max_concurrent = max_concurrent
+        self._num_results = research_num_results
+        self._max_scrape = research_max_scrape
+        self._max_content_chars = research_max_content_chars
         # Session-level deduplication cache
         self._cache: dict[str, dict] = {}
 
@@ -149,7 +155,12 @@ class ResearchTeam:
 
         async with self._semaphore:
             result = await asyncio.wait_for(
-                self._tool_layer.research(query=gap),
+                self._tool_layer.research(
+                    query=gap,
+                    max_results=self._num_results,
+                    max_scrape=self._max_scrape,
+                    max_content_chars=self._max_content_chars,
+                ),
                 timeout=timeout,
             )
 
