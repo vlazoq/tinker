@@ -9,6 +9,7 @@
 <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -1788,7 +1789,10 @@ const HumanReview = () => {
 const WorkflowViewer = () => {
   const [data, setData] = useState(null);
   const [taskGraph, setTaskGraph] = useState(null);
-  const [view, setView] = useState('system'); // 'system' or 'tasks'
+  const [view, setView] = useState('system');
+  const [svg, setSvg] = useState('');
+  const [renderErr, setRenderErr] = useState(false);
+  const renderCounter = useRef(0);
 
   const refresh = useCallback(() => {
     api.get('/api/workflow').then(setData);
@@ -1801,9 +1805,31 @@ const WorkflowViewer = () => {
     return () => clearInterval(id);
   }, [refresh]);
 
-  if (!data) return <div className="card"><Spinner /> Loading workflow…</div>;
+  const mermaidSrc = view === 'system' ? (data?.mermaid || '') : (taskGraph?.mermaid || '');
 
-  const mermaidSrc = view === 'system' ? data.mermaid : (taskGraph?.mermaid || '');
+  useEffect(() => {
+    if (!mermaidSrc) return;
+    renderCounter.current += 1;
+    const id = 'mermaid-' + renderCounter.current;
+    try {
+      if (window.mermaid && window.mermaid.render) {
+        window.mermaid.render(id, mermaidSrc).then(({svg: s}) => {
+          setSvg(s);
+          setRenderErr(false);
+        }).catch(() => {
+          setSvg('');
+          setRenderErr(true);
+        });
+      } else {
+        setRenderErr(true);
+      }
+    } catch (e) {
+      setSvg('');
+      setRenderErr(true);
+    }
+  }, [mermaidSrc]);
+
+  if (!data) return <div className="card"><Spinner /> Loading workflow…</div>;
 
   return (
     <div>
@@ -1825,14 +1851,19 @@ const WorkflowViewer = () => {
               onClick={() => setView('tasks')}>Task Graph</button>
           </div>
         </div>
-        <pre className="mermaid-src" style={{
-          background:'var(--bg-card)', border:'1px solid var(--border)',
-          borderRadius:8, padding:16, overflow:'auto', fontSize:13,
-          whiteSpace:'pre-wrap', lineHeight:1.6, maxHeight:500,
-        }}>{mermaidSrc}</pre>
+        {svg && !renderErr ? (
+          <div style={{overflow:'auto', maxHeight:500, padding:16}} dangerouslySetInnerHTML={{__html: svg}} />
+        ) : (
+          <pre className="mermaid-src" style={{
+            background:'var(--bg-card)', border:'1px solid var(--border)',
+            borderRadius:8, padding:16, overflow:'auto', fontSize:13,
+            whiteSpace:'pre-wrap', lineHeight:1.6, maxHeight:500,
+          }}>{mermaidSrc}</pre>
+        )}
         <p className="muted" style={{fontSize:11, marginTop:8}}>
-          Mermaid source — paste into <a href="https://mermaid.live" target="_blank" rel="noopener">mermaid.live</a> or
-          any Mermaid renderer to visualize. Auto-refreshes every 5s.
+          {svg && !renderErr
+            ? 'Live Mermaid rendering. Auto-refreshes every 5s.'
+            : 'Mermaid source \u2014 rendering unavailable. Paste into mermaid.live to visualize.'}
         </p>
       </div>
 
