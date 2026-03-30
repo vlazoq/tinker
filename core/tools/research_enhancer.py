@@ -161,13 +161,14 @@ class ResearchEnhancer:
                     else getattr(best, "score", 0)
                 )
                 if score >= self._memory_min_score:
-                    content = (
-                        best.get("content", "")
-                        or best.get("text", "")
-                        or best.get("snippet", "")
-                        if isinstance(best, dict)
-                        else getattr(best, "content", "")
-                    )
+                    if isinstance(best, dict):
+                        content = (
+                            best.get("content", "")
+                            or best.get("text", "")
+                            or best.get("snippet", "")
+                        )
+                    else:
+                        content = getattr(best, "content", "")
                     if content and len(content) > 50:
                         logger.info(
                             "memory_first: hit for %r (score=%.3f, %d chars)",
