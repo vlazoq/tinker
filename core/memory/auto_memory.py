@@ -177,6 +177,7 @@ class AutoMemory:
         bus.subscribe_handler(EventType.MACRO_LOOP_COMPLETED, self._on_macro_completed)
         bus.subscribe_handler(EventType.CRITIC_SCORED, self._on_critic_scored)
         bus.subscribe_handler(EventType.REFINEMENT_ITERATION, self._on_refinement)
+        bus.subscribe_handler(EventType.HUMAN_REVIEW_SUBMITTED, self._on_human_review)
         logger.info("AutoMemory attached to EventBus")
 
     # ── Event handlers ──────────────────────────────────────────────────────
@@ -297,6 +298,51 @@ class AutoMemory:
         score = p.get("score")
         if iteration > 1 and score is not None:
             self._state.stats["refinement_improvements"] += 1
+
+    async def _on_human_review(self, event: Any) -> None:
+        """Learn from human judge feedback — highest-confidence source."""
+        p = event.payload
+        score = p.get("score")
+        has_directive = p.get("has_directive", False)
+
+        # Human reviews are the most valuable learning signal
+        if score is not None and score >= self._high_threshold:
+            self._add_entry(MemoryEntry(
+                category="effective_pattern",
+                subsystem="general",
+                content=(
+                    f"Human judge gave high score ({score:.2f}). "
+                    "The approach was validated by human review."
+                ),
+                source_event="human_review_submitted",
+                confidence=1.0,  # Human feedback = highest confidence
+            ))
+
+        if score is not None and score <= self._low_threshold:
+            self._add_entry(MemoryEntry(
+                category="pitfall",
+                subsystem="general",
+                content=(
+                    f"Human judge gave low score ({score:.2f}). "
+                    "The approach was rejected by human review."
+                ),
+                source_event="human_review_submitted",
+                confidence=1.0,
+            ))
+
+        if has_directive:
+            self._add_entry(MemoryEntry(
+                category="decision",
+                subsystem="general",
+                content=(
+                    "Human judge provided a steering directive. "
+                    f"Sticky: {p.get('sticky', False)}."
+                ),
+                source_event="human_review_submitted",
+                confidence=1.0,
+            ))
+
+        self._save_state()
 
     # ── Query API ───────────────────────────────────────────────────────────
 

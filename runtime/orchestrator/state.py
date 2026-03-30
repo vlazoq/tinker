@@ -376,6 +376,21 @@ class OrchestratorState:
     # requests to the operator.  The operator responds via POST /api/confirm/{id}.
     pending_confirmations: dict = field(default_factory=dict)
 
+    # ── Human Judge (quality control) ────────────────────────────────────────
+
+    # Dict of pending human reviews.  Keyed by review_id (8-char UUID).
+    # Each value contains the task, architect proposal, LLM critic result,
+    # and fields for the human's score/feedback/directive.
+    pending_reviews: dict = field(default_factory=dict)
+
+    # When True, the next micro loop pauses for human review (on_demand mode).
+    # Set via POST /api/request-review, cleared after the review completes.
+    human_review_requested: bool = False
+
+    # One-shot human directive — injected into the next Architect context and
+    # then cleared.  Similar to pending_stagnation_hint but from human input.
+    pending_human_directive: Optional[str] = None
+
     # ── Shutdown ─────────────────────────────────────────────────────────────
 
     # Set to True when shutdown has been requested (via signal or API call).
@@ -519,6 +534,8 @@ class OrchestratorState:
             "shutdown_requested": self.shutdown_requested,
             "paused": self.paused,
             "pending_confirmations": list(self.pending_confirmations.values()),
+            "pending_reviews": list(self.pending_reviews.values()),
+            "human_review_requested": self.human_review_requested,
             # Only expose the most recent history in the snapshot to keep
             # the file small — the full history lives in memory.
             "micro_history": [_record(r) for r in self.micro_history[-10:]],

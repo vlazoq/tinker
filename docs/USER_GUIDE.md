@@ -17,8 +17,9 @@ Tinker. If you haven't installed Tinker yet, start with [SETUP.md](SETUP.md).
 8. [Using Fritz (Git Integration)](#8-using-fritz-git-integration)
 9. [Using Grub (Code Generation)](#9-using-grub-code-generation)
 10. [Makefile Targets](#10-makefile-targets)
-11. [Troubleshooting](#11-troubleshooting)
-12. [FAQ](#12-faq)
+11. [Human Judge (Quality Control)](#11-human-judge-quality-control)
+12. [Troubleshooting](#12-troubleshooting)
+13. [FAQ](#13-faq)
 
 ---
 
@@ -508,7 +509,86 @@ make audit-fix        # Auto-fix CVE issues
 
 ---
 
-## 11. Troubleshooting
+## 11. Human Judge (Quality Control)
+
+The Human Judge lets you step in as a quality-control reviewer — scoring
+Architect proposals, giving feedback, and injecting steering directives
+that redirect the system's reasoning.
+
+### Judge Modes
+
+| Mode | Description |
+|------|-------------|
+| `llm` | Default. LLM critic runs alone — fully autonomous. |
+| `human` | Human replaces LLM critic entirely. Loop pauses every iteration. |
+| `hybrid` | LLM runs first; human reviews when score < threshold or every N loops. |
+| `on_demand` | LLM-only by default; trigger human review via dashboard or API. |
+
+Set the mode at startup:
+
+```bash
+export TINKER_JUDGE_MODE=hybrid
+python main.py --problem "Design a cache layer"
+```
+
+Or switch at runtime via the web dashboard's **Review** tab or the API:
+
+```bash
+curl -X POST http://localhost:9321/api/judge-mode \
+  -H 'Content-Type: application/json' \
+  -d '{"mode": "hybrid"}'
+```
+
+### Reviewing a Proposal
+
+When a review is triggered, the loop pauses and the proposal appears in the
+dashboard's **Review** tab. You provide:
+
+1. **Score** (0.0–1.0) — quality rating, same semantics as the LLM critic
+2. **Feedback** — structured review text explaining what's good/bad
+3. **Directive** (optional) — a steering instruction injected into the next
+   Architect prompt (e.g. "Stop exploring Redis, use an in-process LRU cache")
+4. **Sticky** (optional) — if checked, the directive persists across multiple
+   loops until you explicitly clear it
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/reviews/pending` | GET | List proposals awaiting review |
+| `/api/reviews/{id}` | GET | Full review context |
+| `/api/reviews/{id}` | POST | Submit review `{score, feedback, directive, sticky}` |
+| `/api/judge-mode` | POST | Switch mode `{mode: "llm"\|"human"\|"hybrid"\|"on_demand"}` |
+| `/api/request-review` | POST | Trigger review for next loop (on\_demand) |
+| `/api/directives` | GET | List active sticky directives |
+| `/api/directives/{n}` | DELETE | Remove a sticky directive |
+| `/api/directives` | DELETE | Clear all directives |
+
+### Example: Submit a Review with Directive
+
+```bash
+curl -X POST http://localhost:9321/api/reviews/abc123 \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "score": 0.4,
+    "feedback": "Wrong approach — microservices are overkill here.",
+    "directive": "Use a monolith with plugin architecture. Focus on simplicity.",
+    "sticky": true
+  }'
+```
+
+### Configuration
+
+| Env Variable | Default | Description |
+|---|---|---|
+| `TINKER_JUDGE_MODE` | `llm` | Judge mode |
+| `TINKER_HUMAN_JUDGE_TIMEOUT` | `600` | Seconds to wait before LLM fallback |
+| `TINKER_HYBRID_SCORE_THRESHOLD` | `0.6` | Hybrid: review when LLM score < this |
+| `TINKER_HYBRID_REVIEW_INTERVAL` | `5` | Hybrid: review every N loops |
+
+---
+
+## 12. Troubleshooting
 
 ### "Connection refused" to Ollama
 
@@ -593,7 +673,7 @@ rm -rf tinker_workspace/ tinker_artifacts/ tinker_diagrams/ chroma_db/
 
 ---
 
-## 12. FAQ
+## 13. FAQ
 
 **Q: How long should I let Tinker run?**
 A: For a simple system (URL shortener, todo app), 30–60 minutes produces a

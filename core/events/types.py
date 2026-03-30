@@ -55,6 +55,11 @@ class EventType(str, Enum):
     # ── Research events ───────────────────────────────────────────────────────
     RESEARCH_COMPLETED = "research_completed"
 
+    # ── Human Judge events ────────────────────────────────────────────────────
+    HUMAN_REVIEW_REQUESTED = "human_review_requested"
+    HUMAN_REVIEW_SUBMITTED = "human_review_submitted"
+    HUMAN_REVIEW_TIMEOUT = "human_review_timeout"
+
     # ── Artifact events ───────────────────────────────────────────────────────
     ARTIFACT_STORED = "artifact_stored"
 

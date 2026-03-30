@@ -330,39 +330,113 @@ async def run_micro_loop(orch: "Orchestrator") -> MicroLoopRecord:
         #
         # When cfg.min_critic_score == 0.0 (the default), the loop runs
         # exactly once, preserving the original single-pass behaviour.
+        #
+        # Human Judge integration:
+        #   "human" mode  — human replaces LLM critic entirely
+        #   "hybrid" mode — LLM runs first, human reviews if triggered
+        #   "on_demand"   — LLM-only unless human_review_requested flag set
         record.critic_tokens = 0
         _refinement_iter = 0
+        _human_judge = getattr(orch, "human_judge", None)
+
         while True:
-            # Acquire rate-limiter token before each Critic call.
-            if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
-                try:
-                    critic_limiter = rate_limiters.get("critic")
-                    if critic_limiter is not None:
-                        await critic_limiter.acquire()
-                except Exception as exc:
-                    logger.debug(
-                        "Critic rate limiter acquire failed (non-fatal): %s", exc
+            # ── 5a. LLM Critic call (skipped in "human" mode) ───────────────
+            critic_result = None
+            if cfg.judge_mode != "human":
+                # Acquire rate-limiter token before each Critic call.
+                if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
+                    try:
+                        critic_limiter = rate_limiters.get("critic")
+                        if critic_limiter is not None:
+                            await critic_limiter.acquire()
+                    except Exception as exc:
+                        logger.debug(
+                            "Critic rate limiter acquire failed (non-fatal): %s", exc
+                        )
+
+                with _span("critic_call", {"refinement_iter": _refinement_iter}):
+                    critic_result = await _call_critic(
+                        orch, task, architect_result, cfg.critic_timeout
+                    )
+                _call_tokens = critic_result.get("tokens_used", 0)
+                record.critic_tokens += _call_tokens
+                record.critic_score = critic_result.get("score")
+
+                if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
+                    try:
+                        critic_limiter = rate_limiters.get("critic")
+                        if critic_limiter is not None:
+                            critic_limiter.record_tokens(_call_tokens)
+                    except Exception as exc:
+                        logger.debug(
+                            "Critic rate limiter record_tokens failed (non-fatal): %s",
+                            exc,
+                        )
+
+            # ── 5b. Human Judge review (when applicable) ────────────────────
+            if _human_judge is not None and _human_judge.should_request_review(
+                llm_score=record.critic_score,
+                iteration=iteration,
+            ):
+                logger.info(
+                    "micro[%d] Human review requested (mode=%s, llm_score=%s)",
+                    iteration,
+                    cfg.judge_mode,
+                    record.critic_score,
+                )
+                with _span("human_review", {"refinement_iter": _refinement_iter}):
+                    human_result = await _human_judge.request_review(
+                        task=task,
+                        architect_result=architect_result,
+                        llm_critic_result=critic_result,
+                        iteration=iteration,
                     )
 
-            with _span("critic_call", {"refinement_iter": _refinement_iter}):
-                critic_result = await _call_critic(
-                    orch, task, architect_result, cfg.critic_timeout
-                )
-            _call_tokens = critic_result.get("tokens_used", 0)
-            record.critic_tokens += _call_tokens
-            record.critic_score = critic_result.get("score")
+                # Human score overrides LLM score
+                record.critic_score = human_result.get("score", record.critic_score)
+
+                # Build a combined critic_result from human + LLM
+                human_content = human_result.get("content", "")
+                llm_content = critic_result.get("content", "") if critic_result else ""
+                if llm_content and human_content:
+                    combined_content = (
+                        f"[LLM Critic]\n{llm_content}\n\n"
+                        f"[Human Judge]\n{human_content}"
+                    )
+                else:
+                    combined_content = human_content or llm_content
+
+                critic_result = {
+                    "score": record.critic_score,
+                    "content": combined_content,
+                    "tokens_used": (critic_result or {}).get("tokens_used", 0),
+                    "source": human_result.get("source", "human"),
+                }
+
+                # Process human directive — inject into next Architect context
+                human_directive = human_result.get("human_directive")
+                if human_directive:
+                    if human_result.get("sticky"):
+                        # Sticky directives are handled by HumanJudge itself
+                        logger.info(
+                            "micro[%d] Sticky human directive registered",
+                            iteration,
+                        )
+                    else:
+                        # One-shot directive — set on state for next context assembly
+                        orch.state.pending_human_directive = human_directive
+                        logger.info(
+                            "micro[%d] One-shot human directive queued: %s",
+                            iteration,
+                            human_directive[:80],
+                        )
+
             _refinement_iter += 1
 
-            if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
-                try:
-                    critic_limiter = rate_limiters.get("critic")
-                    if critic_limiter is not None:
-                        critic_limiter.record_tokens(_call_tokens)
-                except Exception as exc:
-                    logger.debug(
-                        "Critic rate limiter record_tokens failed (non-fatal): %s",
-                        exc,
-                    )
+            # If we're in human-only mode and no critic_result yet, use defaults
+            if critic_result is None:
+                record.critic_score = 0.5
+                critic_result = {"score": 0.5, "content": "", "tokens_used": 0}
 
             _score = record.critic_score or 0.0
             _min_score = cfg.min_critic_score
@@ -583,6 +657,25 @@ async def _assemble_context(orch: "Orchestrator", task: dict) -> dict:
             "micro[%d] Stagnation hint injected into Architect context",
             orch.state.total_micro_loops + 1,
         )
+
+    # Inject a one-shot human directive if one was submitted via the judge.
+    human_directive = getattr(orch.state, "pending_human_directive", None)
+    if human_directive:
+        orch.state.pending_human_directive = None
+        ctx = dict(ctx) if ctx is not ctx else ctx
+        ctx["human_directive"] = human_directive
+        logger.info(
+            "micro[%d] Human directive injected into Architect context",
+            orch.state.total_micro_loops + 1,
+        )
+
+    # Inject sticky human directives (persist across loops until cleared).
+    human_judge = getattr(orch, "human_judge", None)
+    if human_judge is not None:
+        directive_block = human_judge.get_context_block()
+        if directive_block:
+            ctx = dict(ctx) if ctx is not ctx else ctx
+            ctx["human_directives"] = directive_block
 
     return ctx
 

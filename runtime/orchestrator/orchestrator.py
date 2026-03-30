@@ -166,6 +166,16 @@ class Orchestrator(
         from .confirmation import ConfirmationGate
         self.confirmation_gate = ConfirmationGate(self.config, self.state)
 
+        # Human judge — quality control agent.
+        # Created here (not injected) because it needs config + state + event_bus
+        # which are all available at this point.
+        if self.config.judge_mode != "llm":
+            from agents.human_judge import HumanJudge
+            self.human_judge = HumanJudge(self.config, self.state, self.event_bus)
+            logger.info("HumanJudge wired — mode=%s", self.config.judge_mode)
+        else:
+            self.human_judge = None
+
         # DLQ auto-replayer — initialised lazily during run().
         self._dlq_replayer: Any = None
 
