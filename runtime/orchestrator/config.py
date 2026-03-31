@@ -48,12 +48,31 @@ from __future__ import annotations
 
 import logging
 import os
+from enum import StrEnum
 
 # ``dataclass`` is the decorator; ``field`` lets us define fields whose
 # default values are computed at runtime (e.g. reading an env variable).
 from dataclasses import dataclass, field
 
 from exceptions import ConfigurationError
+
+
+class SystemMode(StrEnum):
+    """
+    The operating mode of the Tinker engine.
+
+    ARCHITECT : Default mode — autonomous architecture design engine.
+                Tasks revolve around Tinker's own subsystems and produce
+                design artifacts, critiques, and synthesis documents.
+
+    RESEARCH  : General-purpose research mode — Tinker acts as an
+                autonomous research engine on any user-defined topic.
+                Uses web search, scraping, summarisation, and iterative
+                deepening to gather, compare, and synthesise findings.
+    """
+
+    ARCHITECT = "architect"
+    RESEARCH = "research"
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +156,24 @@ class OrchestratorConfig:
             architect_timeout=5,        # fail fast rather than wait 2 minutes
         )
     """
+
+    # ── System mode ─────────────────────────────────────────────────────────
+    # Controls whether Tinker operates as an architecture design engine
+    # (default) or a general-purpose research engine.  Switchable at
+    # runtime via the web UI without restarting the orchestrator.
+    #
+    # In RESEARCH mode the agent prompts shift from software-architecture
+    # language to domain-agnostic research language, and the "subsystem"
+    # concept is replaced by user-defined research topics.
+    system_mode: str = field(
+        default_factory=lambda: os.getenv("TINKER_SYSTEM_MODE", "architect")
+    )
+
+    # The topic / question to research when system_mode is "research".
+    # Ignored in architect mode.  Can be changed at runtime via the web UI.
+    research_topic: str = field(
+        default_factory=lambda: os.getenv("TINKER_RESEARCH_TOPIC", "")
+    )
 
     # ── Micro loop ──────────────────────────────────────────────────────────
     # The micro loop is the smallest, fastest unit of work Tinker does.
@@ -442,6 +479,14 @@ class OrchestratorConfig:
         self.confirm_timeout_seconds = _positive_float(
             self.confirm_timeout_seconds, "confirm_timeout_seconds", min_val=0.0
         )
+
+        # System mode validation
+        valid_system_modes = tuple(m.value for m in SystemMode)
+        if self.system_mode not in valid_system_modes:
+            raise ConfigurationError(
+                f"system_mode must be one of {valid_system_modes}, got {self.system_mode!r}",
+                context={"field": "system_mode", "value": self.system_mode},
+            )
 
         # Human judge validation
         valid_modes = ("llm", "human", "hybrid", "on_demand")

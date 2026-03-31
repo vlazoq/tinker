@@ -45,6 +45,7 @@ from agents._shared import (
     _get_rate_limiter_registry,
     _get_retry_async,
     _parse_architect_structured,
+    _read_system_mode,
 )
 
 # ── Concrete agent classes ────────────────────────────────────────────────────
@@ -78,4 +79,5 @@ __all__ = [
     "_get_rate_limiter_registry",
     "_get_retry_async",
     "_parse_architect_structured",
+    "_read_system_mode",
 ]

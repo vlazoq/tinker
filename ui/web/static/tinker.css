@@ -41,6 +41,27 @@ body {
 .app-header h1 { font-size: 16px; font-weight: 700; letter-spacing: 2px; color: var(--accent); }
 .app-header .version { font-size: 11px; color: var(--muted); }
 
+.mode-switch {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  margin-right: 12px;
+  gap: 4px;
+}
+.mode-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 2px;
+  border: 1px solid var(--border);
+}
+.mode-topic-input {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+}
+
 .status-badge {
   display: flex; align-items: center; gap: 6px;
   padding: 3px 10px;
