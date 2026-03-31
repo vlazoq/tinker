@@ -5,7 +5,7 @@ core/tools/research_crawler.py
 Continuous Research Crawler — the batch-and-crawl pipeline for indefinite
 context gathering.
 
-This module implements the iterative research cycle described by the user:
+This module implements the iterative research cycle:
 
     1. Search for the topic → get first N results
     2. For each result: scrape, judge usefulness, extract key content
@@ -34,10 +34,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 logger = logging.getLogger("tinker.research_crawler")
 
@@ -142,6 +144,8 @@ class ResearchCrawler:
         Compact the knowledge pool after this many batches (default 3).
     llm_timeout : float
         Timeout for each LLM call in seconds (default 15).
+    url_timeout : float
+        Total timeout for processing a single URL (scrape + judge), default 45.
     """
 
     def __init__(
@@ -156,6 +160,7 @@ class ResearchCrawler:
         relevance_threshold: float = 0.4,
         compact_every: int = 3,
         llm_timeout: float = 15.0,
+        url_timeout: float = 45.0,
     ) -> None:
         self._search = search_tool
         self._scraper = scraper_tool
@@ -167,6 +172,7 @@ class ResearchCrawler:
         self.relevance_threshold = relevance_threshold
         self.compact_every = compact_every
         self._llm_timeout = llm_timeout
+        self._url_timeout = url_timeout
         self._llm_semaphore = asyncio.Semaphore(2)
 
         # State
@@ -177,6 +183,7 @@ class ResearchCrawler:
             "batches_run": 0,
             "pages_scraped": 0,
             "pages_judged_useful": 0,
+            "pages_skipped_timeout": 0,
             "sublinks_followed": 0,
             "compactions_run": 0,
         }
@@ -214,15 +221,24 @@ class ResearchCrawler:
             topic, offset, self.batch_size,
         )
 
-        # Step 1: Search
+        # Step 1: Search — use public execute() API
         try:
-            results = await self._search._execute(
+            search_result = await self._search.execute(
                 query=search_query,
                 num_results=self.batch_size,
             )
+            results = search_result.data if search_result.success else []
+            if not search_result.success:
+                logger.warning(
+                    "ResearchCrawler: search returned error: %s",
+                    search_result.error,
+                )
         except Exception as exc:
             logger.warning("ResearchCrawler: search failed: %s", exc)
             return pool
+
+        if not isinstance(results, list):
+            results = []
 
         # Advance offset for next batch
         self._search_offset[topic] = offset + self.batch_size
@@ -230,17 +246,25 @@ class ResearchCrawler:
 
         # Step 2–3: Scrape, judge, follow sublinks for each result
         for result in results:
-            url = result.get("url", "")
+            url = result.get("url", "") if isinstance(result, dict) else ""
             if not url or url in pool._seen_urls:
                 continue
 
-            await self._process_url(
-                url=url,
-                topic=topic,
-                pool=pool,
-                snippet=result.get("snippet", ""),
-                depth=0,
-            )
+            try:
+                await asyncio.wait_for(
+                    self._process_url(
+                        url=url,
+                        topic=topic,
+                        pool=pool,
+                        snippet=result.get("snippet", ""),
+                        depth=0,
+                    ),
+                    timeout=self._url_timeout,
+                )
+            except TimeoutError:
+                logger.debug("ResearchCrawler: timeout processing %s — skipping", url)
+                self._stats["pages_skipped_timeout"] += 1
+                pool._seen_urls.add(url)  # don't retry
 
         self._stats["batches_run"] += 1
         self._batches_completed[topic] = self._batches_completed.get(topic, 0) + 1
@@ -250,10 +274,18 @@ class ResearchCrawler:
             await self.compact(topic)
 
         logger.info(
-            "ResearchCrawler: batch done for %r — pool has %d findings",
-            topic, len(pool.findings),
+            "ResearchCrawler: batch done for %r — pool has %d findings | %s",
+            topic, len(pool.findings), self._stats_summary(),
         )
         return pool
+
+    def _stats_summary(self) -> str:
+        """One-line stats for log messages."""
+        s = self._stats
+        return (
+            f"scraped={s['pages_scraped']} useful={s['pages_judged_useful']} "
+            f"sublinks={s['sublinks_followed']} timeouts={s['pages_skipped_timeout']}"
+        )
 
     # ------------------------------------------------------------------
     # Process a single URL
@@ -272,18 +304,25 @@ class ResearchCrawler:
             return None
         pool._seen_urls.add(url)
 
-        # Scrape the page (with links so we can follow sublinks)
+        # Scrape the page — use public execute() API
         try:
-            scrape_result = await self._scraper._execute(
+            scrape_result = await self._scraper.execute(
                 url=url,
                 include_links=(depth < self.max_sublink_depth),
             )
+            if not scrape_result.success:
+                logger.debug(
+                    "ResearchCrawler: scrape error for %s: %s",
+                    url, scrape_result.error,
+                )
+                return None
+            scrape_data = scrape_result.data or {}
         except Exception as exc:
             logger.debug("ResearchCrawler: scrape failed for %s: %s", url, exc)
             return None
 
-        text = scrape_result.get("text", "")
-        title = scrape_result.get("title", "")
+        text = scrape_data.get("text", "")
+        title = scrape_data.get("title", "")
         self._stats["pages_scraped"] += 1
 
         if not text or len(text) < 50:
@@ -314,12 +353,11 @@ class ResearchCrawler:
 
         added = pool.add(finding)
         if added:
-            # Archive to memory for cross-session reuse
             await self._archive_finding(topic, finding)
 
         # Follow sublinks if within depth limit
         if depth < self.max_sublink_depth:
-            links = scrape_result.get("links") or []
+            links = scrape_data.get("links") or []
             sublinks = self._filter_sublinks(links, url, pool)
             for sublink in sublinks[: self.max_sublinks_per_page]:
                 self._stats["sublinks_followed"] += 1
@@ -363,7 +401,6 @@ class ResearchCrawler:
         try:
             from core.llm.types import AgentRole
 
-            # Truncate to fit small model context
             sample = text[:4000]
             prompt = (
                 f"You are evaluating a web page for research on: \"{topic}\"\n\n"
@@ -390,13 +427,13 @@ class ResearchCrawler:
                     ),
                     timeout=self._llm_timeout,
                 )
-            import json
 
             raw = resp.raw_text.strip()
-            # Try to extract JSON from the response
-            if "{" in raw:
-                json_str = raw[raw.index("{"):raw.rindex("}") + 1]
-                return json.loads(json_str)
+            return self._parse_judge_json(raw, text)
+        except TimeoutError:
+            logger.warning("ResearchCrawler: judge LLM timed out for %r", title[:60])
+        except json.JSONDecodeError as exc:
+            logger.warning("ResearchCrawler: judge returned invalid JSON: %s", exc)
         except Exception as exc:
             logger.debug("ResearchCrawler: judge failed: %s", exc)
 
@@ -407,6 +444,49 @@ class ResearchCrawler:
             "key_points": [],
             "examples": [],
         }
+
+    @staticmethod
+    def _parse_judge_json(raw: str, text: str) -> dict:
+        """Extract and parse JSON from the judge model's response.
+
+        Handles cases where the model wraps JSON in markdown fences or
+        includes preamble text before/after the JSON object.
+        """
+        # Strip markdown code fences if present
+        cleaned = raw
+        if "```" in cleaned:
+            # Extract content between first ``` and last ```
+            parts = cleaned.split("```")
+            if len(parts) >= 3:
+                cleaned = parts[1]
+                # Strip optional language tag (e.g., ```json)
+                if cleaned.startswith("json"):
+                    cleaned = cleaned[4:]
+                cleaned = cleaned.strip()
+
+        # Find the outermost JSON object
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise json.JSONDecodeError("No JSON object found", raw, 0)
+
+        parsed = json.loads(cleaned[start:end + 1])
+
+        # Validate and clamp relevance_score
+        score = parsed.get("relevance_score", 0.5)
+        if not isinstance(score, (int, float)):
+            score = 0.5
+        parsed["relevance_score"] = max(0.0, min(1.0, float(score)))
+
+        # Ensure required fields exist
+        if "extracted_content" not in parsed or not parsed["extracted_content"]:
+            parsed["extracted_content"] = text[:2000]
+        if "key_points" not in parsed or not isinstance(parsed["key_points"], list):
+            parsed["key_points"] = []
+        if "examples" not in parsed or not isinstance(parsed["examples"], list):
+            parsed["examples"] = []
+
+        return parsed
 
     # ------------------------------------------------------------------
     # Sublink filtering
@@ -422,14 +502,11 @@ class ResearchCrawler:
         source_domain = urlparse(source_url).netloc
         filtered = []
         for link in links:
-            # Skip already-seen URLs
             if link in pool._seen_urls:
                 continue
-            # Skip non-http links
             parsed = urlparse(link)
             if parsed.scheme not in ("http", "https"):
                 continue
-            # Skip common non-content paths
             path_lower = parsed.path.lower()
             skip_patterns = (
                 "/login", "/signup", "/register", "/cart", "/checkout",
@@ -439,7 +516,6 @@ class ResearchCrawler:
             )
             if any(pat in path_lower for pat in skip_patterns):
                 continue
-            # Prefer same-domain links (more likely to be related content)
             link_domain = parsed.netloc
             if link_domain == source_domain:
                 filtered.insert(0, link)  # prioritise same-domain
@@ -497,7 +573,6 @@ class ResearchCrawler:
         try:
             from core.llm.types import AgentRole
 
-            # Build a digest of all findings
             digest_parts = []
             for f in pool.findings[:20]:
                 entry = f"- [{f.relevance_score:.1f}] {f.title}: "
@@ -533,13 +608,13 @@ class ResearchCrawler:
                         ),
                         temperature=0.3,
                     ),
-                    timeout=self._llm_timeout * 2,  # summary takes longer
+                    timeout=self._llm_timeout * 2,
                 )
             summary = resp.raw_text.strip()
             if summary and len(summary) > 50:
                 return summary
         except Exception as exc:
-            logger.debug("ResearchCrawler: summary generation failed: %s", exc)
+            logger.warning("ResearchCrawler: summary generation failed: %s", exc)
 
         return pool.summary  # keep existing summary on failure
 
@@ -573,7 +648,9 @@ class ResearchCrawler:
                 timeout=10.0,
             )
         except Exception as exc:
-            logger.debug("ResearchCrawler: archive failed for %s: %s", finding.url, exc)
+            logger.warning(
+                "ResearchCrawler: archive failed for %s: %s", finding.url, exc
+            )
 
     # ------------------------------------------------------------------
     # Run continuously (for background usage)
@@ -584,10 +661,11 @@ class ResearchCrawler:
         topic: str,
         query: str | None = None,
         max_batches: int = 0,
+        max_runtime_seconds: float = 0,
         pause_seconds: float = 5.0,
         on_batch_complete: Any = None,
     ) -> KnowledgePool:
-        """Run the crawl loop indefinitely (or up to max_batches).
+        """Run the crawl loop indefinitely (or up to max_batches/max_runtime).
 
         Parameters
         ----------
@@ -596,7 +674,11 @@ class ResearchCrawler:
         query : str | None
             Initial search query (defaults to topic).
         max_batches : int
-            Stop after this many batches (0 = run forever).
+            Stop after this many batches (0 = no batch limit).
+        max_runtime_seconds : float
+            Stop after this many seconds (0 = no time limit).
+            At least one of max_batches or max_runtime_seconds should be
+            set to prevent truly unbounded execution.
         pause_seconds : float
             Pause between batches to avoid hammering search engines.
         on_batch_complete : callable | None
@@ -607,10 +689,25 @@ class ResearchCrawler:
         The final KnowledgePool when the loop exits.
         """
         batch_num = 0
-        while max_batches == 0 or batch_num < max_batches:
-            pool = await self.run_batch(topic, query=query)
+        start_time = time.monotonic()
 
+        while True:
+            # Check batch limit
+            if max_batches > 0 and batch_num >= max_batches:
+                break
+            # Check runtime limit
+            if max_runtime_seconds > 0:
+                elapsed = time.monotonic() - start_time
+                if elapsed >= max_runtime_seconds:
+                    logger.info(
+                        "ResearchCrawler: runtime limit reached (%.0fs)",
+                        elapsed,
+                    )
+                    break
+
+            pool = await self.run_batch(topic, query=query)
             batch_num += 1
+
             if on_batch_complete is not None:
                 try:
                     result = on_batch_complete(pool, batch_num)
@@ -625,8 +722,7 @@ class ResearchCrawler:
                 if refined:
                     query = refined
 
-            if max_batches == 0 or batch_num < max_batches:
-                await asyncio.sleep(pause_seconds)
+            await asyncio.sleep(pause_seconds)
 
         return self.get_pool(topic)
 
