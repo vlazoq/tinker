@@ -91,6 +91,14 @@ class TestKnowledgePool:
 # ---------------------------------------------------------------------------
 
 
+class _ToolResult:
+    """Minimal stand-in for a tool result with .success / .data / .error."""
+    def __init__(self, data, success=True, error=None):
+        self.data = data
+        self.success = success
+        self.error = error
+
+
 def _make_search_tool(results=None):
     """Create a mock search tool."""
     tool = MagicMock()
@@ -99,7 +107,7 @@ def _make_search_tool(results=None):
             {"title": "Result 1", "url": "http://example.com/1", "snippet": "Snippet 1"},
             {"title": "Result 2", "url": "http://example.com/2", "snippet": "Snippet 2"},
         ]
-    tool._execute = AsyncMock(return_value=results)
+    tool.execute = AsyncMock(return_value=_ToolResult(data=results))
     return tool
 
 
@@ -108,15 +116,15 @@ def _make_scraper_tool(text="This is useful research content about the topic. " 
     tool = MagicMock()
 
     async def _scrape(url, include_links=False, **kwargs):
-        return {
+        return _ToolResult(data={
             "url": url,
             "title": f"Page at {url}",
             "text": text,
             "word_count": len(text.split()),
             "links": links or [],
-        }
+        })
 
-    tool._execute = AsyncMock(side_effect=_scrape)
+    tool.execute = AsyncMock(side_effect=_scrape)
     return tool
 
 
@@ -129,16 +137,16 @@ class TestResearchCrawler:
 
             async def _scrape_unique(url, include_links=False, **kw):
                 _call_count["n"] += 1
-                return {
+                return _ToolResult(data={
                     "url": url,
                     "title": f"Page at {url}",
                     "text": f"Unique research content about topic number {_call_count['n']}. " * 20,
                     "word_count": 100,
                     "links": links or [],
-                }
+                })
 
             scraper = MagicMock()
-            scraper._execute = AsyncMock(side_effect=_scrape_unique)
+            scraper.execute = AsyncMock(side_effect=_scrape_unique)
         else:
             scraper = _make_scraper_tool(text=scrape_text or "Useful content " * 20, links=links)
         return ResearchCrawler(
@@ -175,7 +183,7 @@ class TestResearchCrawler:
     @pytest.mark.asyncio
     async def test_run_batch_search_failure(self):
         crawler = self._make_crawler()
-        crawler._search._execute = AsyncMock(side_effect=Exception("search down"))
+        crawler._search.execute = AsyncMock(side_effect=Exception("search down"))
         pool = await crawler.run_batch("failing topic")
         assert len(pool.findings) == 0
 

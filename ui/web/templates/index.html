@@ -37,23 +37,78 @@ const api = {
       .catch(err => { console.warn(`DELETE ${url}:`, err.message); return { ok: false, error: err.message }; }),
 };
 
+// ── Toast system ─────────────────────────────────────────────────────────────
+const ToastContext = React.createContext({ addToast: () => {} });
+
+const ToastProvider = ({ children }) => {
+  const [toasts, setToasts] = useState([]);
+  const idRef = useRef(0);
+
+  const addToast = useCallback((message, type = 'info', duration = 3500) => {
+    const id = ++idRef.current;
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration + 300);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={{ addToast }}>
+      {children}
+      <div className="toast-container">
+        {toasts.map(t => (
+          <div key={t.id} className={`toast toast-${t.type}`} style={{'--toast-duration': '3s'}}>
+            {t.message}
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+};
+
+const useToast = () => React.useContext(ToastContext);
+
 // ── Shared components ─────────────────────────────────────────────────────────
 const Spinner = () => <span className="spinner" />;
 
-const Alert = ({ type = 'info', children }) => (
-  <div className={`alert alert-${type}`}>{children}</div>
+const Alert = ({ type = 'info', children, onDismiss }) => (
+  <div className={`alert alert-${type}`}>
+    <div style={{flex:1}}>{children}</div>
+    {onDismiss && (
+      <button onClick={onDismiss} style={{background:'none',border:'none',color:'inherit',cursor:'pointer',opacity:.6,fontSize:16,padding:0,lineHeight:1}}>&times;</button>
+    )}
+  </div>
 );
 
 const Badge = ({ status }) => (
   <span className={`badge badge-${status}`}>{status}</span>
 );
 
-const StatBox = ({ value, label }) => (
-  <div className="stat-box">
+const StatBox = ({ value, label, variant }) => (
+  <div className={`stat-box${variant ? ` stat-box--${variant}` : ''}`}>
     <div className="value">{value ?? '—'}</div>
     <div className="label">{label}</div>
   </div>
 );
+
+const EmptyState = ({ icon = '—', text, hint }) => (
+  <div className="empty-state">
+    <div className="empty-state-icon">{icon}</div>
+    <div className="empty-state-text">{text}</div>
+    {hint && <div className="empty-state-hint">{hint}</div>}
+  </div>
+);
+
+const SectionTitle = ({ children, actions }) => (
+  <div className="flex justify-between items-center mb-12">
+    <div className="card-title" style={{marginBottom:0}}>{children}</div>
+    {actions && <div className="flex gap-8">{actions}</div>}
+  </div>
+);
+
+const ScoreDisplay = ({ score }) => {
+  if (score == null) return <span className="muted">—</span>;
+  const cls = score >= 0.8 ? 'score-high' : score >= 0.6 ? 'score-medium' : 'score-low';
+  return <span className={`score ${cls}`}>{(score * 10).toFixed(1)}/10</span>;
+};
 
 // ── Status badge (header) ─────────────────────────────────────────────────────
 const StatusBadge = ({ online }) => (
@@ -93,10 +148,10 @@ const Dashboard = () => {
       )}
 
       <div className="grid-4 mb-16">
-        <StatBox value={loops.micro ?? '—'} label="Micro Loops" />
+        <StatBox value={loops.micro ?? '—'} label="Micro Loops" variant="success" />
         <StatBox value={loops.meso  ?? '—'} label="Meso Loops" />
-        <StatBox value={loops.macro ?? '—'} label="Macro Loops" />
-        <StatBox value={loops.stagnation_events ?? '—'} label="Stagnation Events" />
+        <StatBox value={loops.macro ?? '—'} label="Macro Loops" variant="purple" />
+        <StatBox value={loops.stagnation_events ?? '—'} label="Stagnation Events" variant="warning" />
       </div>
 
       <div className="grid-2">
@@ -123,7 +178,7 @@ const Dashboard = () => {
         <div className="card">
           <div className="card-title">Circuit Breakers</div>
           {Object.keys(cbs).length === 0
-            ? <p className="muted">No data</p>
+            ? <EmptyState icon="~" text="No circuit breakers registered" />
             : <table><tbody>
                 {Object.entries(cbs).map(([name, state]) => (
                   <tr key={name}>
@@ -138,7 +193,7 @@ const Dashboard = () => {
         <div className="card">
           <div className="card-title">Memory / Storage</div>
           {Object.keys(memory).length === 0
-            ? <p className="muted">No data</p>
+            ? <EmptyState icon="~" text="No storage data" />
             : <table><tbody>
                 {Object.entries(memory).map(([name, status]) => (
                   <tr key={name}>
@@ -151,8 +206,8 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <div style={{textAlign:'right', marginTop:8}}>
-        <button className="btn btn-ghost btn-sm" onClick={refresh}>↻ Refresh</button>
+      <div className="text-right mt-8">
+        <button className="btn btn-ghost btn-sm" onClick={refresh}>Refresh</button>
       </div>
     </div>
   );
@@ -346,19 +401,17 @@ const TaskQueue = () => {
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
 
       <div className="grid-4 mb-16">
-        {['pending','active','complete','failed'].map(s => (
-          <StatBox key={s} value={stats[s] ?? 0} label={s.toUpperCase()} />
-        ))}
+        <StatBox value={stats.pending ?? 0}  label="Pending"  variant="warning" />
+        <StatBox value={stats.active ?? 0}   label="Active"   />
+        <StatBox value={stats.complete ?? 0} label="Complete" variant="success" />
+        <StatBox value={stats.failed ?? 0}   label="Failed"   variant="danger" />
       </div>
 
       <div className="card">
-        <div className="flex justify-between items-center mb-16">
-          <div className="card-title" style={{marginBottom:0}}>Tasks ({data.tasks?.length})</div>
-          <div className="flex gap-8">
-            <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
-            <button className="btn btn-primary btn-sm" onClick={() => setShowInject(true)}>+ Inject Task</button>
-          </div>
-        </div>
+        <SectionTitle actions={<>
+          <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowInject(true)}>+ Inject Task</button>
+        </>}>Tasks ({data.tasks?.length})</SectionTitle>
         <div className="table-wrap">
           <table>
             <thead><tr>
@@ -377,7 +430,7 @@ const TaskQueue = () => {
                   <td className="muted mono" style={{fontSize:11}}>{t.created_at?.slice(0,16)}</td>
                 </tr>
               ))}
-              {!data.tasks?.length && <tr><td colSpan={7} className="muted" style={{textAlign:'center',padding:20}}>No tasks found</td></tr>}
+              {!data.tasks?.length && <tr><td colSpan={7}><EmptyState text="No tasks found" hint="Inject a task to get started" /></td></tr>}
             </tbody>
           </table>
         </div>
@@ -468,16 +521,15 @@ const DLQ = () => {
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
 
       <div className="grid-3 mb-16">
-        <StatBox value={stats.pending  ?? 0} label="PENDING" />
-        <StatBox value={stats.resolved ?? 0} label="RESOLVED" />
-        <StatBox value={stats.discarded ?? 0} label="DISCARDED" />
+        <StatBox value={stats.pending  ?? 0} label="Pending" variant="warning" />
+        <StatBox value={stats.resolved ?? 0} label="Resolved" variant="success" />
+        <StatBox value={stats.discarded ?? 0} label="Discarded" />
       </div>
 
       <div className="card">
-        <div className="flex justify-between items-center mb-16">
-          <div className="card-title" style={{marginBottom:0}}>Dead Letter Queue ({data.items?.length})</div>
-          <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
-        </div>
+        <SectionTitle actions={
+          <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+        }>Dead Letter Queue ({data.items?.length})</SectionTitle>
         <div className="table-wrap">
           <table>
             <thead><tr>
@@ -504,7 +556,7 @@ const DLQ = () => {
                   </td>
                 </tr>
               ))}
-              {!data.items?.length && <tr><td colSpan={7} className="muted" style={{textAlign:'center',padding:20}}>Queue is empty</td></tr>}
+              {!data.items?.length && <tr><td colSpan={7}><EmptyState text="Queue is empty" hint="No failed operations to review" /></td></tr>}
             </tbody>
           </table>
         </div>
@@ -557,21 +609,16 @@ const Backups = () => {
       {msg && <Alert type={msg.type}>{msg.text}</Alert>}
 
       <div className="card">
-        <div className="flex justify-between items-center mb-16">
-          <div>
-            <div className="card-title" style={{marginBottom:4}}>Backups</div>
-            <p className="muted" style={{fontSize:12}}>Stored in <code>{data.backup_dir}</code></p>
-          </div>
-          <div className="flex gap-8">
-            <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
-            <button className="btn btn-primary" onClick={trigger} disabled={triggering}>
-              {triggering ? <><Spinner /> Triggering…</> : '+ Create Backup'}
-            </button>
-          </div>
-        </div>
+        <SectionTitle actions={<>
+          <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+          <button className="btn btn-primary btn-sm" onClick={trigger} disabled={triggering}>
+            {triggering ? <><Spinner /> Triggering...</> : '+ Create Backup'}
+          </button>
+        </>}>Backups</SectionTitle>
+        <p className="muted mb-12" style={{fontSize:12}}>Stored in <code>{data.backup_dir}</code></p>
 
         {!data.backups?.length
-          ? <p className="muted" style={{textAlign:'center',padding:20}}>No backups found</p>
+          ? <EmptyState text="No backups found" hint="Create your first backup above" />
           : <div className="table-wrap">
               <table>
                 <thead><tr><th>ID</th><th>Created At</th><th>Size</th><th>Files</th><th>Errors</th></tr></thead>
@@ -646,10 +693,9 @@ const AuditLog = () => {
       </div>
 
       <div className="card">
-        <div className="flex justify-between items-center mb-16">
-          <div className="card-title" style={{marginBottom:0}}>Audit Events</div>
-          <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
-        </div>
+        <SectionTitle actions={
+          <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+        }>Audit Events</SectionTitle>
         <div className="table-wrap">
           <table>
             <thead><tr><th>Time</th><th>Event Type</th><th>Actor</th><th>Resource</th><th>Outcome</th><th>Trace</th></tr></thead>
@@ -676,7 +722,7 @@ const AuditLog = () => {
                   )}
                 </React.Fragment>
               ))}
-              {!data.items?.length && <tr><td colSpan={6} className="muted" style={{textAlign:'center',padding:20}}>No events found</td></tr>}
+              {!data.items?.length && <tr><td colSpan={6}><EmptyState text="No events found" hint="Adjust filters or wait for activity" /></td></tr>}
             </tbody>
           </table>
         </div>
@@ -811,10 +857,10 @@ const GrubStatus = () => {
       )}
 
       <div className="grid-4 mb-16">
-        <StatBox value={implPending}   label="Impl Pending" />
-        <StatBox value={implCompleted} label="Impl Done" />
+        <StatBox value={implPending}   label="Impl Pending" variant="warning" />
+        <StatBox value={implCompleted} label="Impl Done" variant="success" />
         <StatBox value={reviewPending} label="Review Pending" />
-        <StatBox value={artifacts.length} label="Artifacts" />
+        <StatBox value={artifacts.length} label="Artifacts" variant="purple" />
       </div>
 
       <div className="grid-2">
@@ -863,17 +909,12 @@ const GrubStatus = () => {
       </div>
 
       <div className="card">
-        <div className="flex justify-between items-center mb-16">
-          <div className="card-title" style={{marginBottom:0}}>
-            Recent Grub Artifacts ({artifacts.length})
-          </div>
-          <div className="flex gap-8">
-            <span className="muted" style={{fontSize:12}}>{data?.artifacts_dir}</span>
-            <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
-          </div>
-        </div>
+        <SectionTitle actions={<>
+          <span className="muted" style={{fontSize:12}}>{data?.artifacts_dir}</span>
+          <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+        </>}>Recent Grub Artifacts ({artifacts.length})</SectionTitle>
         {!artifacts.length
-          ? <p className="muted" style={{textAlign:'center',padding:20}}>No artifacts yet</p>
+          ? <EmptyState text="No artifacts yet" hint="Grub will create artifacts as it processes tasks" />
           : <div className="table-wrap">
               <table>
                 <thead><tr>
@@ -885,14 +926,7 @@ const GrubStatus = () => {
                     <tr key={i}>
                       <td className="mono" style={{fontSize:12}}>{a.name}</td>
                       <td className="muted">{a.subsystem || '—'}</td>
-                      <td>
-                        {a.score != null
-                          ? <span style={{color: scoreColor(a.score), fontWeight:'bold'}}>
-                              {(a.score * 10).toFixed(1)}/10
-                            </span>
-                          : <span className="muted">—</span>
-                        }
-                      </td>
+                      <td><ScoreDisplay score={a.score} /></td>
                       <td className="muted">{a.size_bytes > 1024 ? `${(a.size_bytes/1024).toFixed(1)}K` : `${a.size_bytes}B`}</td>
                       <td className="muted mono" style={{fontSize:11}}>{a.mtime?.slice(11,19)}</td>
                     </tr>
@@ -960,90 +994,86 @@ const FritzPanel = () => {
   const ghRepo  = status?.github_repo;
 
   return (
-    <div>
+    <div className="fade-in">
       {/* ── Status card ── */}
       <div className="card">
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
-          <h2 style={{margin:0}}>🔀 Fritz — Git Integration</h2>
-          <button className="btn btn-secondary btn-sm" onClick={refresh}>↻ Refresh</button>
-        </div>
+        <SectionTitle actions={
+          <button className="btn btn-ghost btn-sm" onClick={refresh}>Refresh</button>
+        }>Fritz — Git Integration</SectionTitle>
 
         {!status?.config_exists && (
-          <Alert type="warning">
+          <Alert type="warn">
             <code>fritz_config.json</code> not found — showing defaults.
             Run Fritz once to generate a config file.
           </Alert>
         )}
 
-        <div className="stats-grid" style={{gridTemplateColumns:'repeat(4,1fr)', marginBottom:12}}>
+        <div className="grid-4 mb-16">
           <StatBox value={git.branch || '—'} label="Branch" />
-          <StatBox value={git.sha    || '—'} label="HEAD" />
-          <StatBox value={git.clean ? '✓ clean' : '⚠ dirty'} label="Working tree" />
+          <StatBox value={git.sha ? git.sha.slice(0,8) : '—'} label="HEAD" />
+          <StatBox value={git.clean ? 'Clean' : 'Dirty'} label="Working Tree" variant={git.clean ? 'success' : 'warning'} />
           <StatBox value={status?.identity_mode || '—'} label="Identity" />
         </div>
 
-        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+        <div className="info-grid">
           <div>
-            <strong>Platforms</strong>
-            <ul style={{margin:'4px 0', paddingLeft:18, fontSize:13}}>
+            <div className="card-title">Platforms</div>
+            <ul className="info-list">
               <li>
-                GitHub: {status?.github_enabled
-                  ? <span className="badge badge-completed">enabled</span>
-                  : <span className="badge badge-failed">disabled</span>}
+                <span className="info-label">GitHub</span>
+                {status?.github_enabled
+                  ? <Badge status="complete" />
+                  : <Badge status="failed" />}
                 {ghOwner && ghRepo && <span className="muted"> {ghOwner}/{ghRepo}</span>}
               </li>
               <li>
-                Gitea: {status?.gitea_enabled
-                  ? <span className="badge badge-completed">enabled</span>
-                  : <span className="badge badge-failed">disabled</span>}
+                <span className="info-label">Gitea</span>
+                {status?.gitea_enabled
+                  ? <Badge status="complete" />
+                  : <Badge status="failed" />}
                 {status?.gitea_base_url && <span className="muted"> {status.gitea_base_url}</span>}
               </li>
             </ul>
           </div>
           <div>
-            <strong>Push Policy</strong>
-            <ul style={{margin:'4px 0', paddingLeft:18, fontSize:13}}>
-              <li>push to main: <code>{String(pp.allow_push_to_main)}</code></li>
-              <li>require PR: <code>{String(pp.require_pr)}</code></li>
-              <li>require CI: <code>{String(pp.require_ci_green)}</code></li>
-              <li>merge method: <code>{pp.auto_merge_method}</code></li>
+            <div className="card-title">Push Policy</div>
+            <ul className="info-list">
+              <li><span className="info-label">Push to main</span> <code>{String(pp.allow_push_to_main)}</code></li>
+              <li><span className="info-label">Require PR</span> <code>{String(pp.require_pr)}</code></li>
+              <li><span className="info-label">Require CI</span> <code>{String(pp.require_ci_green)}</code></li>
+              <li><span className="info-label">Merge method</span> <code>{pp.auto_merge_method}</code></li>
             </ul>
           </div>
         </div>
 
         {git.remotes?.length > 0 && (
-          <div style={{marginTop:8}}>
-            <strong>Remotes</strong>
-            <ul style={{margin:'4px 0', paddingLeft:18, fontSize:12}} className="muted">
-              {git.remotes.map((r, i) => <li key={i}><code>{r}</code></li>)}
-            </ul>
+          <div className="mt-12">
+            <div className="card-title">Remotes</div>
+            <div className="flex gap-8" style={{flexWrap:'wrap'}}>
+              {git.remotes.map((r, i) => <code key={i}>{r}</code>)}
+            </div>
           </div>
         )}
 
         {git.status && (
-          <div style={{marginTop:8}}>
-            <strong>Uncommitted changes</strong>
-            <pre style={{fontSize:12, margin:'4px 0', background:'var(--bg-card-alt,#161b22)', padding:'6px 10px', borderRadius:4}}>
-              {git.status}
-            </pre>
+          <div className="mt-12">
+            <div className="card-title">Uncommitted Changes</div>
+            <pre>{git.status}</pre>
           </div>
         )}
 
-        {/* Verify connections */}
-        <div style={{marginTop:12}}>
+        <div className="mt-12 flex gap-8 items-center">
           <button className="btn btn-secondary btn-sm" onClick={verify} disabled={busy}>
-            {busy ? <Spinner /> : '🔌 Verify Connections'}
+            {busy ? <Spinner /> : 'Verify Connections'}
           </button>
           {verifyRes && (
-            <span style={{marginLeft:10, fontSize:13}}>
+            <span className="flex gap-8 items-center" style={{fontSize:13}}>
               {Object.entries(verifyRes.connections || {}).map(([p, ok]) => (
-                <span key={p} style={{marginRight:8}}>
-                  {p}: {ok
-                    ? <span className="badge badge-completed">OK</span>
-                    : <span className="badge badge-failed">FAIL</span>}
+                <span key={p} className="flex gap-6 items-center">
+                  {p}: <Badge status={ok ? 'complete' : 'failed'} />
                 </span>
               ))}
-              {verifyRes.error && <span className="badge badge-failed">{verifyRes.error}</span>}
+              {verifyRes.error && <Badge status="failed" />}
             </span>
           )}
         </div>
@@ -1051,112 +1081,83 @@ const FritzPanel = () => {
 
       {/* ── Result banner ── */}
       {result && (
-        <Alert type={result.ok ? 'success' : 'error'}>
+        <Alert type={result.ok ? 'success' : 'error'} onDismiss={() => setResult(null)}>
           {result.ok
             ? <>
-                ✓ {result.merged ? 'Committed, pushed, and merged' : result.direct_push ? 'Pushed directly' : 'PR created'}
+                {result.merged ? 'Committed, pushed, and merged' : result.direct_push ? 'Pushed directly' : 'PR created'}
                 {result.branch && <> — branch: <code>{result.branch}</code></>}
-                {result.commit_sha && <> SHA: <code>{result.commit_sha}</code></>}
-                {result.pr_url && <> <a href={result.pr_url} target="_blank" rel="noreferrer">{result.pr_url}</a></>}
+                {result.commit_sha && <> SHA: <code>{result.commit_sha.slice(0,8)}</code></>}
+                {result.pr_url && <> <a href={result.pr_url} target="_blank" rel="noreferrer" style={{color:'inherit',textDecoration:'underline'}}>{result.pr_url}</a></>}
               </>
-            : <>✗ {result.error || (result.errors || []).join('; ')}</>}
+            : <>{result.error || (result.errors || []).join('; ')}</>}
         </Alert>
       )}
 
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+      <div className="grid-2">
         {/* ── Commit & Ship ── */}
         <div className="card">
-          <h3 style={{marginTop:0}}>🚀 Commit &amp; Ship</h3>
-          <p style={{fontSize:13}} className="muted">
+          <div className="fritz-section-title">Commit &amp; Ship</div>
+          <p className="muted mb-12" style={{fontSize:13}}>
             Stages all changes, commits, and ships via PR or direct push according to policy.
           </p>
-          <label style={{fontSize:13}}>Commit message</label>
-          <input
-            className="form-input"
-            placeholder="fix: correct off-by-one in parser"
-            value={shipMsg}
-            onChange={e => setShipMsg(e.target.value)}
-          />
-          <label style={{fontSize:13, marginTop:8, display:'block'}}>Task ID (optional)</label>
-          <input
-            className="form-input"
-            placeholder="grub-abc123"
-            value={taskId}
-            onChange={e => setTaskId(e.target.value)}
-          />
-          <label style={{fontSize:13, marginTop:8, display:'flex', alignItems:'center', gap:6, cursor:'pointer'}}>
+          <div className="form-group">
+            <label>Commit message</label>
+            <input type="text" placeholder="fix: correct off-by-one in parser" value={shipMsg} onChange={e => setShipMsg(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Task ID (optional)</label>
+            <input type="text" placeholder="grub-abc123" value={taskId} onChange={e => setTaskId(e.target.value)} />
+          </div>
+          <label className="flex items-center gap-8" style={{fontSize:13,cursor:'pointer',marginBottom:12}}>
             <input type="checkbox" checked={autoMerge} onChange={e => setAutoMerge(e.target.checked)} />
             Auto-merge PR (if policy allows)
           </label>
-          <button
-            className="btn btn-primary"
-            style={{marginTop:12}}
-            onClick={ship}
-            disabled={busy || !shipMsg.trim()}
-          >
-            {busy ? <Spinner /> : '⚡ Commit & Ship'}
+          <button className="btn btn-primary" onClick={ship} disabled={busy || !shipMsg.trim()}>
+            {busy ? <Spinner /> : 'Commit & Ship'}
           </button>
         </div>
 
         {/* ── Push branch ── */}
         <div className="card">
-          <h3 style={{marginTop:0}}>⬆ Push Branch</h3>
-          <p style={{fontSize:13}} className="muted">
+          <div className="fritz-section-title">Push Branch</div>
+          <p className="muted mb-12" style={{fontSize:13}}>
             Push a local branch to all configured remotes.
           </p>
-          <label style={{fontSize:13}}>Branch name (leave blank for current)</label>
-          <input
-            className="form-input"
-            placeholder={git.branch || 'main'}
-            value={pushBranch}
-            onChange={e => setPushBranch(e.target.value)}
-          />
-          <button
-            className="btn btn-primary"
-            style={{marginTop:12}}
-            onClick={push}
-            disabled={busy}
-          >
-            {busy ? <Spinner /> : '⬆ Push'}
+          <div className="form-group">
+            <label>Branch name (leave blank for current)</label>
+            <input type="text" placeholder={git.branch || 'main'} value={pushBranch} onChange={e => setPushBranch(e.target.value)} />
+          </div>
+          <button className="btn btn-primary" onClick={push} disabled={busy}>
+            {busy ? <Spinner /> : 'Push'}
           </button>
         </div>
       </div>
 
       {/* ── Create PR ── */}
       <div className="card">
-        <h3 style={{marginTop:0}}>🔀 Create Pull Request</h3>
-        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
-          <div>
-            <label style={{fontSize:13}}>Title</label>
-            <input className="form-input" placeholder="fix: correct off-by-one" value={prTitle} onChange={e=>setPrTitle(e.target.value)} />
+        <div className="fritz-section-title">Create Pull Request</div>
+        <div className="grid-2">
+          <div className="form-group">
+            <label>Title</label>
+            <input type="text" placeholder="fix: correct off-by-one" value={prTitle} onChange={e=>setPrTitle(e.target.value)} />
           </div>
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
-            <div>
-              <label style={{fontSize:13}}>Head branch</label>
-              <input className="form-input" placeholder={git.branch || 'feature/xyz'} value={prHead} onChange={e=>setPrHead(e.target.value)} />
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Head branch</label>
+              <input type="text" placeholder={git.branch || 'feature/xyz'} value={prHead} onChange={e=>setPrHead(e.target.value)} />
             </div>
-            <div>
-              <label style={{fontSize:13}}>Base branch</label>
-              <input className="form-input" placeholder="main" value={prBase} onChange={e=>setPrBase(e.target.value)} />
+            <div className="form-group">
+              <label>Base branch</label>
+              <input type="text" placeholder="main" value={prBase} onChange={e=>setPrBase(e.target.value)} />
             </div>
           </div>
         </div>
-        <label style={{fontSize:13, marginTop:8, display:'block'}}>Description</label>
-        <textarea
-          className="form-input"
-          rows={3}
-          placeholder="Describe what this PR does…"
-          value={prBody}
-          onChange={e=>setPrBody(e.target.value)}
-          style={{resize:'vertical', fontFamily:'inherit'}}
-        />
-        <button
-          className="btn btn-primary"
-          style={{marginTop:12}}
-          onClick={createPr}
-          disabled={busy || !prTitle.trim() || !prHead.trim()}
-        >
-          {busy ? <Spinner /> : '🔀 Create PR'}
+        <div className="form-group">
+          <label>Description</label>
+          <textarea rows={3} placeholder="Describe what this PR does..." value={prBody} onChange={e=>setPrBody(e.target.value)} />
+        </div>
+        <button className="btn btn-primary" onClick={createPr} disabled={busy || !prTitle.trim() || !prHead.trim()}>
+          {busy ? <Spinner /> : 'Create PR'}
         </button>
       </div>
     </div>
@@ -1172,10 +1173,7 @@ const CAPABILITY_COLORS = {
   chat: '#8f7ab5', embedding: '#6eb5a8',
 };
 const CapBadge = ({cap}) => (
-  <span style={{
-    background: CAPABILITY_COLORS[cap] || '#555', color:'#fff',
-    borderRadius:4, padding:'1px 6px', fontSize:11, marginRight:3,
-  }}>{cap}</span>
+  <span className="cap-badge" style={{background: CAPABILITY_COLORS[cap] || '#555'}}>{cap}</span>
 );
 
 // ── Models / Active sub-tab ───────────────────────────────────────────────────
@@ -1198,61 +1196,57 @@ const ModelsActive = () => {
     setSwitching(false); load();
   };
 
-  if (!data) return <div className="card"><p>Loading…</p></div>;
+  if (!data) return <div className="card"><Spinner /> Loading...</div>;
   const { preset, main, judge } = data;
 
   return (
-    <div>
-      <div className="card" style={{marginBottom:12}}>
-        <h3 style={{marginTop:0}}>Active Preset</h3>
+    <div className="fade-in">
+      <div className="card mb-16">
+        <div className="card-title">Active Preset</div>
         {preset ? (
           <>
-            <div style={{display:'flex', gap:16, flexWrap:'wrap', marginBottom:8}}>
-              <div style={{flex:1, minWidth:200}}>
-                <div style={{fontSize:13, color:'#aaa', marginBottom:2}}>Preset</div>
-                <div style={{fontWeight:700, fontSize:18}}>{preset.display_name}</div>
-                <div style={{color:'#999', fontSize:12}}>{preset.description}</div>
+            <div className="grid-3">
+              <div>
+                <div className="muted" style={{fontSize:12,marginBottom:4}}>Preset</div>
+                <div className="font-bold" style={{fontSize:18}}>{preset.display_name}</div>
+                <div className="muted" style={{fontSize:12,marginTop:2}}>{preset.description}</div>
               </div>
-              <div style={{flex:1, minWidth:200}}>
-                <div style={{fontSize:13, color:'#aaa', marginBottom:2}}>Main (Architect / Researcher / Synthesizer)</div>
-                <div style={{fontWeight:600}}>{main ? main.display_name : <span style={{color:'#f66'}}>Not found</span>}</div>
-                {main && <div style={{fontSize:12, color:'#aaa'}}>{main.model_tag} @ {main.ollama_url}</div>}
-                {main && main.capabilities.map(c => <CapBadge key={c} cap={c}/>)}
+              <div>
+                <div className="muted" style={{fontSize:12,marginBottom:4}}>Main (Architect / Researcher / Synthesizer)</div>
+                <div className="font-semibold">{main ? main.display_name : <span style={{color:'var(--danger)'}}>Not found</span>}</div>
+                {main && <div className="muted" style={{fontSize:12}}>{main.model_tag} @ {main.ollama_url}</div>}
+                {main && <div className="mt-8">{main.capabilities.map(c => <CapBadge key={c} cap={c}/>)}</div>}
               </div>
-              <div style={{flex:1, minWidth:200}}>
-                <div style={{fontSize:13, color:'#aaa', marginBottom:2}}>Judge (Critic)</div>
-                <div style={{fontWeight:600}}>{judge ? judge.display_name : <span style={{color:'#f66'}}>Not found</span>}</div>
-                {judge && <div style={{fontSize:12, color:'#aaa'}}>{judge.model_tag} @ {judge.ollama_url}</div>}
-                {judge && judge.capabilities.map(c => <CapBadge key={c} cap={c}/>)}
+              <div>
+                <div className="muted" style={{fontSize:12,marginBottom:4}}>Judge (Critic)</div>
+                <div className="font-semibold">{judge ? judge.display_name : <span style={{color:'var(--danger)'}}>Not found</span>}</div>
+                {judge && <div className="muted" style={{fontSize:12}}>{judge.model_tag} @ {judge.ollama_url}</div>}
+                {judge && <div className="mt-8">{judge.capabilities.map(c => <CapBadge key={c} cap={c}/>)}</div>}
               </div>
             </div>
             {preset.grub_overrides && Object.keys(preset.grub_overrides).length > 0 && (
-              <div style={{fontSize:12, color:'#aaa', marginTop:4}}>
-                Grub overrides: {Object.entries(preset.grub_overrides).map(([k,v]) => `${k}→${v}`).join(', ')}
+              <div className="muted mt-8" style={{fontSize:12}}>
+                Grub overrides: {Object.entries(preset.grub_overrides).map(([k,v]) => `${k} → ${v}`).join(', ')}
               </div>
             )}
           </>
-        ) : <p style={{color:'#aaa'}}>No active preset set. Select one below.</p>}
-        {msg && <div style={{marginTop:8, color: msg.includes('error') || msg.includes('not found') ? '#f88' : '#8f8'}}>{msg}</div>}
+        ) : <EmptyState text="No active preset" hint="Select a preset below to get started" />}
+        {msg && <Alert type={msg.includes('error') || msg.includes('not found') ? 'error' : 'success'}>{msg}</Alert>}
       </div>
 
       <div className="card">
-        <h3 style={{marginTop:0}}>Quick-Switch Preset</h3>
-        <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
+        <div className="card-title">Quick-Switch Preset</div>
+        <div className="flex gap-8" style={{flexWrap:'wrap'}}>
           {presets.map(p => (
             <button key={p.name}
+              className={`btn ${p.is_active ? 'btn-success' : 'btn-secondary'}`}
               onClick={() => activate(p.name)}
-              disabled={switching}
-              style={{
-                padding:'8px 16px', borderRadius:6, border:'none', cursor:'pointer',
-                background: p.is_active ? '#3a8f6a' : '#3a3a4a', color:'#fff',
-                fontWeight: p.is_active ? 700 : 400,
-              }}>
-              {p.display_name}{p.is_active ? ' ✓' : ''}
+              disabled={switching}>
+              {p.display_name}{p.is_active ? ' (active)' : ''}
             </button>
           ))}
         </div>
-        <p style={{color:'#888', fontSize:12, marginBottom:0}}>
+        <p className="muted mt-8" style={{fontSize:12}}>
           Switching activates at the next orchestrator meso-loop boundary — no restart needed.
         </p>
       </div>
@@ -1308,89 +1302,95 @@ const ModelsPresets = () => {
   };
 
   return (
-    <div>
+    <div className="fade-in">
       {editing !== null && (
-        <div className="card" style={{marginBottom:12}}>
-          <h3 style={{marginTop:0}}>{editing.name ? `Edit: ${editing.display_name}` : 'New Preset'}</h3>
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
-            <label>Slug (name) <br/>
-              <input style={{width:'100%'}} value={form.name || ''} disabled={!!(editing && editing.name)}
+        <div className="card mb-16">
+          <div className="card-title">{editing.name ? `Edit: ${editing.display_name}` : 'New Preset'}</div>
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Slug (name)</label>
+              <input type="text" value={form.name || ''} disabled={!!(editing && editing.name)}
                 onChange={e => setForm(f => ({...f, name: e.target.value}))} placeholder="coding" />
-            </label>
-            <label>Display name <br/>
-              <input style={{width:'100%'}} value={form.display_name || ''}
+            </div>
+            <div className="form-group">
+              <label>Display name</label>
+              <input type="text" value={form.display_name || ''}
                 onChange={e => setForm(f => ({...f, display_name: e.target.value}))} placeholder="Coding" />
-            </label>
-            <label style={{gridColumn:'1/-1'}}>Description <br/>
-              <input style={{width:'100%'}} value={form.description || ''}
-                onChange={e => setForm(f => ({...f, description: e.target.value}))} />
-            </label>
-            <label>Main model (Architect/Researcher/Synthesizer) <br/>
-              <select style={{width:'100%'}} value={form.main_model_id || ''}
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Description</label>
+            <input type="text" value={form.description || ''}
+              onChange={e => setForm(f => ({...f, description: e.target.value}))} />
+          </div>
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Main model (Architect/Researcher/Synthesizer)</label>
+              <select value={form.main_model_id || ''}
                 onChange={e => setForm(f => ({...f, main_model_id: e.target.value}))}>
-                <option value="">— select —</option>
+                <option value="">-- select --</option>
                 {library.map(m => <option key={m.id} value={m.id}>{m.display_name} ({m.model_tag})</option>)}
               </select>
-            </label>
-            <label>Judge model (Critic) <br/>
-              <select style={{width:'100%'}} value={form.judge_model_id || ''}
+            </div>
+            <div className="form-group">
+              <label>Judge model (Critic)</label>
+              <select value={form.judge_model_id || ''}
                 onChange={e => setForm(f => ({...f, judge_model_id: e.target.value}))}>
-                <option value="">— select —</option>
+                <option value="">-- select --</option>
                 {library.map(m => <option key={m.id} value={m.id}>{m.display_name} ({m.model_tag})</option>)}
               </select>
-            </label>
-            <label style={{gridColumn:'1/-1'}}>Grub minion overrides (JSON, optional) <br/>
-              <textarea rows={3} style={{width:'100%', fontFamily:'monospace'}}
-                value={form.grub_overrides_text || '{}'}
-                onChange={e => setForm(f => ({...f, grub_overrides_text: e.target.value}))}
-                placeholder={'{"coder": "qwen2.5-coder:32b"}'} />
-            </label>
-            <label style={{gridColumn:'1/-1'}}>Notes <br/>
-              <input style={{width:'100%'}} value={form.notes || ''}
-                onChange={e => setForm(f => ({...f, notes: e.target.value}))} />
-            </label>
+            </div>
           </div>
-          <div style={{marginTop:10, display:'flex', gap:8}}>
-            <button onClick={save} disabled={busy}>Save</button>
-            <button onClick={() => setEditing(null)} style={{background:'#555'}}>Cancel</button>
+          <div className="form-group">
+            <label>Grub minion overrides (JSON, optional)</label>
+            <textarea rows={3} className="mono"
+              value={form.grub_overrides_text || '{}'}
+              onChange={e => setForm(f => ({...f, grub_overrides_text: e.target.value}))}
+              placeholder='{"coder": "qwen2.5-coder:32b"}' />
           </div>
-          {msg && <div style={{marginTop:6, color: msg === 'Saved.' ? '#8f8' : '#f88'}}>{msg}</div>}
+          <div className="form-group">
+            <label>Notes</label>
+            <input type="text" value={form.notes || ''}
+              onChange={e => setForm(f => ({...f, notes: e.target.value}))} />
+          </div>
+          <div className="flex gap-8">
+            <button className="btn btn-primary" onClick={save} disabled={busy}>Save</button>
+            <button className="btn btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
+          </div>
+          {msg && <div className="mt-8"><Alert type={msg === 'Saved.' ? 'success' : 'error'}>{msg}</Alert></div>}
         </div>
       )}
 
       <div className="card">
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
-          <h3 style={{margin:0}}>Presets</h3>
-          <button onClick={openNew}>+ New Preset</button>
-        </div>
-        {presets.length === 0 && <p style={{color:'#aaa'}}>No presets yet.</p>}
-        <div style={{display:'flex', flexDirection:'column', gap:8}}>
+        <SectionTitle actions={
+          <button className="btn btn-primary btn-sm" onClick={openNew}>+ New Preset</button>
+        }>Presets</SectionTitle>
+        {presets.length === 0 && <EmptyState text="No presets yet" hint="Create your first preset above" />}
+        <div className="flex-col gap-8">
           {presets.map(p => (
-            <div key={p.name} style={{
-              background: p.is_active ? '#1e3a2a' : '#2a2a3a',
-              borderRadius:8, padding:'10px 14px',
-              border: p.is_active ? '1px solid #3a8f6a' : '1px solid #3a3a4a',
-              display:'flex', alignItems:'center', gap:12,
-            }}>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:700}}>{p.display_name} {p.is_active && <span style={{color:'#3a8f6a', fontSize:12}}>(active)</span>}</div>
-                <div style={{fontSize:12, color:'#aaa'}}>{p.description}</div>
-                <div style={{fontSize:12, color:'#888', marginTop:2}}>
-                  Main: {p.main_model ? p.main_model.display_name : <span style={{color:'#f88'}}>{p.main_model_id || 'not set'}</span>}
+            <div key={p.name} className={`preset-card${p.is_active ? ' active' : ''}`}>
+              <div className="preset-info">
+                <div className="preset-name">
+                  {p.display_name}
+                  {p.is_active && <span style={{color:'var(--success)',fontSize:12,marginLeft:8}}>(active)</span>}
+                </div>
+                <div className="preset-desc">{p.description}</div>
+                <div className="preset-models">
+                  Main: {p.main_model ? p.main_model.display_name : <span style={{color:'var(--danger)'}}>{p.main_model_id || 'not set'}</span>}
                   {' · '}
-                  Judge: {p.judge_model ? p.judge_model.display_name : <span style={{color:'#f88'}}>{p.judge_model_id || 'not set'}</span>}
+                  Judge: {p.judge_model ? p.judge_model.display_name : <span style={{color:'var(--danger)'}}>{p.judge_model_id || 'not set'}</span>}
                   {Object.keys(p.grub_overrides||{}).length > 0 && ` · Grub: ${Object.keys(p.grub_overrides).length} override(s)`}
                 </div>
               </div>
-              <div style={{display:'flex', gap:6}}>
-                {!p.is_active && <button onClick={() => activate(p.name)} style={{background:'#3a8f6a', padding:'4px 10px', fontSize:12}}>Activate</button>}
-                <button onClick={() => openEdit(p)} style={{background:'#4a5a7a', padding:'4px 10px', fontSize:12}}>Edit</button>
-                <button onClick={() => remove(p.name)} style={{background:'#7a3a3a', padding:'4px 10px', fontSize:12}}>Delete</button>
+              <div className="preset-actions">
+                {!p.is_active && <button className="btn btn-success btn-sm" onClick={() => activate(p.name)}>Activate</button>}
+                <button className="btn btn-secondary btn-sm" onClick={() => openEdit(p)}>Edit</button>
+                <button className="btn btn-danger btn-sm" onClick={() => remove(p.name)}>Delete</button>
               </div>
             </div>
           ))}
         </div>
-        {msg && editing === null && <div style={{marginTop:8, color: msg.includes('error') || msg.includes('not found') ? '#f88' : '#8f8'}}>{msg}</div>}
+        {msg && editing === null && <div className="mt-8"><Alert type={msg.includes('error') || msg.includes('not found') ? 'error' : 'success'}>{msg}</Alert></div>}
       </div>
     </div>
   );
@@ -1423,57 +1423,81 @@ const ModelsLibrary = () => {
   };
 
   return (
-    <div>
+    <div className="fade-in">
       {showAdd && (
-        <div className="card" style={{marginBottom:12}}>
-          <h3 style={{marginTop:0}}>Add Model to Library</h3>
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10}}>
-            <label>ID (unique slug) <br/><input style={{width:'100%'}} value={form.id||''} onChange={e=>setForm(f=>({...f,id:e.target.value}))} placeholder="qwen3-7b-local"/></label>
-            <label>Ollama model tag <br/><input style={{width:'100%'}} value={form.model_tag||''} onChange={e=>setForm(f=>({...f,model_tag:e.target.value}))} placeholder="qwen3:7b"/></label>
-            <label>Display name <br/><input style={{width:'100%'}} value={form.display_name||''} onChange={e=>setForm(f=>({...f,display_name:e.target.value}))} placeholder="Qwen 3 7B"/></label>
-            <label>Ollama URL <br/><input style={{width:'100%'}} value={form.ollama_url||'http://localhost:11434'} onChange={e=>setForm(f=>({...f,ollama_url:e.target.value}))}/></label>
-            <label>Context window (tokens) <br/><input style={{width:'100%'}} type="number" value={form.context_window||8192} onChange={e=>setForm(f=>({...f,context_window:e.target.value}))}/></label>
-            <label>Capabilities (comma-separated) <br/><input style={{width:'100%'}} value={form.capabilities||''} onChange={e=>setForm(f=>({...f,capabilities:e.target.value}))} placeholder="coding, fast"/></label>
-            <label style={{gridColumn:'1/-1'}}>Notes <br/><input style={{width:'100%'}} value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></label>
+        <div className="card mb-16">
+          <div className="card-title">Add Model to Library</div>
+          <div className="grid-2">
+            <div className="form-group">
+              <label>ID (unique slug)</label>
+              <input type="text" value={form.id||''} onChange={e=>setForm(f=>({...f,id:e.target.value}))} placeholder="qwen3-7b-local"/>
+            </div>
+            <div className="form-group">
+              <label>Ollama model tag</label>
+              <input type="text" value={form.model_tag||''} onChange={e=>setForm(f=>({...f,model_tag:e.target.value}))} placeholder="qwen3:7b"/>
+            </div>
+            <div className="form-group">
+              <label>Display name</label>
+              <input type="text" value={form.display_name||''} onChange={e=>setForm(f=>({...f,display_name:e.target.value}))} placeholder="Qwen 3 7B"/>
+            </div>
+            <div className="form-group">
+              <label>Ollama URL</label>
+              <input type="text" value={form.ollama_url||'http://localhost:11434'} onChange={e=>setForm(f=>({...f,ollama_url:e.target.value}))}/>
+            </div>
+            <div className="form-group">
+              <label>Context window (tokens)</label>
+              <input type="number" value={form.context_window||8192} onChange={e=>setForm(f=>({...f,context_window:e.target.value}))}/>
+            </div>
+            <div className="form-group">
+              <label>Capabilities (comma-separated)</label>
+              <input type="text" value={form.capabilities||''} onChange={e=>setForm(f=>({...f,capabilities:e.target.value}))} placeholder="coding, fast"/>
+            </div>
           </div>
-          <div style={{marginTop:10, display:'flex', gap:8}}>
-            <button onClick={add} disabled={busy}>Add</button>
-            <button onClick={() => {setShowAdd(false); setForm({});}} style={{background:'#555'}}>Cancel</button>
+          <div className="form-group">
+            <label>Notes</label>
+            <input type="text" value={form.notes||''} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
           </div>
-          {msg && <div style={{marginTop:6, color: msg==='Added.' ? '#8f8' : '#f88'}}>{msg}</div>}
+          <div className="flex gap-8">
+            <button className="btn btn-primary" onClick={add} disabled={busy}>Add</button>
+            <button className="btn btn-ghost" onClick={() => {setShowAdd(false); setForm({});}}>Cancel</button>
+          </div>
+          {msg && showAdd && <div className="mt-8"><Alert type={msg==='Added.' ? 'success' : 'error'}>{msg}</Alert></div>}
         </div>
       )}
       <div className="card">
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
-          <h3 style={{margin:0}}>Model Library ({models.length})</h3>
-          <button onClick={() => setShowAdd(!showAdd)}>+ Add Model</button>
-        </div>
-        {models.length === 0 && <p style={{color:'#aaa'}}>Library is empty.</p>}
-        <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
-          <thead>
-            <tr style={{color:'#aaa', textAlign:'left'}}>
-              <th style={{padding:'4px 8px'}}>Name</th>
-              <th style={{padding:'4px 8px'}}>Tag</th>
-              <th style={{padding:'4px 8px'}}>URL</th>
-              <th style={{padding:'4px 8px'}}>Ctx</th>
-              <th style={{padding:'4px 8px'}}>Capabilities</th>
-              <th style={{padding:'4px 8px'}}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {models.map(m => (
-              <tr key={m.id} style={{borderTop:'1px solid #2a2a3a'}}>
-                <td style={{padding:'6px 8px'}}><div style={{fontWeight:600}}>{m.display_name}</div><div style={{fontSize:11,color:'#888'}}>{m.id}</div></td>
-                <td style={{padding:'6px 8px', fontFamily:'monospace', color:'#adf'}}>{m.model_tag}</td>
-                <td style={{padding:'6px 8px', fontSize:12, color:'#aaa'}}>{m.ollama_url}</td>
-                <td style={{padding:'6px 8px', fontSize:12}}>{(m.context_window/1024).toFixed(0)}k</td>
-                <td style={{padding:'6px 8px'}}>{(m.capabilities||[]).map(c=><CapBadge key={c} cap={c}/>)}</td>
-                <td style={{padding:'6px 8px'}}><button onClick={() => remove(m.id)} style={{background:'#7a3a3a', padding:'2px 8px', fontSize:11}}>Remove</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {msg && !showAdd && <div style={{marginTop:8, color: msg.includes('oved') ? '#8f8' : '#f88'}}>{msg}</div>}
+        <SectionTitle actions={
+          <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(!showAdd)}>+ Add Model</button>
+        }>Model Library ({models.length})</SectionTitle>
+        {models.length === 0 && <EmptyState text="Library is empty" hint="Add models from Ollama or manually" />}
+        {models.length > 0 && (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Tag</th>
+                  <th>URL</th>
+                  <th>Ctx</th>
+                  <th>Capabilities</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {models.map(m => (
+                  <tr key={m.id}>
+                    <td><div className="font-semibold">{m.display_name}</div><div className="muted" style={{fontSize:11}}>{m.id}</div></td>
+                    <td className="mono" style={{color:'var(--accent)'}}>{m.model_tag}</td>
+                    <td className="muted" style={{fontSize:12}}>{m.ollama_url}</td>
+                    <td style={{fontSize:12}}>{(m.context_window/1024).toFixed(0)}k</td>
+                    <td>{(m.capabilities||[]).map(c=><CapBadge key={c} cap={c}/>)}</td>
+                    <td><button className="btn btn-danger btn-sm" onClick={() => remove(m.id)}>Remove</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {msg && !showAdd && <div className="mt-8"><Alert type={msg.includes('oved') ? 'success' : 'error'}>{msg}</Alert></div>}
       </div>
     </div>
   );
@@ -1519,72 +1543,77 @@ const ModelsDiscover = () => {
   };
 
   return (
-    <div>
-      <div className="card" style={{marginBottom:12}}>
-        <h3 style={{marginTop:0}}>Discover Ollama Models</h3>
-        <p style={{color:'#aaa', fontSize:13, marginTop:0}}>
+    <div className="fade-in">
+      <div className="card mb-16">
+        <div className="card-title">Discover Ollama Models</div>
+        <p className="muted mb-12" style={{fontSize:13}}>
           Query one or more Ollama servers (local or LAN) and add discovered models to the library.
         </p>
-        <label>Ollama server URLs (comma-separated)<br/>
-          <input style={{width:'100%'}} value={urls} onChange={e=>setUrls(e.target.value)}
+        <div className="form-group">
+          <label>Ollama server URLs (comma-separated)</label>
+          <input type="text" value={urls} onChange={e=>setUrls(e.target.value)}
             placeholder="http://localhost:11434, http://192.168.1.10:11434" />
-        </label>
-        <div style={{marginTop:10, display:'flex', gap:8, alignItems:'center'}}>
-          <button onClick={discover} disabled={loading}>{loading ? 'Scanning…' : '🔍 Scan'}</button>
+        </div>
+        <div className="flex gap-8 items-center" style={{flexWrap:'wrap'}}>
+          <button className="btn btn-primary" onClick={discover} disabled={loading}>
+            {loading ? <><Spinner /> Scanning...</> : 'Scan'}
+          </button>
           {models.length > 0 && (
             <>
-              <button onClick={toggleAll} style={{background:'#4a5a7a'}}>
+              <button className="btn btn-secondary" onClick={toggleAll}>
                 {selected.size === models.filter(m=>!m.in_library).length ? 'Deselect All' : 'Select All New'}
               </button>
-              <button onClick={importSelected} disabled={importing || selected.size===0} style={{background:'#3a8f6a'}}>
-                {importing ? 'Importing…' : `Import Selected (${selected.size})`}
+              <button className="btn btn-success" onClick={importSelected} disabled={importing || selected.size===0}>
+                {importing ? <><Spinner /> Importing...</> : `Import Selected (${selected.size})`}
               </button>
             </>
           )}
         </div>
-        {msg && <div style={{marginTop:8, color: msg.includes('fail') || msg.includes('error') ? '#f88' : '#8f8'}}>{msg}</div>}
+        {msg && <div className="mt-8"><Alert type={msg.includes('fail') || msg.includes('error') ? 'error' : 'success'}>{msg}</Alert></div>}
       </div>
 
       {models.length > 0 && (
         <div className="card">
-          <h3 style={{marginTop:0}}>Found {models.length} model(s)</h3>
-          <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
-            <thead>
-              <tr style={{color:'#aaa', textAlign:'left'}}>
-                <th style={{padding:'4px 8px'}}>Select</th>
-                <th style={{padding:'4px 8px'}}>Model</th>
-                <th style={{padding:'4px 8px'}}>Family</th>
-                <th style={{padding:'4px 8px'}}>Params</th>
-                <th style={{padding:'4px 8px'}}>Quant</th>
-                <th style={{padding:'4px 8px'}}>Size</th>
-                <th style={{padding:'4px 8px'}}>Server</th>
-                <th style={{padding:'4px 8px'}}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {models.map(m => (
-                <tr key={m.suggested_id} style={{borderTop:'1px solid #2a2a3a', opacity: m.in_library ? 0.5 : 1}}>
-                  <td style={{padding:'6px 8px', textAlign:'center'}}>
-                    {!m.in_library && (
-                      <input type="checkbox" checked={selected.has(m.suggested_id)}
-                        onChange={() => toggle(m.suggested_id)} />
-                    )}
-                  </td>
-                  <td style={{padding:'6px 8px', fontFamily:'monospace', color:'#adf'}}>{m.model_tag}</td>
-                  <td style={{padding:'6px 8px'}}>{m.family}</td>
-                  <td style={{padding:'6px 8px'}}>{m.parameter_size}</td>
-                  <td style={{padding:'6px 8px', fontSize:11, color:'#aaa'}}>{m.quantization}</td>
-                  <td style={{padding:'6px 8px', fontSize:12}}>{m.size_gb} GB</td>
-                  <td style={{padding:'6px 8px', fontSize:11, color:'#888'}}>{m.ollama_url}</td>
-                  <td style={{padding:'6px 8px'}}>
-                    {m.in_library
-                      ? <span style={{color:'#8f8', fontSize:11}}>✓ In library</span>
-                      : <span style={{color:'#aaa', fontSize:11}}>Not imported</span>}
-                  </td>
+          <div className="card-title">Found {models.length} model(s)</div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style={{width:50}}>Select</th>
+                  <th>Model</th>
+                  <th>Family</th>
+                  <th>Params</th>
+                  <th>Quant</th>
+                  <th>Size</th>
+                  <th>Server</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {models.map(m => (
+                  <tr key={m.suggested_id} style={{opacity: m.in_library ? 0.5 : 1}}>
+                    <td className="text-center">
+                      {!m.in_library && (
+                        <input type="checkbox" checked={selected.has(m.suggested_id)}
+                          onChange={() => toggle(m.suggested_id)} />
+                      )}
+                    </td>
+                    <td className="mono" style={{color:'var(--accent)'}}>{m.model_tag}</td>
+                    <td>{m.family}</td>
+                    <td>{m.parameter_size}</td>
+                    <td className="muted" style={{fontSize:11}}>{m.quantization}</td>
+                    <td style={{fontSize:12}}>{m.size_gb} GB</td>
+                    <td className="muted" style={{fontSize:11}}>{m.ollama_url}</td>
+                    <td>
+                      {m.in_library
+                        ? <Badge status="complete" />
+                        : <span className="muted" style={{fontSize:11}}>Not imported</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -1595,23 +1624,18 @@ const ModelsDiscover = () => {
 const ModelsPanel = () => {
   const [sub, setSub] = React.useState('active');
   const subTabs = [
-    { id: 'active',   label: '⚡ Active Preset' },
-    { id: 'presets',  label: '📋 Presets' },
-    { id: 'library',  label: '📚 Library' },
-    { id: 'discover', label: '🔍 Discover (Ollama)' },
+    { id: 'active',   label: 'Active Preset' },
+    { id: 'presets',  label: 'Presets' },
+    { id: 'library',  label: 'Library' },
+    { id: 'discover', label: 'Discover (Ollama)' },
   ];
   const panels = { active: ModelsActive, presets: ModelsPresets, library: ModelsLibrary, discover: ModelsDiscover };
   const SubPanel = panels[sub];
   return (
     <div>
-      <nav style={{display:'flex', gap:6, marginBottom:14, flexWrap:'wrap'}}>
+      <nav className="sub-nav">
         {subTabs.map(t => (
-          <button key={t.id} onClick={() => setSub(t.id)}
-            style={{
-              padding:'6px 14px', borderRadius:6, border:'none', cursor:'pointer',
-              background: sub===t.id ? '#4a5a9a' : '#2a2a3a', color:'#fff',
-              fontWeight: sub===t.id ? 700 : 400,
-            }}>
+          <button key={t.id} className={`btn${sub===t.id ? ' active' : ''}`} onClick={() => setSub(t.id)}>
             {t.label}
           </button>
         ))}
@@ -1670,113 +1694,104 @@ const HumanReview = () => {
   };
 
   return (
-    <div className="panel">
-      <h2>Human Judge</h2>
-
+    <div className="fade-in">
       {/* Mode selector */}
-      <div className="card" style={{marginBottom:'1rem'}}>
-        <h3>Judge Mode</h3>
-        <div style={{display:'flex',gap:'0.5rem',flexWrap:'wrap'}}>
+      <div className="card mb-16">
+        <div className="card-title">Judge Mode</div>
+        <div className="flex gap-8 items-center" style={{flexWrap:'wrap'}}>
           {['llm','human','hybrid','on_demand'].map(m => (
-            <button key={m} className={judgeMode===m ? 'active' : ''}
-              onClick={() => switchMode(m)}
-              style={{padding:'0.4rem 0.8rem', borderRadius:'4px',
-                      background: judgeMode===m ? '#4a9eff' : '#333',
-                      color:'#fff', border:'none', cursor:'pointer'}}>
+            <button key={m}
+              className={`btn ${judgeMode===m ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => switchMode(m)}>
               {m.replace('_',' ')}
             </button>
           ))}
+          <button className="btn btn-ghost" onClick={requestReview} style={{marginLeft:'auto'}}>
+            Request Review Now
+          </button>
         </div>
-        <button onClick={requestReview}
-          style={{marginTop:'0.5rem',padding:'0.4rem 0.8rem',background:'#e67e22',
-                  color:'#fff',border:'none',borderRadius:'4px',cursor:'pointer'}}>
-          Request Review Now
-        </button>
       </div>
 
-      {msg && <div className="card" style={{color:'#4a9eff',marginBottom:'1rem'}}>{msg}</div>}
+      {msg && <Alert type="info" onDismiss={() => setMsg('')}>{msg}</Alert>}
 
       {/* Pending reviews */}
       {pending.length === 0 ? (
-        <div className="card"><p>No pending reviews. The orchestrator will create one when a review is triggered.</p></div>
+        <div className="card">
+          <EmptyState text="No pending reviews" hint="The orchestrator will create one when a review is triggered" />
+        </div>
       ) : pending.map(review => (
-        <div key={review.id} className="card" style={{marginBottom:'1rem'}}>
-          <h3>Review: {review.task?.title || review.id}</h3>
-          <p><strong>Subsystem:</strong> {review.task?.subsystem}</p>
-          <p><strong>Task:</strong> {review.task?.description}</p>
+        <div key={review.id} className="review-card">
+          <div className="fritz-section-title">Review: {review.task?.title || review.id}</div>
+          <div className="flex gap-16 mb-12" style={{fontSize:13}}>
+            <span><span className="muted">Subsystem:</span> {review.task?.subsystem}</span>
+            <span><span className="muted">Task:</span> {review.task?.description}</span>
+          </div>
 
           <details open>
-            <summary><strong>Architect Proposal</strong></summary>
-            <pre style={{whiteSpace:'pre-wrap',maxHeight:'300px',overflow:'auto',
-                         background:'#1a1a2e',padding:'0.5rem',borderRadius:'4px',fontSize:'0.85rem'}}>
+            <summary>Architect Proposal</summary>
+            <pre style={{whiteSpace:'pre-wrap',maxHeight:300,overflow:'auto',margin:0,border:'none',borderRadius:0}}>
               {review.architect_proposal?.content}
             </pre>
           </details>
 
           {review.llm_critic && (
             <details>
-              <summary><strong>LLM Critic</strong> (score: {review.llm_critic.score?.toFixed(2)})</summary>
-              <pre style={{whiteSpace:'pre-wrap',maxHeight:'200px',overflow:'auto',
-                           background:'#1a1a2e',padding:'0.5rem',borderRadius:'4px',fontSize:'0.85rem'}}>
+              <summary>LLM Critic (score: {review.llm_critic.score?.toFixed(2)})</summary>
+              <pre style={{whiteSpace:'pre-wrap',maxHeight:200,overflow:'auto',margin:0,border:'none',borderRadius:0}}>
                 {review.llm_critic.content}
               </pre>
             </details>
           )}
 
-          <div style={{marginTop:'1rem'}}>
-            <label><strong>Your Score:</strong>
+          <div className="review-score-display mt-16">
+            <div>
+              <label className="muted" style={{fontSize:12,display:'block',marginBottom:4}}>Your Score</label>
               <input type="range" min="0" max="1" step="0.05" value={score}
                 onChange={e => setScore(parseFloat(e.target.value))}
-                style={{width:'200px',marginLeft:'0.5rem'}} />
-              <span style={{marginLeft:'0.5rem',fontWeight:'bold'}}>{score.toFixed(2)}</span>
-            </label>
+                style={{width:200}} />
+            </div>
+            <div className="review-score-value" style={{
+              color: score >= 0.7 ? 'var(--success)' : score >= 0.4 ? 'var(--warning)' : 'var(--danger)'
+            }}>
+              {score.toFixed(2)}
+            </div>
           </div>
 
-          <div style={{marginTop:'0.5rem'}}>
-            <label><strong>Feedback:</strong></label>
+          <div className="form-group mt-12">
+            <label>Feedback</label>
             <textarea value={feedback} onChange={e => setFeedback(e.target.value)}
               placeholder="What's good, what's wrong, what needs improvement..."
-              style={{width:'100%',minHeight:'80px',marginTop:'0.25rem',background:'#1a1a2e',
-                      color:'#eee',border:'1px solid #444',borderRadius:'4px',padding:'0.5rem'}} />
+              rows={3} />
           </div>
 
-          <div style={{marginTop:'0.5rem'}}>
-            <label><strong>Directive</strong> (steering instruction for Architect):</label>
+          <div className="form-group">
+            <label>Directive (steering instruction for Architect)</label>
             <textarea value={directive} onChange={e => setDirective(e.target.value)}
               placeholder="e.g. 'Stop exploring microservices. Use a monolith with plugin architecture instead.'"
-              style={{width:'100%',minHeight:'60px',marginTop:'0.25rem',background:'#1a1a2e',
-                      color:'#eee',border:'1px solid #555',borderRadius:'4px',padding:'0.5rem',
-                      borderColor: directive ? '#e67e22' : '#444'}} />
+              rows={2}
+              style={{borderColor: directive ? 'var(--warning)' : undefined}} />
             {directive && (
-              <label style={{display:'block',marginTop:'0.25rem'}}>
+              <label className="flex items-center gap-8 mt-8" style={{fontSize:13,cursor:'pointer'}}>
                 <input type="checkbox" checked={sticky} onChange={e => setSticky(e.target.checked)} />
-                {' '}Sticky (persist across multiple loops until cleared)
+                Sticky (persist across multiple loops until cleared)
               </label>
             )}
           </div>
 
-          <button onClick={() => submitReview(review.id)} disabled={submitting}
-            style={{marginTop:'0.75rem',padding:'0.5rem 1.5rem',background:'#27ae60',
-                    color:'#fff',border:'none',borderRadius:'4px',cursor:'pointer',
-                    fontSize:'1rem',fontWeight:'bold'}}>
-            {submitting ? 'Submitting...' : `Submit Review (${score.toFixed(2)})`}
+          <button className="btn btn-success" onClick={() => submitReview(review.id)} disabled={submitting}>
+            {submitting ? <><Spinner /> Submitting...</> : `Submit Review (${score.toFixed(2)})`}
           </button>
         </div>
       ))}
 
       {/* Active directives */}
       {directives.length > 0 && (
-        <div className="card" style={{marginTop:'1rem'}}>
-          <h3>Active Sticky Directives</h3>
+        <div className="card mt-16">
+          <div className="card-title">Active Sticky Directives</div>
           {directives.map((d, i) => (
-            <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
-                                 padding:'0.4rem 0',borderBottom:'1px solid #333'}}>
-              <span style={{flex:1}}>{d.directive}</span>
-              <button onClick={() => clearDirective(i)}
-                style={{marginLeft:'0.5rem',padding:'0.2rem 0.5rem',background:'#e74c3c',
-                        color:'#fff',border:'none',borderRadius:'3px',cursor:'pointer'}}>
-                ✕
-              </button>
+            <div key={i} className="directive-item">
+              <span className="flex-1">{d.directive}</span>
+              <button className="btn btn-danger btn-sm" onClick={() => clearDirective(i)}>Remove</button>
             </div>
           ))}
         </div>
@@ -1835,9 +1850,9 @@ const WorkflowViewer = () => {
     <div>
       <div className="grid-4 mb-16">
         <StatBox value={data.current_level || 'idle'} label="Current Level" />
-        <StatBox value={data.micro_count ?? 0} label="Micro Loops" />
+        <StatBox value={data.micro_count ?? 0} label="Micro Loops" variant="success" />
         <StatBox value={data.meso_count ?? 0} label="Meso Loops" />
-        <StatBox value={data.stagnation_events ?? 0} label="Stagnation" />
+        <StatBox value={data.stagnation_events ?? 0} label="Stagnation" variant="warning" />
       </div>
 
       <div className="card">
@@ -1949,19 +1964,19 @@ const ModeSwitch = () => {
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 const TABS = [
-  { id: 'dashboard', label: '📊 Dashboard',     Component: Dashboard },
-  { id: 'models',    label: '🧠 Models',         Component: ModelsPanel },
-  { id: 'grub',      label: '🐛 Grub',           Component: GrubStatus },
-  { id: 'fritz',     label: '🔀 Fritz',           Component: FritzPanel },
-  { id: 'review',    label: '👤 Review',          Component: HumanReview },
-  { id: 'workflow',  label: '🔀 Workflow',        Component: WorkflowViewer },
-  { id: 'config',    label: '⚙️ Config',         Component: Config },
-  { id: 'flags',     label: '🚩 Feature Flags',  Component: FeatureFlags },
-  { id: 'tasks',     label: '📋 Task Queue',     Component: TaskQueue },
-  { id: 'dlq',       label: '💀 DLQ',            Component: DLQ },
-  { id: 'backups',   label: '💾 Backups',         Component: Backups },
-  { id: 'audit',     label: '📜 Audit Log',       Component: AuditLog },
-  { id: 'logs',      label: '📡 Logs',            Component: LogViewer },
+  { id: 'dashboard', label: 'Dashboard',      Component: Dashboard },
+  { id: 'models',    label: 'Models',          Component: ModelsPanel },
+  { id: 'grub',      label: 'Grub',            Component: GrubStatus },
+  { id: 'fritz',     label: 'Fritz',           Component: FritzPanel },
+  { id: 'review',    label: 'Review',          Component: HumanReview },
+  { id: 'workflow',  label: 'Workflow',        Component: WorkflowViewer },
+  { id: 'config',    label: 'Config',          Component: Config },
+  { id: 'flags',     label: 'Flags',           Component: FeatureFlags },
+  { id: 'tasks',     label: 'Tasks',           Component: TaskQueue },
+  { id: 'dlq',       label: 'DLQ',             Component: DLQ },
+  { id: 'backups',   label: 'Backups',         Component: Backups },
+  { id: 'audit',     label: 'Audit',           Component: AuditLog },
+  { id: 'logs',      label: 'Logs',            Component: LogViewer },
 ];
 
 const App = () => {
@@ -1975,29 +1990,49 @@ const App = () => {
     return () => clearInterval(id);
   }, []);
 
+  // Keyboard navigation: Ctrl+1..9 to switch tabs
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key) - 1;
+        if (idx < TABS.length) {
+          e.preventDefault();
+          setTab(TABS[idx].id);
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const ActiveTab = TABS.find(t => t.id === tab);
 
   return (
-    <div id="root">
-      <header className="app-header">
-        <h1>TINKER</h1>
-        <span className="version">Web UI</span>
-        <ModeSwitch />
-        {online !== null && <StatusBadge online={online} />}
-      </header>
+    <ToastProvider>
+      <div id="root">
+        <header className="app-header">
+          <h1>TINKER</h1>
+          <span className="version">v2</span>
+          <ModeSwitch />
+          {online !== null && <StatusBadge online={online} />}
+        </header>
 
-      <nav className="tab-bar">
-        {TABS.map(t => (
-          <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </nav>
+        <nav className="tab-bar">
+          {TABS.map((t, i) => (
+            <button key={t.id}
+              className={tab === t.id ? 'active' : ''}
+              onClick={() => setTab(t.id)}
+              title={i < 9 ? `Ctrl+${i+1}` : ''}>
+              {t.label}
+            </button>
+          ))}
+        </nav>
 
-      <div className="content">
-        {ActiveTab && <ActiveTab.Component />}
+        <div className="content fade-in" key={tab}>
+          {ActiveTab && <ActiveTab.Component />}
+        </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 };
 
