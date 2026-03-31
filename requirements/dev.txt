@@ -241,7 +241,7 @@ build==1.4.0 \
     # via
     #   chromadb
     #   pip-tools
-cachecontrol[filecache]==0.14.4 \
+cachecontrol==0.14.4 \
     --hash=sha256:b7ac014ff72ee199b5f8af1de29d60239954f223e948196fa3d84adaffc71d2b \
     --hash=sha256:e6220afafa4c22a47dd0badb319f84475d79108100d04e26e8542ef7d3ab05a1
     # via
@@ -492,7 +492,7 @@ durationpy==0.10 \
     --hash=sha256:1fa6893409a6e739c9c72334fc65cca1f355dbdd93405d30f726deb5bde42fba \
     --hash=sha256:3b41e1b601234296b4fb368338fdcd3e13e0b4fb5b67345948f4f2bf9868b286
     # via kubernetes
-fakeredis[aioredis]==2.34.1 \
+fakeredis==2.34.1 \
     --hash=sha256:0107ec99d48913e7eec2a5e3e2403d1bd5f8aa6489d1a634571b975289c48f12 \
     --hash=sha256:4ff55606982972eecce3ab410e03d746c11fe5deda6381d913641fbd8865ea9b
     # via -r requirements/dev.in
@@ -933,7 +933,7 @@ loguru==0.7.3 \
     --hash=sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6 \
     --hash=sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c
     # via -r requirements/base.in
-lxml[html-clean]==6.0.2 \
+lxml==6.0.2 \
     --hash=sha256:058027e261afed589eddcfe530fcc6f3402d7fd7e89bfd0532df82ebc1563dba \
     --hash=sha256:063eccf89df5b24e361b123e257e437f9e9878f425ee9aae3144c77faf6da6d8 \
     --hash=sha256:064fdadaf7a21af3ed1dcaa106b854077fbeada827c18f72aec9346847cd65d0 \
@@ -1083,7 +1083,7 @@ lxml-html-clean==0.4.4 \
     --hash=sha256:58f39a9d632711202ed1d6d0b9b47a904e306c85de5761543b90e3e3f736acfb \
     --hash=sha256:ce2ef506614ecb85ee1c5fe0a2aa45b06a19514ec7949e9c8f34f06925cfabcb
     # via lxml
-markdown-it-py[linkify]==4.0.0 \
+markdown-it-py==4.0.0 \
     --hash=sha256:87327c59b172c5011896038353a81343b6754500a08cd7a4973bb48c6d578147 \
     --hash=sha256:cb0a2b4aa34f932c007117b194e945bd74e0ec24133ceb5bac59009cda1cb9f3
     # via
@@ -3171,7 +3171,7 @@ urllib3==2.6.3 \
     #   kubernetes
     #   requests
     #   trafilatura
-uvicorn[standard]==0.42.0 \
+uvicorn==0.42.0 \
     --hash=sha256:96c30f5c7abe6f74ae8900a70e92b85ad6613b745d4879eb9b16ccad15645359 \
     --hash=sha256:9b1f190ce15a2dd22e7758651d9b6d12df09a13d51ba5bf4fc33c383a48e1775
     # via chromadb
