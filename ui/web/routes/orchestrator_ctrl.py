@@ -173,3 +173,16 @@ async def api_mode_set(request: Request):
     msg += " Takes effect on the next micro loop iteration."
 
     return {"ok": True, "system_mode": new_mode, "research_topic": research_topic.strip(), "message": msg}
+
+
+@router.get("/api/research/status")
+async def api_research_status():
+    """Return the current research crawler status and knowledge pool stats."""
+    mode_data = _read_mode()
+    state = load_state()
+    return {
+        "system_mode": mode_data.get("system_mode", "architect"),
+        "research_topic": mode_data.get("research_topic", ""),
+        "has_pool_context": bool(state.get("research_pool_context")),
+        "pool_context_length": len(state.get("research_pool_context", "") or ""),
+    }

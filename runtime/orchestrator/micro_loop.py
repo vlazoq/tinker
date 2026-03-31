@@ -686,6 +686,24 @@ async def _assemble_context(orch: Orchestrator, task: dict) -> dict:
             ctx = dict(ctx) if ctx is not ctx else ctx
             ctx["human_directives"] = directive_block
 
+    # Inject research crawler's accumulated knowledge pool.
+    # This gives the Architect access to continuously gathered research
+    # findings, growing its effective context over time.
+    research_pool = getattr(orch.state, "research_pool_context", None)
+    if research_pool:
+        ctx = dict(ctx) if ctx is not ctx else ctx
+        existing_prompt = ctx.get("prompt", "")
+        ctx["prompt"] = (
+            existing_prompt
+            + "\n\n## Accumulated Research Findings\n"
+            + research_pool
+        )
+        logger.info(
+            "micro[%d] Research pool context injected (%d chars)",
+            orch.state.total_micro_loops + 1,
+            len(research_pool),
+        )
+
     return ctx
 
 

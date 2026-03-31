@@ -390,6 +390,14 @@ class OrchestratorState:
     # then cleared.  Similar to pending_stagnation_hint but from human input.
     pending_human_directive: str | None = None
 
+    # ── Research crawler ──────────────────────────────────────────────────────
+
+    # When the research crawler runs a batch, it stores its accumulated
+    # knowledge pool as a context string here.  The context assembler can
+    # read this to inject research findings into the Architect's context,
+    # giving it a continuously growing knowledge base.
+    research_pool_context: str | None = None
+
     # ── Shutdown ─────────────────────────────────────────────────────────────
 
     # Set to True when shutdown has been requested (via signal or API call).

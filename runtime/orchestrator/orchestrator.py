@@ -150,6 +150,13 @@ class Orchestrator(
         # iterative deepening.
         self.research_enhancer = research_enhancer
 
+        # Research crawler — optional continuous crawl pipeline for
+        # indefinite context gathering in research mode.  Runs batches
+        # between micro loops, feeding accumulated knowledge into the
+        # architect's context.
+        self.research_crawler: Any = None
+        self._research_crawler_task: asyncio.Task | None = None
+
         # Enterprise components dictionary — populated by bootstrap layer.
         self.enterprise: dict = {}
 
@@ -351,6 +358,10 @@ class Orchestrator(
             if micro_succeeded:
                 self.state.consecutive_failures = 0
 
+                # Research crawler batch (runs in research mode to feed
+                # the architect with continuously gathered context)
+                await self._run_research_batch_if_needed()
+
                 # Meso check
                 subsystem = self.state.current_subsystem
                 if subsystem and self._should_run_meso(subsystem):
@@ -392,6 +403,68 @@ class Orchestrator(
                 self._shutdown_event.wait(),
                 timeout=seconds,
             )
+
+    # ── Research crawler management ────────────────────────────────────────
+
+    def _ensure_research_crawler(self) -> None:
+        """Create the ResearchCrawler if it doesn't exist and tools are available."""
+        if self.research_crawler is not None:
+            return
+        if self.tool_layer is None:
+            return
+        try:
+            from core.tools.research_crawler import ResearchCrawler
+
+            search_tool = getattr(self.tool_layer, "_tools", {}).get("web_search")
+            scraper_tool = getattr(self.tool_layer, "_tools", {}).get("web_scraper")
+            if search_tool is None or scraper_tool is None:
+                # Try alternate access patterns
+                search_tool = getattr(self.tool_layer, "web_search", None)
+                scraper_tool = getattr(self.tool_layer, "web_scraper", None)
+            if search_tool is None or scraper_tool is None:
+                logger.debug("ResearchCrawler: search/scraper tools not available")
+                return
+
+            router = getattr(self, "critic_agent", None)
+            router = getattr(router, "_router", None) if router else None
+
+            self.research_crawler = ResearchCrawler(
+                search_tool=search_tool,
+                scraper_tool=scraper_tool,
+                router=router,
+                memory_manager=self.memory_manager,
+                batch_size=getattr(self.config, "research_num_results", 5),
+                max_sublink_depth=2,
+                relevance_threshold=0.4,
+            )
+            logger.info("ResearchCrawler created and ready")
+        except Exception as exc:
+            logger.debug("ResearchCrawler: init failed: %s", exc)
+
+    async def _run_research_batch_if_needed(self) -> None:
+        """Run one research crawler batch if in research mode with a topic."""
+        from agents._shared import _read_system_mode
+
+        mode, topic = _read_system_mode()
+        if mode != "research" or not topic.strip():
+            return
+
+        self._ensure_research_crawler()
+        if self.research_crawler is None:
+            return
+
+        try:
+            pool = await self.research_crawler.run_batch(topic)
+            # Store the knowledge pool context string on state for the
+            # context assembler to pick up on the next micro loop.
+            self.state.research_pool_context = pool.to_context_str()
+            logger.info(
+                "Research batch complete: %d findings for %r",
+                len(pool.findings),
+                topic,
+            )
+        except Exception as exc:
+            logger.warning("Research crawler batch failed: %s", exc)
 
     def _try_write_snapshot(self) -> None:
         """
