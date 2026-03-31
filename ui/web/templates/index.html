@@ -1874,6 +1874,79 @@ const WorkflowViewer = () => {
   );
 };
 
+// ── Mode Switch ──────────────────────────────────────────────────────────────
+const ModeSwitch = () => {
+  const [mode, setMode]         = useState('architect');
+  const [topic, setTopic]       = useState('');
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [msg, setMsg]           = useState(null);
+
+  const refresh = useCallback(() => {
+    api.get('/api/mode').then(d => {
+      if (d.system_mode) setMode(d.system_mode);
+      if (d.research_topic !== undefined) setTopic(d.research_topic);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const switchMode = async (newMode) => {
+    if (newMode === 'research' && !topic.trim()) {
+      setMsg({ type: 'error', text: 'Please enter a research topic first.' });
+      return;
+    }
+    setSaving(true); setMsg(null);
+    const res = await api.post('/api/mode', { system_mode: newMode, research_topic: topic });
+    setSaving(false);
+    if (res.ok) {
+      setMode(newMode);
+      setMsg({ type: 'success', text: res.message });
+    } else {
+      setMsg({ type: 'error', text: res.error || 'Failed to switch mode' });
+    }
+  };
+
+  if (loading) return null;
+
+  const isResearch = mode === 'research';
+
+  return (
+    <div className="mode-switch">
+      <div className="mode-toggle">
+        <button
+          className={`btn btn-sm ${!isResearch ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => switchMode('architect')}
+          disabled={saving || !isResearch}
+        >
+          Architect
+        </button>
+        <button
+          className={`btn btn-sm ${isResearch ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => switchMode('research')}
+          disabled={saving}
+        >
+          Research
+        </button>
+      </div>
+      {(isResearch || topic) && (
+        <input
+          type="text"
+          className="mode-topic-input"
+          placeholder="Research topic…"
+          value={topic}
+          onChange={e => setTopic(e.target.value)}
+          onBlur={() => { if (isResearch && topic.trim()) switchMode('research'); }}
+          style={{marginLeft:8, padding:'2px 8px', fontSize:12, width:220, borderRadius:4, border:'1px solid var(--border)'}}
+        />
+      )}
+      {saving && <Spinner />}
+      {msg && <span style={{fontSize:11, marginLeft:8, color: msg.type === 'error' ? 'var(--danger)' : 'var(--success)'}}>{msg.text}</span>}
+    </div>
+  );
+};
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'dashboard', label: '📊 Dashboard',     Component: Dashboard },
@@ -1909,6 +1982,7 @@ const App = () => {
       <header className="app-header">
         <h1>TINKER</h1>
         <span className="version">Web UI</span>
+        <ModeSwitch />
         {online !== null && <StatusBadge online={online} />}
       </header>
 

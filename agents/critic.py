@@ -48,6 +48,7 @@ from agents._shared import (
     _extract_score,
     _get_rate_limiter_registry,
     _get_retry_async,
+    _read_system_mode,
     _validate_agent_response,
 )
 
@@ -110,9 +111,11 @@ class CriticAgent:
         design_content = architect_result.get("content", "")[:3000]
         task_desc = task.get("description", task.get("title", ""))
 
+        system_mode, _research_topic = _read_system_mode()
         system_prompt, user_prompt = _build_critic_prompts(
             task_desc=task_desc,
             design_content=design_content,
+            system_mode=system_mode,
         )
 
         req = ModelRequest(

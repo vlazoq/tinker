@@ -29,11 +29,39 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from contextvars import ContextVar
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("tinker.agents")
+
+
+# ---------------------------------------------------------------------------
+# System mode reader
+# ---------------------------------------------------------------------------
+# Reads the current system mode from the control file written by the web UI.
+# This is the same file-based control mechanism used by pause/resume.
+
+
+def _read_system_mode() -> tuple[str, str]:
+    """Return ``(system_mode, research_topic)`` from the control file.
+
+    Falls back to ``("architect", "")`` if the file doesn't exist or is
+    unreadable.  This function is called on every prompt-build so the mode
+    switch takes effect on the very next micro loop iteration.
+    """
+    control_dir = Path(os.getenv("TINKER_CONTROL_DIR", "./tinker_control"))
+    mode_path = control_dir / "mode.json"
+    if mode_path.exists():
+        try:
+            data = json.loads(mode_path.read_text())
+            return data.get("system_mode", "architect"), data.get("research_topic", "")
+        except Exception:
+            pass
+    return "architect", ""
+
 
 # ---------------------------------------------------------------------------
 # Lightweight distributed tracing via contextvars
@@ -326,13 +354,29 @@ def _build_architect_prompts(
     context_str: str,
     grub_section: str,
     constraints_str: str,
+    *,
+    system_mode: str = "architect",
+    research_topic: str = "",
 ) -> tuple[str, str]:
     """
     Build (system, user) prompt pair using PromptBuilder when available.
 
     Falls back to concise inline prompts so the orchestrator can always
     make progress even without the prompts/ package.
+
+    When *system_mode* is ``"research"``, uses research-oriented prompts
+    that focus on gathering information about a topic rather than designing
+    software architecture.
     """
+    if system_mode == "research":
+        return _build_research_architect_prompts(
+            task_desc=task_desc,
+            topic=subsystem,
+            context_str=context_str,
+            constraints_str=constraints_str,
+            research_topic=research_topic,
+        )
+
     pb_cls = _get_prompt_builder_cls()
     if pb_cls is not None:
         try:
@@ -375,12 +419,22 @@ def _build_architect_prompts(
 def _build_critic_prompts(
     task_desc: str,
     design_content: str,
+    *,
+    system_mode: str = "architect",
 ) -> tuple[str, str]:
     """
     Build (system, user) prompt pair for the Critic using PromptBuilder.
 
     Falls back to inline prompts if PromptBuilder is unavailable.
+    When *system_mode* is ``"research"``, critiques research quality instead
+    of design quality.
     """
+    if system_mode == "research":
+        return _build_research_critic_prompts(
+            task_desc=task_desc,
+            research_content=design_content,
+        )
+
     pb_cls = _get_prompt_builder_cls()
     if pb_cls is not None:
         try:
@@ -416,6 +470,8 @@ def _build_critic_prompts(
 
 def _build_synthesizer_prompts(
     level: str,
+    *,
+    system_mode: str = "architect",
     **kwargs: Any,
 ) -> tuple[str, str]:
     """
@@ -425,7 +481,12 @@ def _build_synthesizer_prompts(
     For macro synthesis: falls back to inline (no factory method yet).
 
     Falls back to inline prompts if PromptBuilder is unavailable.
+    When *system_mode* is ``"research"``, synthesises research findings
+    instead of design artifacts.
     """
+    if system_mode == "research":
+        return _build_research_synthesizer_prompts(level=level, **kwargs)
+
     pb_cls = _get_prompt_builder_cls()
 
     if level == "meso" and pb_cls is not None:
@@ -482,6 +543,119 @@ def _build_synthesizer_prompts(
             f"## Subsystem Documents ({len(documents)} total)\n{docs_text}\n\n"
             "Produce a macro-level architecture snapshot covering system-wide patterns, "
             "cross-cutting concerns, major decisions, and open risks."
+        )
+
+    return system, user
+
+
+# ---------------------------------------------------------------------------
+# Research-mode prompt builders
+# ---------------------------------------------------------------------------
+# These produce prompts for general-purpose research instead of software
+# architecture design.  They are called by the main prompt builders above
+# when system_mode == "research".
+
+
+def _build_research_architect_prompts(
+    task_desc: str,
+    topic: str,
+    context_str: str,
+    constraints_str: str,
+    research_topic: str = "",
+) -> tuple[str, str]:
+    """Build (system, user) prompts for the Researcher role (research mode)."""
+    topic_line = f"Overall research topic: {research_topic}\n" if research_topic else ""
+    system = (
+        "You are an autonomous research analyst in Tinker, a research engine "
+        "that continuously gathers, analyses, and synthesises information on "
+        "a given topic.  Your job is to investigate the task below thoroughly: "
+        "search for evidence, compare sources, identify patterns, and produce "
+        "a structured research report.\n\n"
+        f"{topic_line}"
+        "IMPORTANT: Respond with a JSON object containing:\n"
+        "- 'content': string — your full research findings narrative\n"
+        "- 'knowledge_gaps': array of strings — areas that need more investigation\n"
+        "- 'candidate_tasks': array of objects with 'title','description','type',"
+        "'subsystem','confidence_gap','tags' — follow-up research tasks\n"
+        "- 'decisions': array of strings — key conclusions or findings\n"
+        "- 'open_questions': array of strings — unanswered questions\n"
+    )
+    user = (
+        f"## Research Task\nTopic area: {topic}\nTask: {task_desc}\n\n"
+        f"## Prior Research Context\n{context_str[:3000]}\n\n"
+        f"## Constraints\n{constraints_str or 'None specified.'}\n\n"
+        "Investigate this topic and produce your JSON research report now."
+    )
+    return system, user
+
+
+def _build_research_critic_prompts(
+    task_desc: str,
+    research_content: str,
+) -> tuple[str, str]:
+    """Build (system, user) prompts for reviewing research output."""
+    system = (
+        "You are a research quality reviewer in Tinker, an autonomous research "
+        "engine.  Evaluate the research report for accuracy, completeness, "
+        "source quality, and logical reasoning.  Respond with a JSON object "
+        "containing:\n"
+        "- 'content': string — your review narrative\n"
+        "- 'score': float between 0 and 1 (1 = excellent research)\n"
+        "- 'flags': array of strings — specific issues (unsupported claims, "
+        "missing perspectives, logical gaps)\n"
+        "- 'strengths': array of strings — what the research does well\n"
+    )
+    user = (
+        f"## Original Research Task\n{task_desc}\n\n"
+        f"## Research Report\n{research_content}\n\n"
+        "Critique this research report and return your JSON evaluation."
+    )
+    return system, user
+
+
+def _build_research_synthesizer_prompts(
+    level: str,
+    **kwargs: Any,
+) -> tuple[str, str]:
+    """Build (system, user) prompts for synthesising research findings."""
+    if level == "meso":
+        topic = kwargs.get("subsystem", "unknown")
+        artifacts = kwargs.get("artifacts", [])
+        artifacts_text = "\n---\n".join(
+            (a.get("content", str(a)) if isinstance(a, dict) else str(a))[:500]
+            for a in artifacts[:10]
+        )
+        system = (
+            "You are a research synthesiser.  Combine the provided research "
+            "findings on a topic into a coherent summary document that "
+            "identifies key themes, agreements, contradictions, and gaps."
+        )
+        user = (
+            f"## Topic: {topic}\n\n"
+            f"## Research Findings to Synthesise ({len(artifacts)} items)\n"
+            f"{artifacts_text}\n\n"
+            "Produce a synthesis document covering key findings, common themes, "
+            "contradictions between sources, confidence levels, and recommended "
+            "follow-up research."
+        )
+    else:
+        # level == "macro"
+        documents = kwargs.get("documents", [])
+        version = kwargs.get("snapshot_version", 0)
+        micro_count = kwargs.get("total_micro_loops", 0)
+        docs_text = "\n---\n".join(
+            (d.get("content", str(d)) if isinstance(d, dict) else str(d))[:300]
+            for d in documents[:20]
+        )
+        system = (
+            "You are a chief research analyst.  Produce a high-level research "
+            "overview from the topic-level summaries provided."
+        )
+        user = (
+            f"## Research Overview v{version} (after {micro_count} research cycles)\n\n"
+            f"## Topic Summaries ({len(documents)} total)\n{docs_text}\n\n"
+            "Produce a macro-level research overview covering cross-topic patterns, "
+            "key conclusions, confidence levels, and priority areas for deeper research."
         )
 
     return system, user

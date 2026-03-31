@@ -51,6 +51,7 @@ from agents._shared import (
     _current_trace_id,
     _get_rate_limiter_registry,
     _get_retry_async,
+    _read_system_mode,
 )
 
 logger = logging.getLogger("tinker.agents")
@@ -107,7 +108,10 @@ class SynthesizerAgent:
 
         logger.info("SynthesizerAgent.call start [level=%s trace_id=%s]", level, trace_id)
 
-        system_prompt, user_prompt = _build_synthesizer_prompts(level, **kwargs)
+        system_mode, _research_topic = _read_system_mode()
+        system_prompt, user_prompt = _build_synthesizer_prompts(
+            level, system_mode=system_mode, **kwargs
+        )
 
         req = ModelRequest(
             agent_role=AgentRole.SYNTHESIZER,

@@ -48,6 +48,7 @@ from agents._shared import (
     _extract_knowledge_gaps,
     _get_rate_limiter_registry,
     _get_retry_async,
+    _read_system_mode,
     _json_block,
     _parse_architect_structured,
 )
@@ -174,12 +175,15 @@ class ArchitectAgent:
                 f"refining or can be accepted as-is."
             )
 
+        system_mode, research_topic = _read_system_mode()
         system_prompt, user_prompt = _build_architect_prompts(
             task_desc=task_desc,
             subsystem=subsystem,
             context_str=context_str,
             grub_section=grub_section,
             constraints_str=constraints_str,
+            system_mode=system_mode,
+            research_topic=research_topic,
         )
 
         req = ModelRequest(
