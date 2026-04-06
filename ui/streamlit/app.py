@@ -51,8 +51,8 @@ from ui.core import (
 )
 
 st.set_page_config(
-    page_title="Tinker Web UI",
-    page_icon="🔧",
+    page_title="Tinker Control Panel",
+    page_icon="T",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -61,14 +61,88 @@ st.markdown(
     """
 <style>
   #MainMenu, footer, header { visibility: hidden; }
-  .block-container { padding-top: 1rem; }
+  .block-container { padding-top: 1rem; max-width: 1280px; }
   .stAlert { font-size: 0.85rem; }
+
+  /* Dark theme consistency with web UI */
+  [data-testid="stMetric"] {
+      background: rgba(22, 27, 34, 0.8);
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 12px 16px;
+      position: relative;
+      overflow: hidden;
+  }
+  [data-testid="stMetric"]::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: #58a6ff;
+      opacity: 0.6;
+  }
+  [data-testid="stMetricValue"] {
+      font-size: 1.5rem !important;
+      font-weight: 700 !important;
+  }
+  [data-testid="stMetricLabel"] {
+      font-size: 0.7rem !important;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      opacity: 0.7;
+  }
+
+  /* Better expanders */
+  [data-testid="stExpander"] {
+      border: 1px solid #30363d !important;
+      border-radius: 12px !important;
+      overflow: hidden;
+  }
+  [data-testid="stExpander"] summary {
+      font-weight: 600 !important;
+  }
+
+  /* Better dataframes */
+  [data-testid="stDataFrame"] {
+      border: 1px solid #30363d !important;
+      border-radius: 8px !important;
+      overflow: hidden;
+  }
+
+  /* Better buttons */
+  .stButton > button {
+      border-radius: 8px !important;
+      font-weight: 500 !important;
+      transition: all 150ms ease !important;
+  }
+  .stButton > button:hover {
+      transform: translateY(-1px);
+  }
+
+  /* Better tabs */
+  [data-testid="stTab"] {
+      font-weight: 500 !important;
+  }
+
+  /* Better toggle */
+  [data-testid="stToggle"] label {
+      font-size: 0.85rem;
+  }
+
+  /* Subheaders */
+  h3 {
+      font-size: 0.8rem !important;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      opacity: 0.6;
+      margin-top: 1.5rem !important;
+  }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
-st.title("🔧 TINKER — Control Panel")
+st.title("TINKER — Control Panel")
 
 
 # ── Fritz async helpers (defined before use) ──────────────────────────────────
@@ -97,21 +171,21 @@ async def _async_pr(agent, title, body, head, base):
 
 tabs = st.tabs(
     [
-        "📊 Dashboard",
-        "⚙️ Config",
-        "🚩 Feature Flags",
-        "📋 Task Queue",
-        "💀 DLQ",
-        "💾 Backups",
-        "🤖 Grub",
-        "🔀 Fritz",
-        "📜 Audit Log",
+        "Dashboard",
+        "Config",
+        "Flags",
+        "Tasks",
+        "DLQ",
+        "Backups",
+        "Grub",
+        "Fritz",
+        "Audit",
     ]
 )
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 with tabs[0]:
-    if st.button("↻ Refresh", key="dash_refresh"):
+    if st.button("Refresh", key="dash_refresh"):
         st.rerun()
 
     state = load_state()
@@ -215,7 +289,7 @@ with tabs[1]:
                         key=f"stag_{section_key}_{field_name}",
                     )
 
-    if st.button("💾 Save Config", type="primary", key="cfg_save"):
+    if st.button("Save Config", type="primary", key="cfg_save"):
         new_vals["stagnation"] = new_stag
         save_config(new_vals)
         st.success("Config saved. Restart the orchestrator to apply changes.")
@@ -238,7 +312,7 @@ with tabs[2]:
                     key=f"flag_{flag}",
                 )
 
-    if st.button("💾 Save Flags", type="primary", key="flags_save"):
+    if st.button("Save Flags", type="primary", key="flags_save"):
         save_flags(new_flags)
         st.success("Flags saved. Orchestrator will pick up changes within 30 seconds.")
 
@@ -253,7 +327,7 @@ with tabs[3]:
         for i, (s, n) in enumerate(stats.items()):
             scols[i].metric(s.upper(), n)
 
-    if st.button("↻ Refresh", key="tasks_refresh"):
+    if st.button("Refresh", key="tasks_refresh"):
         st.rerun()
 
     rows = (
@@ -272,7 +346,7 @@ with tabs[3]:
     else:
         st.info("No tasks in database.")
 
-    with st.expander("➕ Inject New Task"):
+    with st.expander("Inject New Task"):
         inj_title = st.text_input("Title *", key="inj_title")
         inj_desc = st.text_area("Description", key="inj_desc")
         icol1, icol2 = st.columns(2)
@@ -317,7 +391,7 @@ with tabs[3]:
 
 # ── DLQ ───────────────────────────────────────────────────────────────────────
 with tabs[4]:
-    if st.button("↻ Refresh", key="dlq_refresh"):
+    if st.button("Refresh", key="dlq_refresh"):
         st.rerun()
 
     dlq_rows = (
@@ -344,12 +418,12 @@ with tabs[4]:
     else:
         st.success("Queue is empty.")
 
-    with st.expander("🔧 Mark Item"):
+    with st.expander("Mark Item"):
         dlq_id = st.text_input("Item ID (full UUID)", key="dlq_id")
         dlq_notes = st.text_input("Notes", key="dlq_notes")
         da1, da2 = st.columns(2)
         with da1:
-            if st.button("✅ Mark Resolved", type="primary", key="dlq_resolve") and dlq_id.strip():
+            if st.button("Mark Resolved", type="primary", key="dlq_resolve") and dlq_id.strip():
                 ts = now_iso()
                 dbe(
                     DLQ_DB,
@@ -364,7 +438,7 @@ with tabs[4]:
                 st.success("Marked resolved.")
                 st.rerun()
         with da2:
-            if st.button("🗑 Mark Discarded", key="dlq_discard") and dlq_id.strip():
+            if st.button("Mark Discarded", key="dlq_discard") and dlq_id.strip():
                 ts = now_iso()
                 dbe(
                     DLQ_DB,
@@ -381,10 +455,10 @@ with tabs[4]:
 
 # ── Backups ───────────────────────────────────────────────────────────────────
 with tabs[5]:
-    if st.button("↻ Refresh", key="bk_refresh"):
+    if st.button("Refresh", key="bk_refresh"):
         st.rerun()
 
-    if st.button("➕ Trigger Backup", type="primary", key="bk_trigger"):
+    if st.button("+ Create Backup", type="primary", key="bk_trigger"):
         trigger = BACKUP_DIR.parent / "tinker_backup_trigger"
         trigger.write_text(now_iso())
         st.success("Backup trigger written. BackupManager will pick it up shortly.")
@@ -399,7 +473,7 @@ with tabs[5]:
 
 # ── Grub ──────────────────────────────────────────────────────────────────────
 with tabs[6]:
-    if st.button("↻ Refresh", key="grub_refresh"):
+    if st.button("Refresh", key="grub_refresh"):
         st.rerun()
 
     status = fetch_grub_status_sync()
@@ -465,7 +539,7 @@ with tabs[7]:
     fritz_col1, fritz_col2 = st.columns([1, 1])
 
     with fritz_col1:
-        if st.button("↻ Refresh", key="fritz_refresh"):
+        if st.button("Refresh", key="fritz_refresh"):
             st.rerun()
 
     fritz_status = fetch_fritz_status_sync()
@@ -474,14 +548,14 @@ with tabs[7]:
 
     if not fritz_status.get("config_exists"):
         st.warning(
-            "`fritz_config.json` not found — showing defaults. Run Fritz once to generate a config file."
+            "`fritz_config.json` not found — showing defaults. Run Fritz once to generate a config."
         )
 
     # ── Status summary ────────────────────────────────────────────────────────
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Branch", git_info.get("branch") or "—")
     m2.metric("HEAD SHA", git_info.get("sha") or "—")
-    m3.metric("Working tree", "✓ clean" if git_info.get("clean") else "⚠ dirty")
+    m3.metric("Working Tree", "Clean" if git_info.get("clean") else "Dirty")
     m4.metric("Identity", fritz_status.get("identity_mode", "—"))
 
     pc1, pc2 = st.columns(2)
@@ -494,8 +568,8 @@ with tabs[7]:
         )
         gt_target = fritz_status.get("gitea_base_url", "")
         st.markdown(
-            f"- GitHub: {'✅' if gh_enabled else '❌'} {gh_target.strip('/')}\n"
-            f"- Gitea:  {'✅' if gt_enabled else '❌'} {gt_target}"
+            f"- GitHub: **{'enabled' if gh_enabled else 'disabled'}** {gh_target.strip('/')}\n"
+            f"- Gitea: **{'enabled' if gt_enabled else 'disabled'}** {gt_target}"
         )
     with pc2:
         st.markdown("**Push Policy**")
@@ -520,7 +594,7 @@ with tabs[7]:
     st.divider()
 
     # ── Commit & Ship ─────────────────────────────────────────────────────────
-    with st.expander("🚀 Commit & Ship", expanded=True):
+    with st.expander("Commit & Ship", expanded=True):
         ship_msg = st.text_input(
             "Commit message",
             placeholder="fix: correct off-by-one in parser",
@@ -531,7 +605,7 @@ with tabs[7]:
         )
         ship_auto_merge = st.checkbox("Auto-merge PR (if policy allows)", key="fritz_auto_merge")
 
-        if st.button("⚡ Commit & Ship", key="fritz_ship_btn", disabled=not ship_msg.strip()):
+        if st.button("Commit & Ship", type="primary", key="fritz_ship_btn", disabled=not ship_msg.strip()):
             try:
                 from agents.fritz.agent import FritzAgent
                 from agents.fritz.config import FritzConfig
@@ -556,13 +630,13 @@ with tabs[7]:
                 st.error(f"Fritz error: {exc}")
 
     # ── Push branch ───────────────────────────────────────────────────────────
-    with st.expander("⬆ Push Branch"):
+    with st.expander("Push Branch"):
         push_br = st.text_input(
             "Branch (leave blank for current)",
             placeholder=git_info.get("branch", "main"),
             key="fritz_push_branch",
         )
-        if st.button("⬆ Push", key="fritz_push_btn"):
+        if st.button("Push", type="primary", key="fritz_push_btn"):
             try:
                 from agents.fritz.agent import FritzAgent
                 from agents.fritz.config import FritzConfig
@@ -582,7 +656,7 @@ with tabs[7]:
                 st.error(f"Fritz error: {exc}")
 
     # ── Create PR ─────────────────────────────────────────────────────────────
-    with st.expander("🔀 Create Pull Request"):
+    with st.expander("Create Pull Request"):
         pr_c1, pr_c2 = st.columns(2)
         with pr_c1:
             pr_title = st.text_input(
@@ -602,7 +676,7 @@ with tabs[7]:
                 height=80,
             )
         if st.button(
-            "🔀 Create PR", key="fritz_pr_btn", disabled=not (pr_title.strip() and pr_head.strip())
+            "Create PR", type="primary", key="fritz_pr_btn", disabled=not (pr_title.strip() and pr_head.strip())
         ):
             try:
                 from agents.fritz.agent import FritzAgent
@@ -662,5 +736,5 @@ with tabs[8]:
     else:
         st.info("No audit events found.")
 
-    if st.button("↻ Refresh", key="aud_refresh"):
+    if st.button("Refresh", key="aud_refresh"):
         st.rerun()

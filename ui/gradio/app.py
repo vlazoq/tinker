@@ -59,23 +59,28 @@ from ui.core import (
 def _health_md() -> str:
     state = load_state()
     if not state:
-        return "⚠️ **Orchestrator offline** — `tinker_state.json` not found."
+        return "**Orchestrator offline** — `tinker_state.json` not found."
     totals = state.get("totals", {})
     micro_hist = state.get("micro_history", [])
     last_critic = micro_hist[-1].get("critic_score") if micro_hist else "—"
+    status_str = state.get("status", "—")
+    uptime_min = round(state.get("uptime_seconds", 0) / 60, 1)
     lines = [
+        "### System Health",
+        "",
         "| Metric | Value |",
         "|--------|-------|",
-        f"| Status | **{state.get('status', '—')}** |",
-        f"| Current level | {state.get('current_level', '—')} |",
-        f"| Micro loops | **{totals.get('micro', '—')}** |",
-        f"| Meso loops  | **{totals.get('meso', '—')}** |",
-        f"| Macro loops | **{totals.get('macro', '—')}** |",
-        f"| Consecutive failures | {totals.get('consecutive_failures', '—')} |",
-        f"| Current task | `{state.get('current_task_id', '—')}` |",
-        f"| Current subsystem | {state.get('current_subsystem', '—')} |",
-        f"| Last critic score | {last_critic} |",
-        f"| Uptime | {round(state.get('uptime_seconds', 0) / 60, 1)} min |",
+        f"| Status | **{status_str}** |",
+        f"| Current Level | {state.get('current_level', '—')} |",
+        f"| Micro Loops | **{totals.get('micro', '—')}** |",
+        f"| Meso Loops  | **{totals.get('meso', '—')}** |",
+        f"| Macro Loops | **{totals.get('macro', '—')}** |",
+        f"| Stagnation Events | {totals.get('stagnation_events', '—')} |",
+        f"| Consecutive Failures | {totals.get('consecutive_failures', '—')} |",
+        f"| Current Task | `{state.get('current_task_id', '—')}` |",
+        f"| Current Subsystem | {state.get('current_subsystem', '—')} |",
+        f"| Last Critic Score | {last_critic} |",
+        f"| Uptime | {uptime_min} min |",
     ]
     return "\n".join(lines)
 
@@ -188,9 +193,9 @@ def _grub_md() -> str:
     artifacts = status.get("artifacts", [])
 
     lines = [
-        "## Grub — Implementation Pipeline",
+        "### Grub — Implementation Pipeline",
         "",
-        "### Tinker task counts (implementation + review types)",
+        "**Task Counts (implementation + review)**",
         "| Type | Status | Count |",
         "|------|--------|-------|",
     ]
@@ -202,7 +207,7 @@ def _grub_md() -> str:
 
     lines += [
         "",
-        "### Grub queue counts",
+        "**Queue Counts**",
         "| Status | Count |",
         "|--------|-------|",
     ]
@@ -211,7 +216,7 @@ def _grub_md() -> str:
     if not queue_counts and not status.get("queue_db_exists"):
         lines.append("| — | Grub not yet started |")
 
-    lines += ["", "### Recent implementation artifacts"]
+    lines += ["", "**Recent Artifacts**"]
     if artifacts:
         for a in artifacts:
             size_kb = round(a.get("size_bytes", 0) / 1024, 1)
@@ -258,24 +263,24 @@ def _fritz_md() -> str:
     git = s.get("git", {})
     pp = s.get("push_policy", {})
     lines = [
-        "## Fritz — Git Integration",
+        "### Fritz — Git Integration",
         "",
     ]
     if not s.get("config_exists"):
-        lines.append("> ⚠️ `fritz_config.json` not found — showing defaults.")
+        lines.append("> `fritz_config.json` not found — showing defaults.")
         lines.append("")
 
     lines += [
         f"**Branch:** `{git.get('branch') or '—'}`  "
         f"**SHA:** `{git.get('sha') or '—'}`  "
-        f"**Tree:** {'✓ clean' if git.get('clean') else '⚠ dirty'}",
+        f"**Tree:** {'Clean' if git.get('clean') else 'Dirty'}",
         f"**Identity:** {s.get('identity_mode', '—')}  "
         f"({s.get('git_name', '')} `{s.get('git_email', '')}`)",
         "",
         "### Platforms",
     ]
-    gh = "✅" if s.get("github_enabled") else "❌"
-    gt = "✅" if s.get("gitea_enabled") else "❌"
+    gh = "enabled" if s.get("github_enabled") else "disabled"
+    gt = "enabled" if s.get("gitea_enabled") else "disabled"
     gh_target = f"{s.get('github_owner', '')}/{s.get('github_repo', '')}".strip("/")
     gt_url = s.get("gitea_base_url", "")
     lines += [
@@ -390,23 +395,51 @@ def _run_async(coro):
 
 def build_app() -> gr.Blocks:
     with gr.Blocks(
-        title="Tinker Web UI",
+        title="Tinker Control Panel",
         theme=gr.themes.Base(
             primary_hue="blue",
+            secondary_hue="blue",
             neutral_hue="slate",
+            font=("Inter", "system-ui", "sans-serif"),
+            font_mono=("JetBrains Mono", "SF Mono", "monospace"),
         ),
         css="""
-        .gradio-container { max-width: 1200px !important; }
+        .gradio-container {
+            max-width: 1280px !important;
+            margin: 0 auto !important;
+        }
         footer { display: none !important; }
+        .dark .gr-button-secondary {
+            border-color: #30363d !important;
+        }
+        .dark .gr-panel {
+            border-color: #30363d !important;
+        }
+        .dark .gr-form {
+            border-color: #30363d !important;
+        }
+        .dark .gr-input, .dark .gr-text-input {
+            border-color: #30363d !important;
+        }
+        .dark .gr-input:focus, .dark .gr-text-input:focus {
+            border-color: #58a6ff !important;
+            box-shadow: 0 0 0 3px rgba(88,166,255,.12) !important;
+        }
+        .dark .gr-box {
+            border-color: #30363d !important;
+        }
+        .gr-group {
+            margin-bottom: 1rem !important;
+        }
         """,
     ) as demo:
-        gr.Markdown("# 🔧 TINKER  —  Web Control Panel")
+        gr.Markdown("# TINKER — Control Panel")
 
         with gr.Tabs():
             # ── Dashboard ────────────────────────────────────────────────────
-            with gr.Tab("📊 Dashboard"):
+            with gr.Tab("Dashboard"):
                 dash_md = gr.Markdown(_health_md())
-                dash_btn = gr.Button("↻ Refresh", variant="secondary", size="sm")
+                dash_btn = gr.Button("Refresh", variant="secondary", size="sm")
                 dash_btn.click(fn=_health_md, outputs=dash_md)
                 # Auto-refresh: Gradio 4.x supports `every` on event handlers
                 # to poll the dashboard status periodically.
@@ -416,7 +449,7 @@ def build_app() -> gr.Blocks:
                     pass  # Older Gradio versions don't support `every`
 
             # ── Config ───────────────────────────────────────────────────────
-            with gr.Tab("⚙️ Config"):
+            with gr.Tab("Config"):
                 gr.Markdown(
                     "Changes are saved to `tinker_webui_config.json`. Restart the orchestrator to apply."
                 )
@@ -451,7 +484,7 @@ def build_app() -> gr.Blocks:
                                     precision=0 if meta["type"] == "int" else 2,
                                 )
 
-                cfg_save_btn = gr.Button("💾 Save Config", variant="primary")
+                cfg_save_btn = gr.Button("Save Config", variant="primary")
                 cfg_msg = gr.Markdown("")
 
                 def save_all_config(*args):
@@ -490,7 +523,7 @@ def build_app() -> gr.Blocks:
 
                     data["stagnation"] = stag_data
                     save_config(data)
-                    return "✅ **Config saved.** Restart the orchestrator to apply changes."
+                    return "**Config saved.** Restart the orchestrator to apply changes."
 
                 all_inputs = list(orch_inputs.values()) + [
                     w for s in stag_inputs.values() for w in s.values()
@@ -498,7 +531,7 @@ def build_app() -> gr.Blocks:
                 cfg_save_btn.click(fn=save_all_config, inputs=all_inputs, outputs=cfg_msg)
 
             # ── Feature Flags ─────────────────────────────────────────────────
-            with gr.Tab("🚩 Feature Flags"):
+            with gr.Tab("Flags"):
                 gr.Markdown(
                     f"Writes to `{FLAGS_FILE}`. Orchestrator picks up changes within **30 seconds**."
                 )
@@ -518,30 +551,30 @@ def build_app() -> gr.Blocks:
                                     info=FLAG_DESCRIPTIONS.get(flag, ""),
                                 )
 
-                flags_save_btn = gr.Button("💾 Save Flags", variant="primary")
+                flags_save_btn = gr.Button("Save Flags", variant="primary")
 
                 def save_all_flags(*args):
                     flag_names_ordered = [f for g in FLAG_GROUPS.values() for f in g]
                     flags = {fn: bool(args[i]) for i, fn in enumerate(flag_names_ordered)}
                     save_flags(flags)
                     return (
-                        "✅ **Flags saved.** Orchestrator will pick up changes within 30 seconds."
+                        "**Flags saved.** Orchestrator will pick up changes within 30 seconds."
                     )
 
                 all_flag_widgets = [flag_widgets[f] for g in FLAG_GROUPS.values() for f in g]
                 flags_save_btn.click(fn=save_all_flags, inputs=all_flag_widgets, outputs=flags_msg)
 
             # ── Task Queue ────────────────────────────────────────────────────
-            with gr.Tab("📋 Task Queue"):
+            with gr.Tab("Tasks"):
                 tasks_stats_md = gr.Markdown(_tasks_stats())
                 tasks_df_out = gr.DataFrame(
                     _tasks_df(), label="Tasks (top 200 by priority)", interactive=False
                 )
 
                 with gr.Row():
-                    tasks_refresh_btn = gr.Button("↻ Refresh", size="sm")
+                    tasks_refresh_btn = gr.Button("Refresh", variant="secondary", size="sm")
 
-                with gr.Accordion("➕ Inject New Task", open=False):
+                with gr.Accordion("Inject New Task", open=False):
                     inj_title = gr.Textbox(
                         label="Title *", placeholder="e.g. Research caching strategies"
                     )
@@ -555,7 +588,7 @@ def build_app() -> gr.Blocks:
 
                 def inject_task(title, desc, typ, sub, gap, explore):
                     if not title.strip():
-                        return "❌ Title is required.", _tasks_df(), _tasks_stats()
+                        return "**Error:** Title is required.", _tasks_df(), _tasks_stats()
                     tid = new_id()
                     ts = now_iso()
                     ok = dbe(
@@ -579,9 +612,9 @@ def build_app() -> gr.Blocks:
                         ),
                     )
                     msg = (
-                        f"✅ Task `{tid[:8]}…` injected."
+                        f"Task `{tid[:8]}...` injected."
                         if ok
-                        else "❌ Injection failed (DB not found)."
+                        else "**Error:** Injection failed (DB not found)."
                     )
                     return msg, _tasks_df(), _tasks_stats()
 
@@ -604,11 +637,11 @@ def build_app() -> gr.Blocks:
                 )
 
             # ── DLQ ──────────────────────────────────────────────────────────
-            with gr.Tab("💀 Dead Letter Queue"):
+            with gr.Tab("DLQ"):
                 dlq_df_out = gr.DataFrame(
                     _dlq_df(), label="DLQ Items (pending first)", interactive=False
                 )
-                dlq_refresh = gr.Button("↻ Refresh", size="sm")
+                dlq_refresh = gr.Button("Refresh", variant="secondary", size="sm")
                 dlq_msg = gr.Markdown("")
 
                 with gr.Row():
@@ -617,12 +650,12 @@ def build_app() -> gr.Blocks:
                     )
                     dlq_notes = gr.Textbox(label="Notes", placeholder="Resolution reason…")
                 with gr.Row():
-                    dlq_resolve = gr.Button("✅ Mark Resolved", variant="primary")
-                    dlq_discard = gr.Button("🗑 Mark Discarded", variant="stop")
+                    dlq_resolve = gr.Button("Mark Resolved", variant="primary")
+                    dlq_discard = gr.Button("Mark Discarded", variant="stop")
 
                 def dlq_action(action, item_id, notes):
                     if not item_id.strip():
-                        return "❌ Paste the full item ID first.", _dlq_df()
+                        return "**Error:** Paste the full item ID first.", _dlq_df()
                     ts = now_iso()
                     ok = dbe(
                         DLQ_DB,
@@ -635,9 +668,9 @@ def build_app() -> gr.Blocks:
                         ),
                     )
                     msg = (
-                        f"✅ Item `{item_id[:8]}…` marked **{action}**."
+                        f"Item `{item_id[:8]}...` marked **{action}**."
                         if ok
-                        else "❌ Update failed."
+                        else "**Error:** Update failed."
                     )
                     return msg, _dlq_df()
 
@@ -654,19 +687,19 @@ def build_app() -> gr.Blocks:
                 dlq_refresh.click(fn=_dlq_df, outputs=dlq_df_out)
 
             # ── Backups ───────────────────────────────────────────────────────
-            with gr.Tab("💾 Backups"):
+            with gr.Tab("Backups"):
                 backup_df_out = gr.DataFrame(
                     _backup_df(), label="Available Backups", interactive=False
                 )
-                backup_refresh = gr.Button("↻ Refresh", size="sm")
-                backup_trigger = gr.Button("➕ Trigger Backup", variant="primary")
+                backup_refresh = gr.Button("Refresh", variant="secondary", size="sm")
+                backup_trigger = gr.Button("+ Create Backup", variant="primary")
                 backup_msg = gr.Markdown("")
 
                 def trigger_backup():
                     trigger = BACKUP_DIR.parent / "tinker_backup_trigger"
                     trigger.write_text(now_iso())
                     return (
-                        "✅ **Backup trigger written.** BackupManager will pick it up shortly.",
+                        "**Backup trigger written.** BackupManager will pick it up shortly.",
                         _backup_df(),
                     )
 
@@ -674,36 +707,36 @@ def build_app() -> gr.Blocks:
                 backup_refresh.click(fn=_backup_df, outputs=backup_df_out)
 
             # ── Grub ──────────────────────────────────────────────────────────
-            with gr.Tab("🤖 Grub"):
+            with gr.Tab("Grub"):
                 grub_md_out = gr.Markdown(_grub_md())
                 grub_df_out = gr.DataFrame(
                     _grub_impl_df(),
                     label="Implementation & Review tasks (last 100)",
                     interactive=False,
                 )
-                grub_refresh = gr.Button("↻ Refresh", variant="secondary", size="sm")
+                grub_refresh = gr.Button("Refresh", variant="secondary", size="sm")
                 grub_refresh.click(
                     fn=lambda: (_grub_md(), _grub_impl_df()),
                     outputs=[grub_md_out, grub_df_out],
                 )
 
             # ── Fritz ─────────────────────────────────────────────────────────
-            with gr.Tab("🔀 Fritz"):
+            with gr.Tab("Fritz"):
                 fritz_md_out = gr.Markdown(_fritz_md())
                 fritz_result_out = gr.Textbox(label="Result", interactive=False, lines=2)
-                fritz_refresh_btn = gr.Button("↻ Refresh Status", variant="secondary", size="sm")
+                fritz_refresh_btn = gr.Button("Refresh", variant="secondary", size="sm")
                 fritz_refresh_btn.click(fn=_fritz_md, outputs=fritz_md_out)
 
                 with gr.Row():
                     fritz_verify_btn = gr.Button(
-                        "🔌 Verify Connections", variant="secondary", size="sm"
+                        "Verify Connections", variant="secondary", size="sm"
                     )
                 fritz_verify_btn.click(
                     fn=lambda: _run_async(_fritz_verify_async()),
                     outputs=fritz_result_out,
                 )
 
-                gr.Markdown("### 🚀 Commit & Ship")
+                gr.Markdown("### Commit & Ship")
                 with gr.Row():
                     fritz_msg = gr.Textbox(
                         label="Commit message",
@@ -716,28 +749,28 @@ def build_app() -> gr.Blocks:
                 fritz_auto_merge = gr.Checkbox(
                     label="Auto-merge PR (if policy allows)", value=False
                 )
-                fritz_ship_btn = gr.Button("⚡ Commit & Ship", variant="primary")
+                fritz_ship_btn = gr.Button("Commit & Ship", variant="primary")
                 fritz_ship_btn.click(
                     fn=lambda msg, tid, am: _run_async(_fritz_ship_async(msg, tid, am)),
                     inputs=[fritz_msg, fritz_task, fritz_auto_merge],
                     outputs=fritz_result_out,
                 )
 
-                gr.Markdown("### ⬆ Push Branch")
+                gr.Markdown("### Push Branch")
                 with gr.Row():
                     fritz_push_branch = gr.Textbox(
                         label="Branch (leave blank for current)",
                         placeholder="main",
                         scale=2,
                     )
-                    fritz_push_btn = gr.Button("⬆ Push", variant="primary", scale=1)
+                    fritz_push_btn = gr.Button("Push", variant="primary", scale=1)
                 fritz_push_btn.click(
                     fn=lambda b: _run_async(_fritz_push_async(b)),
                     inputs=fritz_push_branch,
                     outputs=fritz_result_out,
                 )
 
-                gr.Markdown("### 🔀 Create Pull Request")
+                gr.Markdown("### Create Pull Request")
                 with gr.Row():
                     fritz_pr_title = gr.Textbox(label="Title", placeholder="fix: …", scale=3)
                     fritz_pr_head = gr.Textbox(
@@ -747,7 +780,7 @@ def build_app() -> gr.Blocks:
                 fritz_pr_body = gr.Textbox(
                     label="Description", placeholder="Describe what this PR does…", lines=3
                 )
-                fritz_pr_btn = gr.Button("🔀 Create PR", variant="primary")
+                fritz_pr_btn = gr.Button("Create PR", variant="primary")
                 fritz_pr_btn.click(
                     fn=lambda t, b, h, bs: _run_async(_fritz_pr_async(t, b, h, bs)),
                     inputs=[fritz_pr_title, fritz_pr_body, fritz_pr_head, fritz_pr_base],
@@ -755,7 +788,7 @@ def build_app() -> gr.Blocks:
                 )
 
             # ── Audit Log ─────────────────────────────────────────────────────
-            with gr.Tab("📜 Audit Log"):
+            with gr.Tab("Audit"):
                 audit_event_types = [
                     r["event_type"]
                     for r in dbq(
@@ -771,7 +804,7 @@ def build_app() -> gr.Blocks:
                     )
                     audit_actor_filter = gr.Textbox(label="Actor", placeholder="e.g. micro_loop")
                     audit_limit = gr.Slider(10, 200, value=50, step=10, label="Limit")
-                audit_search_btn = gr.Button("🔍 Search", variant="primary")
+                audit_search_btn = gr.Button("Search", variant="primary")
                 audit_df_out = gr.DataFrame(_audit_df(), label="Audit Events", interactive=False)
 
                 audit_search_btn.click(
