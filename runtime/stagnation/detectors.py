@@ -341,7 +341,9 @@ class TaskStarvationDetector:
         if net < 0:
             self._consecutive_negative += 1
         else:
-            self._consecutive_negative = 0
+            # Decay instead of hard reset — a single positive signal
+            # shouldn't erase a sustained negative trend entirely.
+            self._consecutive_negative = max(0, self._consecutive_negative - 1)
 
         depth_critical = queue_depth <= self.cfg.low_depth_threshold
         rate_critical = self._consecutive_negative >= self.cfg.consecutive_negative_threshold

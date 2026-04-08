@@ -56,7 +56,7 @@ def _derive_key(master_key: str, salt: bytes) -> bytes:
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
-        iterations=100_000,
+        iterations=600_000,
     )
     return kdf.derive(master_key.encode())
 
@@ -150,14 +150,15 @@ class ArtifactEncryptor:
             return payload
 
         # Attempt to detect and decode an encrypted payload.
-        # Any failure means the data is plaintext (legacy passthrough).
+        # If it doesn't look like our format, treat as plaintext (legacy).
         try:
             decoded = base64.b64decode(payload.encode())
             data = json.loads(decoded)
             if not isinstance(data, dict) or data.get("v") != _PAYLOAD_VERSION:
                 return payload  # Not our format — return as-is
         except Exception:
-            return payload  # Plaintext passthrough
+            # Payload doesn't base64-decode to valid JSON — likely plaintext.
+            return payload
 
         try:
             salt = bytes.fromhex(data["salt"])

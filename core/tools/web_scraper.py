@@ -48,11 +48,49 @@ it with ``pip install trafilatura`` to use this tool.
 
 from __future__ import annotations
 
+import ipaddress
+import logging
 import os
+import socket
 from typing import Any
 from urllib.parse import urlparse
 
 from .base import BaseTool, ToolSchema
+
+_scraper_log = logging.getLogger(__name__)
+
+# ── SSRF protection ──────────────────────────────────────────────────────────
+_BLOCKED_HOSTS = {
+    "metadata.google.internal",
+    "metadata.goog",
+    "169.254.169.254",
+}
+
+
+def _is_ssrf_target(url: str) -> bool:
+    """Return True if *url* points to a private/link-local/metadata address."""
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+
+    # Block well-known cloud metadata hostnames
+    if hostname.lower() in _BLOCKED_HOSTS:
+        return True
+
+    # Block file:// and other non-http schemes
+    if parsed.scheme not in ("http", "https", ""):
+        return True
+
+    # Resolve hostname and check if the IP is private/reserved
+    try:
+        for info in socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM):
+            addr = info[4][0]
+            ip = ipaddress.ip_address(addr)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return True
+    except (socket.gaierror, ValueError, OSError):
+        pass  # unresolvable host — let the fetch fail naturally
+
+    return False
 
 # Try to import Playwright.  Playwright is an optional dependency — not everyone
 # needs JavaScript-rendered page fetching.  If it's not installed, we set a flag
@@ -184,22 +222,25 @@ class WebScraperTool(BaseTool):
 
     def _parse_url(self, url: str) -> str:
         """
-        Ensure the URL has a scheme (http:// or https://).
-
-        Some callers might pass a URL like "example.com/article" without the
-        leading "https://".  Both Playwright and httpx need the scheme to
-        work correctly, so we add it here if it's missing.
+        Ensure the URL has a scheme (http:// or https://) and is not an
+        SSRF target (private IPs, cloud metadata endpoints, etc.).
 
         Args:
             url: The URL as provided by the caller.
 
         Returns:
             The URL with "https://" prepended if no scheme was present.
+
+        Raises:
+            ValueError: If the URL targets a private/reserved address.
         """
         parsed = urlparse(url)
         if not parsed.scheme:
-            # No scheme found — default to https for safety.
             url = "https://" + url
+
+        if _is_ssrf_target(url):
+            _scraper_log.warning("Blocked SSRF attempt: %s", url)
+            raise ValueError(f"URL targets a private or reserved address: {url}")
         return url
 
     def _extract(self, html: str, url: str, include_links: bool) -> dict:

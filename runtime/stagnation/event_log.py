@@ -38,6 +38,11 @@ class StagnationEventLog:
 
     def append(self, event: StagnationEvent) -> None:
         with self._lock:
+            # If the deque is full, the leftmost (oldest) event will be
+            # evicted — decrement its type count to keep stats accurate.
+            if len(self._events) == self._events.maxlen:
+                evicted = self._events[0]
+                self._type_counts[evicted.stagnation_type] -= 1
             self._events.append(event)
             self._type_counts[event.stagnation_type] += 1
 

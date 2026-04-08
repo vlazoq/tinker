@@ -108,11 +108,12 @@ async def _lifespan(application: FastAPI):
 # ── App setup ─────────────────────────────────────────────────────────────────
 app = FastAPI(title="Tinker Web UI", docs_url="/api/docs", redoc_url=None, lifespan=_lifespan)
 
+_CORS_ORIGINS = os.getenv("TINKER_CORS_ORIGINS", "http://localhost:8082").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[o.strip() for o in _CORS_ORIGINS],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 app.add_middleware(_APIRateLimitMiddleware)
 

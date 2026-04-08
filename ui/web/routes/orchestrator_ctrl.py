@@ -24,9 +24,22 @@ async def api_confirmations_list():
     }
 
 
+def _sanitize_id(value: str) -> str:
+    """Strip path separators and special characters to prevent path traversal."""
+    name = Path(value).name  # discard any directory components
+    if not name or name in (".", ".."):
+        raise ValueError(f"Invalid identifier: {value!r}")
+    return name
+
+
 @router.post("/api/confirm/{request_id}")
 async def api_confirm(request_id: str, request: Request):
     """Approve or deny a pending confirmation request."""
+    try:
+        request_id = _sanitize_id(request_id)
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "Invalid request_id"}, status_code=400)
+
     body = await request.json()
     approved = bool(body.get("approved", False))
 

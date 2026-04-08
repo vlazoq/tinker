@@ -19,6 +19,22 @@ def _load_int(val: str, default: int) -> int:
         return default
 
 
+import math
+
+
+def _load_float(val: str, default: float) -> float:
+    """Parse a float from string, rejecting NaN/Inf and falling back to default."""
+    try:
+        result = float(val)
+        if math.isfinite(result):
+            return result
+        logger.warning("Non-finite float %r, using default %s", val, default)
+        return default
+    except (ValueError, TypeError):
+        logger.warning("Could not parse %r as float, using default %s", val, default)
+        return default
+
+
 def _env(key: str, default: str = "") -> str:
     return os.getenv(key, default)
 
@@ -153,8 +169,8 @@ class WebUISettings:
     def from_env(cls) -> WebUISettings:
         return cls(
             port=_load_int(_env("TINKER_WEBUI_PORT", "8082"), 8082),
-            rate_per_sec=float(_env("TINKER_WEBUI_RATE_PER_SEC", "2.0")),
-            rate_burst=float(_env("TINKER_WEBUI_RATE_BURST", "30.0")),
+            rate_per_sec=_load_float(_env("TINKER_WEBUI_RATE_PER_SEC", "2.0"), 2.0),
+            rate_burst=_load_float(_env("TINKER_WEBUI_RATE_BURST", "30.0"), 30.0),
             config=_env("TINKER_WEBUI_CONFIG", "tinker_webui_config.json"),
             streamlit_port=_load_int(_env("TINKER_STREAMLIT_PORT", "8501"), 8501),
             gradio_port=_load_int(_env("TINKER_GRADIO_PORT", "7860"), 7860),
@@ -180,7 +196,7 @@ class OrchestratorSettings:
             meso_trigger=_load_int(_env("TINKER_MESO_TRIGGER", "5"), 5),
             architect_timeout=_load_int(_env("TINKER_ARCHITECT_TIMEOUT", "120"), 120),
             critic_timeout=_load_int(_env("TINKER_CRITIC_TIMEOUT", "60"), 60),
-            temperature=float(_env("TINKER_TEMPERATURE", "0.7")),
+            temperature=_load_float(_env("TINKER_TEMPERATURE", "0.7"), 0.7),
             self_improve_enabled=_load_bool(_env("TINKER_SELF_IMPROVE_ENABLED", "false")),
             self_improve_branch=_env("TINKER_SELF_IMPROVE_BRANCH"),
             confirm_before=_env("TINKER_CONFIRM_BEFORE"),
@@ -271,8 +287,8 @@ class MCPSettings:
             connect_timeout=_load_int(_env("TINKER_MCP_CONNECT_TIMEOUT", "10"), 10),
             servers=_env("TINKER_MCP_SERVERS"),
             token=_env("TINKER_MCP_TOKEN"),
-            rate_per_sec=float(_env("TINKER_MCP_RATE_PER_SEC", "1.0")),
-            rate_burst=float(_env("TINKER_MCP_RATE_BURST", "60.0")),
+            rate_per_sec=_load_float(_env("TINKER_MCP_RATE_PER_SEC", "1.0"), 1.0),
+            rate_burst=_load_float(_env("TINKER_MCP_RATE_BURST", "60.0"), 60.0),
         )
 
 
@@ -307,14 +323,14 @@ class GrubSettings:
             refactorer_model=_env("GRUB_REFACTORER_MODEL", "qwen2.5-coder:7b"),
             ollama_url=_env("GRUB_OLLAMA_URL", "http://localhost:11434"),
             exec_mode=_env("GRUB_EXEC_MODE", "sequential"),
-            quality_threshold=float(_env("GRUB_QUALITY_THRESHOLD", "0.75")),
+            quality_threshold=_load_float(_env("GRUB_QUALITY_THRESHOLD", "0.75"), 0.75),
             max_iterations=_load_int(_env("GRUB_MAX_ITERATIONS", "5"), 5),
             output_dir=_env("GRUB_OUTPUT_DIR", "./grub_output"),
             queue_db=_env("GRUB_QUEUE_DB", "grub_queue.sqlite"),
             artifacts_dir=_env("GRUB_ARTIFACTS_DIR", "./grub_artifacts"),
             queue_workers=_load_int(_env("GRUB_QUEUE_WORKERS", "2"), 2),
             enable_git=_load_bool(_env("GRUB_ENABLE_GIT", "false")),
-            request_timeout=float(_env("GRUB_REQUEST_TIMEOUT", "120.0")),
+            request_timeout=_load_float(_env("GRUB_REQUEST_TIMEOUT", "120.0"), 120.0),
             context_max_chars=_load_int(_env("GRUB_CONTEXT_MAX_CHARS", "6000"), 6000),
             context_target_chars=_load_int(_env("GRUB_CONTEXT_TARGET_CHARS", "3000"), 3000),
             summarizer_model=_env("GRUB_SUMMARIZER_MODEL"),

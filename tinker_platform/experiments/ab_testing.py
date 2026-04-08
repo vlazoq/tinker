@@ -334,6 +334,7 @@ class ABTestingFramework:
             # Map the 256-bit hash to [0, 1) by dividing by 2^256
             traffic_frac = traffic_val / (2**256)
             if traffic_frac >= exp.traffic_percentage:
+                # Unit is outside the experiment traffic slice → control
                 control = next(iter(exp.variants))
                 return control, exp.variants[control]
 

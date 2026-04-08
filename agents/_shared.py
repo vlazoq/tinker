@@ -45,22 +45,36 @@ logger = logging.getLogger("tinker.agents")
 # This is the same file-based control mechanism used by pause/resume.
 
 
+_system_mode_cache: tuple[float, str, tuple[str, str]] = (0.0, "", ("architect", ""))
+_SYSTEM_MODE_TTL = 5.0  # seconds
+
+
 def _read_system_mode() -> tuple[str, str]:
     """Return ``(system_mode, research_topic)`` from the control file.
 
     Falls back to ``("architect", "")`` if the file doesn't exist or is
-    unreadable.  This function is called on every prompt-build so the mode
-    switch takes effect on the very next micro loop iteration.
+    unreadable.  Results are cached for up to 5 seconds to avoid excessive
+    filesystem reads in hot loops.
     """
-    control_dir = Path(os.getenv("TINKER_CONTROL_DIR", "./tinker_control"))
-    mode_path = control_dir / "mode.json"
+    global _system_mode_cache
+    import time as _time
+
+    control_dir_str = os.getenv("TINKER_CONTROL_DIR", "./tinker_control")
+    now = _time.monotonic()
+    cached_time, cached_dir, cached_result = _system_mode_cache
+    if now - cached_time < _SYSTEM_MODE_TTL and cached_dir == control_dir_str:
+        return cached_result
+
+    result = ("architect", "")
+    mode_path = Path(control_dir_str) / "mode.json"
     if mode_path.exists():
         try:
             data = json.loads(mode_path.read_text())
-            return data.get("system_mode", "architect"), data.get("research_topic", "")
+            result = data.get("system_mode", "architect"), data.get("research_topic", "")
         except Exception:
             pass
-    return "architect", ""
+    _system_mode_cache = (now, control_dir_str, result)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -265,13 +279,15 @@ def _extract_score(text: str) -> float:
         r"score[:\s]+([0-9]+(?:\.[0-9]+)?)\s*/\s*10",
         r"score[:\s]+([0-9]+(?:\.[0-9]+)?)",
         r"([0-9]+(?:\.[0-9]+)?)\s*/\s*10",
-        r"([0-9]\.[0-9]+)\b",
+        r"\b(0\.[0-9]+)\b",  # bare 0.xx — clearly a 0-1 score
     ]:
         m = re.search(pattern, text, re.IGNORECASE)
         if m:
             try:
                 val = float(m.group(1))
-                return val / 10.0 if val > 1.0 else val
+                if val > 1.0:
+                    val = val / 10.0
+                return max(0.0, min(1.0, val))
             except ValueError:
                 pass
     return 0.7
