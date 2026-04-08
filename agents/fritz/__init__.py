@@ -26,7 +26,20 @@ Typical usage
     )
 """
 
-from .agent import FritzAgent
 from .config import FritzConfig
+
+# FritzAgent is loaded lazily so that ``import agents`` does not pull in
+# the entire httpx dependency chain (agent → gitea_ops → httpx).
+# Only code that actually *uses* FritzAgent pays the import cost.
+
+
+def __getattr__(name: str):
+    if name == "FritzAgent":
+        from .agent import FritzAgent
+
+        globals()["FritzAgent"] = FritzAgent
+        return FritzAgent
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = ["FritzAgent", "FritzConfig"]

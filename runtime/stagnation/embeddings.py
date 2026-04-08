@@ -16,10 +16,13 @@ Design decisions:
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from abc import ABC, abstractmethod
 from collections import Counter
+
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────
 # Abstract interface
@@ -99,45 +102,32 @@ class OllamaEmbeddingBackend(EmbeddingBackend):
 
 class FallbackTFIDFBackend(EmbeddingBackend):
     """
-    Very lightweight TF-IDF bag-of-words embedding.
+    Very lightweight fixed-dimension hashing-trick embedding.
     Suitable for testing and environments without Ollama.
-    Vocabulary is built incrementally from all embedded texts.
 
-    Dimensions = size of vocabulary (capped at max_vocab).
+    Uses a fixed number of buckets (``dim``) so every call to ``embed()``
+    returns a vector of exactly the same length — no vocabulary growth and
+    therefore no dimension-mismatch errors when comparing old and new
+    embeddings with ``cosine_similarity()``.
+
     Vectors are L2-normalised before returning.
     """
 
-    def __init__(self, max_vocab: int = 512):
-        self.max_vocab: list[str] = []
-        self.max_vocab_size = max_vocab
-        self._doc_freq: Counter = Counter()
-        self._doc_count: int = 0
+    def __init__(self, dim: int = 256):
+        self._dim = dim
         self._tokenise = lambda t: re.findall(r"[a-z]+", t.lower())
 
-    # ── vocabulary management ────────────────────────────────
+    # ── hashing-trick vector ─────────────────────────────────
 
-    def _update_vocab(self, tokens: list[str]) -> None:
-        self._doc_count += 1
-        for tok in set(tokens):
-            self._doc_freq[tok] += 1
-        if len(self.max_vocab) < self.max_vocab_size:
-            for tok in tokens:
-                if tok not in self.max_vocab:
-                    self.max_vocab.append(tok)
-                    if len(self.max_vocab) == self.max_vocab_size:
-                        break
-
-    def _tfidf_vector(self, tokens: list[str]) -> list[float]:
-        if not self.max_vocab:
-            return [0.0]
-        tf = Counter(tokens)
+    def _hash_vector(self, tokens: list[str]) -> list[float]:
+        vec = [0.0] * self._dim
+        tf: Counter = Counter(tokens)
         total = max(len(tokens), 1)
-        vec: list[float] = []
-        for word in self.max_vocab:
-            tf_val = tf[word] / total
-            df = self._doc_freq.get(word, 0)
-            idf = math.log((self._doc_count + 1) / (df + 1)) + 1.0
-            vec.append(tf_val * idf)
+        for tok, count in tf.items():
+            # Two independent hashes: one for bucket, one for sign
+            bucket = hash(tok) % self._dim
+            sign = 1.0 if hash(tok + "_sign") % 2 == 0 else -1.0
+            vec[bucket] += sign * (count / total)
         return vec
 
     @staticmethod
@@ -149,8 +139,7 @@ class FallbackTFIDFBackend(EmbeddingBackend):
 
     def embed(self, text: str) -> list[float]:
         tokens = self._tokenise(text)
-        self._update_vocab(tokens)
-        raw = self._tfidf_vector(tokens)
+        raw = self._hash_vector(tokens)
         return self._l2_normalise(raw)
 
 
@@ -170,6 +159,7 @@ def make_embedding_backend(
     Set force_fallback=True in tests.
     """
     if force_fallback:
+        logger.debug("Embedding backend: using TF-IDF fallback (force_fallback=True)")
         return FallbackTFIDFBackend()
     try:
         import urllib.request
@@ -178,5 +168,8 @@ def make_embedding_backend(
             if resp.status == 200:
                 return OllamaEmbeddingBackend(model=model, base_url=ollama_url)
     except Exception:
-        pass
+        logger.warning(
+            "Ollama not reachable at %s — falling back to TF-IDF embedding backend",
+            ollama_url,
+        )
     return FallbackTFIDFBackend()

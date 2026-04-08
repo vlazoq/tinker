@@ -178,7 +178,7 @@ async def run_macro_loop(orch: Orchestrator, trigger_iteration: int) -> MacroLoo
         # If the self-improvement engine is available, collect a performance
         # snapshot and let it analyze whether Tinker should adjust its own
         # prompts, config, or generate improvement tasks.
-        if hasattr(orch, "_self_improvement") and orch._self_improvement is not None:
+        if getattr(orch, "self_improvement", None) is not None:
             try:
                 from .self_improvement import PerformanceSnapshot
 
@@ -191,7 +191,7 @@ async def run_macro_loop(orch: Orchestrator, trigger_iteration: int) -> MacroLoo
                     loop_durations=list(getattr(orch.state, "recent_loop_durations", [])),
                 )
 
-                actions = orch._self_improvement.analyze(snap)
+                actions = orch.self_improvement.analyze(snap)
                 for action in actions:
                     if action.action_type == "prompt_adjustment":
                         logger.info(
@@ -205,7 +205,7 @@ async def run_macro_loop(orch: Orchestrator, trigger_iteration: int) -> MacroLoo
                             from core.prompts.builder import PromptBuilder as _PB
 
                             current = _PB.get_global_project_instructions()
-                            updated = orch._self_improvement.apply_prompt_adjustment(
+                            updated = orch.self_improvement.apply_prompt_adjustment(
                                 current,
                                 action,
                             )
@@ -228,7 +228,7 @@ async def run_macro_loop(orch: Orchestrator, trigger_iteration: int) -> MacroLoo
                         # Apply config adjustment (temperature tuning).
                         try:
                             current_temp = getattr(orch.config, "temperature", 0.7)
-                            new_temp = orch._self_improvement.apply_config_adjustment(
+                            new_temp = orch.self_improvement.apply_config_adjustment(
                                 current_temp,
                                 action,
                             )
