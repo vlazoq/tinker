@@ -147,9 +147,11 @@ class PriorityScorer:
         Custom weights.  If None, the default weights are used.
     """
 
-    def __init__(self, weights: ScorerWeights | None = None):
+    def __init__(self, weights: ScorerWeights | None = None, seed: int | None = None):
         # Use the provided weights, or fall back to the defaults
         self.w = weights or ScorerWeights()
+        # Optional seed for reproducible jitter (useful in tests)
+        self._rng = random.Random(seed)
 
     # =========================================================================
     # Public API
@@ -194,7 +196,7 @@ class PriorityScorer:
         # Random jitter of ±1% to break exact ties naturally.
         # Without this, two tasks with identical inputs would always be
         # returned in the same (arbitrary) order, making the queue less diverse.
-        jitter = random.uniform(-0.01, 0.01)
+        jitter = self._rng.uniform(-0.01, 0.01)
 
         # Clamp to [0, 1] — jitter could push a score just outside the range
         final = max(0.0, min(1.0, raw + jitter))

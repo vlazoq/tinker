@@ -43,6 +43,7 @@ class StubTaskEngine:
 
     def _make_task(self, parent_id: str | None = None) -> dict:
         subsystem = random.choice(self.SUBSYSTEMS)
+        is_exploration = random.random() < 0.15  # ~15% exploration tasks
         return {
             "id": str(uuid.uuid4()),
             "subsystem": subsystem,
@@ -51,6 +52,7 @@ class StubTaskEngine:
             "tags": [subsystem, "design"],
             "parent_id": parent_id,
             "created_at": time.time(),
+            "is_exploration": is_exploration,
         }
 
     async def select_task(self) -> dict | None:

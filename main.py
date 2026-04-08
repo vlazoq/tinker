@@ -104,7 +104,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     from bootstrap.enterprise_stack import build_enterprise_stack
     from bootstrap.health import asyncio_exception_handler, run_health_check
 
-    asyncio.get_event_loop().set_exception_handler(asyncio_exception_handler)
+    asyncio.get_running_loop().set_exception_handler(asyncio_exception_handler)
 
     from runtime.orchestrator.config import OrchestratorConfig
     from runtime.orchestrator.orchestrator import Orchestrator
@@ -261,7 +261,7 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         if _web_notify is not None:
             pub, notify_fn = _web_notify
             try:
-                asyncio.get_event_loop().create_task(notify_fn(pub, state_dict))
+                asyncio.get_running_loop().create_task(notify_fn(pub, state_dict))
             except Exception:
                 pass  # Event loop may not be running yet
 
@@ -318,8 +318,8 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         logger.debug("MCP subsystem not available: %s", _exc)
 
     # Attach optional self-improvement engine to the orchestrator so
-    # macro_loop.py can access it via orch._self_improvement.
-    orchestrator._self_improvement = _self_improvement_engine
+    # macro_loop.py can access it via orch.self_improvement.
+    orchestrator.self_improvement = _self_improvement_engine
 
     if enterprise.get("health_server") is not None:
         enterprise["health_server"]._orchestrator = orchestrator

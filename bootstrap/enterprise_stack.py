@@ -107,7 +107,13 @@ def build_enterprise_stack() -> dict:
     _sla_log = logging.getLogger("tinker.sla_tracker")
 
     def _sla_breach_callback(report) -> None:
-        task = asyncio.create_task(
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            _sla_log.warning("SLA breach detected but no running event loop to send alert")
+            return
+
+        task = loop.create_task(
             alerter.alert(
                 alert_type=_AlertType.SLA_BREACH,
                 title=f"SLA breach: {report.name}",

@@ -50,8 +50,9 @@ async def _limiter_for_ip(ip: str) -> TokenBucketRateLimiter:
     async with _ip_limiters_lock:
         if ip not in _ip_limiters:
             _ip_limiters[ip] = TokenBucketRateLimiter(
+                name=f"webui_{ip}",
                 rate=_WEBUI_RATE_PER_SEC,
-                capacity=_WEBUI_RATE_BURST,
+                burst=_WEBUI_RATE_BURST,
             )
         return _ip_limiters[ip]
 
@@ -90,8 +91,22 @@ class _APIRateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# ── App lifespan ─────────────────────────────────────────────────────────────
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    """Attach shared resources on startup, clean up on shutdown."""
+    # Import here to avoid circular imports at module level
+    from ui.web.routes.streaming import _publisher
+
+    application.state.publisher = _publisher
+    yield
+
+
 # ── App setup ─────────────────────────────────────────────────────────────────
-app = FastAPI(title="Tinker Web UI", docs_url="/api/docs", redoc_url=None)
+app = FastAPI(title="Tinker Web UI", docs_url="/api/docs", redoc_url=None, lifespan=_lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -150,7 +165,3 @@ from ui.web.routes.streaming import (  # noqa: F401
 )
 
 
-@app.on_event("startup")
-async def _attach_publisher() -> None:
-    """Attach the StatePublisher to app.state on startup."""
-    app.state.publisher = _publisher

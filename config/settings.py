@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 def _load_bool(val: str) -> bool:
@@ -12,6 +15,7 @@ def _load_int(val: str, default: int) -> int:
     try:
         return int(val)
     except (ValueError, TypeError):
+        logger.warning("Could not parse %r as int, using default %d", val, default)
         return default
 
 
