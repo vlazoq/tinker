@@ -162,7 +162,7 @@ def _validate_grub(grub, warnings: list[str]) -> None:
     _check_positive(grub.request_timeout, "grub.request_timeout", warnings)
     _check_positive(grub.context_max_chars, "grub.context_max_chars", warnings)
     _check_positive(grub.context_target_chars, "grub.context_target_chars", warnings)
-    if 0.0 < grub.quality_threshold > 1.0:
+    if not (0.0 <= grub.quality_threshold <= 1.0):
         warnings.append(
             f"grub.quality_threshold: {grub.quality_threshold} is outside expected range 0.0-1.0"
         )

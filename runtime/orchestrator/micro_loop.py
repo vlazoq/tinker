@@ -60,6 +60,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import sys
 import time
 from typing import TYPE_CHECKING
 
@@ -586,9 +587,10 @@ async def run_micro_loop(orch: Orchestrator) -> MicroLoopRecord:
             record.artifact_id,
         )
         # Close the trace context manager if tracing is active.
+        # Pass real exception info so the trace records failures accurately.
         if _trace_ctx is not None:
             with contextlib.suppress(Exception):
-                _trace_ctx.__exit__(None, None, None)
+                _trace_ctx.__exit__(*sys.exc_info())
 
     return record
 

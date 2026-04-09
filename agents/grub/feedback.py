@@ -112,7 +112,7 @@ class TinkerBridge:
             except Exception as exc:
                 logger.debug(
                     "TinkerBridge: malformed metadata for row %s: %s",
-                    row.get("id", "?"),
+                    row["id"] if "id" in row.keys() else "?",
                     exc,
                 )
 

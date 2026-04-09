@@ -67,6 +67,12 @@ async def api_submit_review(review_id: str, request: Request):
             "sticky": false          (optional, make directive persist across loops)
         }
     """
+    # Sanitize review_id to prevent path traversal
+    safe_name = Path(review_id).name
+    if not safe_name or safe_name in (".", ".."):
+        return JSONResponse({"ok": False, "error": "Invalid review_id"}, status_code=400)
+    review_id = safe_name
+
     body = await request.json()
 
     # Validate score
