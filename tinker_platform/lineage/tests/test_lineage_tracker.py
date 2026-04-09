@@ -8,7 +8,10 @@ filters, stats, and cycle detection.
 
 from __future__ import annotations
 
+pytest_plugins = []
 import pytest
+
+aiosqlite = pytest.importorskip("aiosqlite", reason="aiosqlite required for lineage tests")
 
 from tinker_platform.lineage.tracker import LineageTracker
 

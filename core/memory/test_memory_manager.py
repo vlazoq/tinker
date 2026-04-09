@@ -25,6 +25,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import pytest_asyncio
 
+duckdb = pytest.importorskip("duckdb", reason="duckdb required for memory manager tests")
+aiosqlite = pytest.importorskip("aiosqlite", reason="aiosqlite required for memory manager tests")
+fakeredis = pytest.importorskip("fakeredis", reason="fakeredis required for memory manager tests")
+
 from core.memory import (
     Artifact,
     EmbeddingPipeline,

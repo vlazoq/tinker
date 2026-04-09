@@ -5,7 +5,7 @@ Tests for BaseMinion helpers — code block extraction, score parsing,
 system prompt building.  No LLM calls needed.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -140,9 +140,9 @@ class TestLlmMethod:
     @pytest.mark.asyncio
     async def test_returns_content_on_success(self, minion):
         """When Ollama responds correctly, _llm() returns the content string."""
-        mock_response = AsyncMock()
-        mock_response.raise_for_status = AsyncMock()
-        mock_response.json = AsyncMock(
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = MagicMock(
             return_value={"message": {"content": "Generated code here"}}
         )
         with patch("httpx.AsyncClient") as mock_client:

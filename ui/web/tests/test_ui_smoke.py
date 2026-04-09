@@ -34,6 +34,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.parent.parent  # tinker/
 WEBUI_CORE = ROOT / "ui" / "core.py"
 WEBUI_APP = ROOT / "ui" / "web" / "app.py"
+WEBUI_ROUTES_DIR = ROOT / "ui" / "web" / "routes"
 STREAMLIT_APP = ROOT / "ui" / "streamlit" / "app.py"
 GRADIO_APP = ROOT / "ui" / "gradio" / "app.py"
 
@@ -42,6 +43,15 @@ _UI_FILES = {
     "ui/streamlit/app.py": STREAMLIT_APP,
     "ui/gradio/app.py": GRADIO_APP,
 }
+
+
+def _webui_full_src() -> str:
+    """Return concatenated source of app.py and all route modules."""
+    parts = [_src(WEBUI_APP)]
+    if WEBUI_ROUTES_DIR.is_dir():
+        for p in sorted(WEBUI_ROUTES_DIR.glob("*.py")):
+            parts.append(p.read_text(encoding="utf-8"))
+    return "\n".join(parts)
 
 
 # ── AST helpers ───────────────────────────────────────────────────────────────
@@ -235,9 +245,9 @@ class TestSingleSourceOfTruth:
         )
 
     def test_webui_app_imports_from_core(self):
-        src = _src(WEBUI_APP)
+        src = _webui_full_src()
         assert "from ui.core import" in src or "from .core import" in src, (
-            "ui/web/app.py must import shared constants from ui.core"
+            "ui/web/app.py (or its route modules) must import shared constants from ui.core"
         )
 
     def test_webui_app_does_not_redefine_shared_names(self):
@@ -354,11 +364,11 @@ class TestFastAPIRoutes:
 
     def test_task_inject_route_exists(self):
         """Task injection endpoint must exist for manual task creation."""
-        assert "/api/tasks/inject" in _src(WEBUI_APP)
+        assert "/api/tasks/inject" in _webui_full_src()
 
     def test_dlq_resolve_and_discard_routes_exist(self):
         """DLQ must support both resolve and discard actions."""
-        src = _src(WEBUI_APP)
+        src = _webui_full_src()
         assert "resolve" in src
         assert "discard" in src
 
@@ -369,4 +379,4 @@ class TestFastAPIRoutes:
 
     def test_backup_trigger_route_exists(self):
         """Manual backup trigger endpoint must be present."""
-        assert "/api/backups/trigger" in _src(WEBUI_APP)
+        assert "/api/backups/trigger" in _webui_full_src()

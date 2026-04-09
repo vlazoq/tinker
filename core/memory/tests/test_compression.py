@@ -59,17 +59,18 @@ class FakeEmbeddings:
 
 
 class OrthogonalEmbeddings:
-    """Returns [1,0,0] for 'original' and [0,1,0] for 'summary' calls."""
+    """Returns [1,0,0] for the first call (original text) and [0,1,0] for all
+    subsequent calls (summaries), so similarity is always 0.0 even across
+    quality retries."""
 
     def __init__(self):
-        self._call_count = 0
+        self._first_done = False
 
     async def embed(self, text: str) -> list[float]:
-        self._call_count += 1
-        if self._call_count % 2 == 1:
+        if not self._first_done:
+            self._first_done = True
             return [1.0, 0.0, 0.0]
-        else:
-            return [0.0, 1.0, 0.0]
+        return [0.0, 1.0, 0.0]
 
 
 # ---------------------------------------------------------------------------

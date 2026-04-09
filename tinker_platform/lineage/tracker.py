@@ -100,6 +100,19 @@ class LineageTracker:
         self._db_path = db_path
         self._conn = None
         self._lock = asyncio.Lock()
+        self._disabled_warned = False
+
+    def _check_disabled(self) -> bool:
+        """Return True if the tracker is disabled. Logs a one-time warning."""
+        if self._conn:
+            return False
+        if not self._disabled_warned:
+            self._disabled_warned = True
+            logger.warning(
+                "LineageTracker is disabled (no DB connection). "
+                "Lineage operations will be silently skipped."
+            )
+        return True
 
     async def connect(self) -> None:
         """Create the lineage database and schema."""
@@ -175,7 +188,7 @@ class LineageTracker:
         -------
         str : The edge ID, or None if the tracker is disabled or cycle detected.
         """
-        if not self._conn:
+        if self._check_disabled():
             return None
 
         # Cycle detection: would parent_id become a descendant of child_id?
@@ -232,7 +245,7 @@ class LineageTracker:
         -------
         list[dict] : List of parent edge dicts.
         """
-        if not self._conn:
+        if self._check_disabled():
             return []
         try:
             cursor = await self._conn.execute(
@@ -257,7 +270,7 @@ class LineageTracker:
         -------
         list[dict] : List of child edge dicts.
         """
-        if not self._conn:
+        if self._check_disabled():
             return []
         try:
             cursor = await self._conn.execute(
@@ -348,7 +361,7 @@ class LineageTracker:
         -------
         list[dict] : Matching edges.
         """
-        if not self._conn:
+        if self._check_disabled():
             return []
         try:
             if role == "parent":
@@ -384,7 +397,7 @@ class LineageTracker:
         -------
         list[dict] : All edges with that operation, ordered by creation time.
         """
-        if not self._conn:
+        if self._check_disabled():
             return []
         try:
             cursor = await self._conn.execute(
@@ -415,7 +428,7 @@ class LineageTracker:
             "by_child_type": {},
             "by_operation": {},
         }
-        if not self._conn:
+        if self._check_disabled():
             return stats
 
         try:
