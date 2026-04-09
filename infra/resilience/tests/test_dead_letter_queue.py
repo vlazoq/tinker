@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+aiosqlite = pytest.importorskip("aiosqlite", reason="aiosqlite required for DLQ tests")
+
 from infra.resilience.dead_letter_queue import DeadLetterQueue
 
 

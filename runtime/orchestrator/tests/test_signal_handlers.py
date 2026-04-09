@@ -121,10 +121,10 @@ class TestInstallSignalHandlersWindowsFallback:
         ):
             orch._install_signal_handlers()
 
-        assert installed_handler, "No signal handler was installed"
-        # Simulate Ctrl-C: call the lambda with (sig_num, frame) as the OS would.
-        installed_handler[0](signal.SIGINT, None)
-        mock_shutdown.assert_called_once()
+            assert installed_handler, "No signal handler was installed"
+            # Simulate Ctrl-C: call the lambda with (sig_num, frame) as the OS would.
+            installed_handler[0](signal.SIGINT, None)
+            mock_shutdown.assert_called_once()
 
     def test_exception_during_fallback_install_is_swallowed(self) -> None:
         """If signal.signal itself raises, the method must not propagate."""

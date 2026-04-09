@@ -208,8 +208,8 @@ class TestConfigEndpoints:
         cfg_file = tmp_path / "config.json"
         with (
             patch("ui.core.CONFIG_FILE", cfg_file),
-            patch("ui.web.app.load_config", lambda: {}),
-            patch("ui.web.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))),
+            patch("ui.web.routes.config.load_config", lambda: {}),
+            patch("ui.web.routes.config.save_config", lambda x: cfg_file.write_text(json.dumps(x))),
         ):
             # Build a valid payload from the schema defaults
             orch: dict[str, Any] = {}
@@ -319,7 +319,7 @@ class TestFlagPersistence:
 
         with (
             patch("ui.core.FLAGS_FILE", flags_file),
-            patch("ui.web.app.FLAGS_FILE", flags_file),
+            patch("ui.web.routes.config.FLAGS_FILE", flags_file),
         ):
             yield TestClient(app, raise_server_exceptions=True)
 
@@ -378,10 +378,10 @@ class TestConfigPersistence:
         with (
             patch("ui.core.CONFIG_FILE", cfg_file),
             patch(
-                "ui.web.app.load_config",
+                "ui.web.routes.config.load_config",
                 lambda: json.loads(cfg_file.read_text()) if cfg_file.exists() else {},
             ),
-            patch("ui.web.app.save_config", lambda x: cfg_file.write_text(json.dumps(x))),
+            patch("ui.web.routes.config.save_config", lambda x: cfg_file.write_text(json.dumps(x))),
         ):
             yield TestClient(app, raise_server_exceptions=True)
 
@@ -729,8 +729,8 @@ class TestSSEStream:
         mock_request.is_disconnected = AsyncMock(return_value=True)  # disconnect at once
 
         with (
-            patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
-            patch("ui.web.app.load_state", return_value={"totals": {}}),
+            patch("ui.web.routes.streaming.asyncio.wait_for", side_effect=TimeoutError),
+            patch("ui.web.routes.streaming.load_state", return_value={"totals": {}}),
         ):
             response = await api_logs_stream(request=mock_request, level="INFO")
 
@@ -747,8 +747,8 @@ class TestSSEStream:
         mock_request.is_disconnected = AsyncMock(return_value=True)
 
         with (
-            patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
-            patch("ui.web.app.load_state", return_value={"totals": {}}),
+            patch("ui.web.routes.streaming.asyncio.wait_for", side_effect=TimeoutError),
+            patch("ui.web.routes.streaming.load_state", return_value={"totals": {}}),
         ):
             response = await api_logs_stream(request=mock_request)
 
@@ -787,8 +787,8 @@ class TestSSEStream:
 
         chunks = []
         with (
-            patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
-            patch("ui.web.app.load_state", side_effect=state_iter),
+            patch("ui.web.routes.streaming.asyncio.wait_for", side_effect=TimeoutError),
+            patch("ui.web.routes.streaming.load_state", side_effect=state_iter),
         ):
             response = await api_logs_stream(request=mock_request)
             async for chunk in response.body_iterator:
@@ -796,7 +796,7 @@ class TestSSEStream:
                 if text:
                     chunks.append(text)
 
-        assert any(c.startswith("data: ") for c in chunks), (
+        assert any("data: " in c for c in chunks), (
             f"No 'data: ' line in SSE output. Chunks: {chunks}"
         )
 
@@ -833,8 +833,8 @@ class TestSSEStream:
             },
         ]
         with (
-            patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
-            patch("ui.web.app.load_state", side_effect=iter(states)),
+            patch("ui.web.routes.streaming.asyncio.wait_for", side_effect=TimeoutError),
+            patch("ui.web.routes.streaming.load_state", side_effect=iter(states)),
         ):
             response = await api_logs_stream(request=mock_request)
             async for chunk in response.body_iterator:
@@ -875,8 +875,8 @@ class TestSSEStream:
         }
         chunks = []
         with (
-            patch("ui.web.app.asyncio.sleep", new=AsyncMock(return_value=None)),
-            patch("ui.web.app.load_state", return_value=constant_state),
+            patch("ui.web.routes.streaming.asyncio.wait_for", side_effect=TimeoutError),
+            patch("ui.web.routes.streaming.load_state", return_value=constant_state),
         ):
             response = await api_logs_stream(request=mock_request)
             async for chunk in response.body_iterator:
@@ -884,7 +884,7 @@ class TestSSEStream:
                 if text:
                     chunks.append(text)
 
-        data_lines = [c for c in chunks if c.startswith("data: ")]
+        data_lines = [c for c in chunks if "data: " in c]
         # The generator emits once on the first iteration (last_micro=-1 vs micro=0),
         # then never again while micro stays the same.
         assert len(data_lines) == 1, (
@@ -988,7 +988,7 @@ class TestHTTPSemantics:
 
     def test_cors_origin_header_present_on_requests(self):
         """The CORS middleware must include the Allow-Origin header."""
-        r = client.get("/api/health", headers={"Origin": "http://localhost:3000"})
+        r = client.get("/api/health", headers={"Origin": "http://localhost:8082"})
         assert "access-control-allow-origin" in r.headers, (
             "CORS middleware not active — missing Access-Control-Allow-Origin header"
         )
@@ -997,7 +997,7 @@ class TestHTTPSemantics:
         r = client.options(
             "/api/config",
             headers={
-                "Origin": "http://localhost:3000",
+                "Origin": "http://localhost:8082",
                 "Access-Control-Request-Method": "POST",
             },
         )
@@ -1182,10 +1182,10 @@ class TestAuthSurface:
 
     def test_cors_wildcard_is_present(self):
         """
-        CORS is currently configured with allow_origins=["*"].
-        This test documents the current posture.
+        CORS is configured with an explicit allow-list (default:
+        ``http://localhost:8082``, overridable via ``TINKER_CORS_ORIGINS``).
 
-        Production hardening: replace "*" with explicit allowed origins.
+        An unknown origin must be rejected by the CORS middleware.
         """
         r = client.options(
             "/api/health",
@@ -1194,9 +1194,8 @@ class TestAuthSurface:
                 "Access-Control-Request-Method": "GET",
             },
         )
-        # The wildcard CORS middleware returns 200 for any origin.
-        # In production: origins should be an explicit allowlist.
-        assert r.status_code in (200, 405)  # 405 if OPTIONS not explicitly handled
+        # The restrictive CORS middleware rejects unknown origins with 400.
+        assert r.status_code == 400
 
     def test_internal_server_error_does_not_leak_stack_trace(self):
         """

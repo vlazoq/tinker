@@ -206,7 +206,17 @@ Quality requirements:
                 ext = ".py" if task.language == "python" else f".{task.language}"
                 filepath = str(Path(self.config.output_dir) / f"{task.subsystem}_{i}{ext}")
 
-            ok, result_path = write_file(filepath, block)
+            # Prevent path traversal: resolve relative to output_dir and verify
+            _output_root = Path(self.config.output_dir).resolve()
+            _resolved = (_output_root / filepath).resolve()
+            if not str(_resolved).startswith(str(_output_root)):
+                self.logger.warning(
+                    "CoderMinion: blocked path traversal attempt: %s", filepath
+                )
+                syntax_errors.append(f"{filepath}: path traversal blocked")
+                continue
+
+            ok, result_path = write_file(str(_resolved), block)
             if ok:
                 files_written.append(result_path)
                 self.logger.info("CoderMinion: wrote %s", filepath)

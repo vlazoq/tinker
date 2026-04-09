@@ -79,7 +79,7 @@ def make_monitor(**overrides) -> StagnationMonitor:
         ),
         run_all_detectors=True,
     )
-    backend = FallbackTFIDFBackend(max_vocab=256)
+    backend = FallbackTFIDFBackend(dim=256)
     monitor = StagnationMonitor(config=cfg, embedding_backend=backend)
     return monitor
 

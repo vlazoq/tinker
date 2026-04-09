@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import pytest
 
+aiosqlite = pytest.importorskip("aiosqlite", reason="aiosqlite required for audit log tests")
+
 from infra.observability.audit_log import AuditEventType, AuditLog
 
 
