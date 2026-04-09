@@ -137,21 +137,36 @@ class PriorityScorer:
 
     Stateless design
     ----------------
-    The scorer holds only its weights (``self.w``).  It doesn't store any
-    state about tasks, subsystems, or history.  Every score is computed
-    fresh from the data already stored on the Task object.
+    The scorer holds only its weights (``self.w``) and an optional focus
+    subsystem.  Every score is computed fresh from the data already stored
+    on the Task object.
 
     Parameters
     ----------
     weights : ScorerWeights | None
         Custom weights.  If None, the default weights are used.
+    depth_first_weight : float
+        Additive bonus for tasks whose subsystem matches
+        ``focus_subsystem``.  0.0 disables depth-first mode.
+    focus_subsystem : str | None
+        The subsystem to prioritise.  Updated by the orchestrator after
+        each micro loop so the scorer keeps working on the same area.
     """
 
-    def __init__(self, weights: ScorerWeights | None = None, seed: int | None = None):
+    def __init__(
+        self,
+        weights: ScorerWeights | None = None,
+        seed: int | None = None,
+        depth_first_weight: float = 0.0,
+        focus_subsystem: str | None = None,
+    ):
         # Use the provided weights, or fall back to the defaults
         self.w = weights or ScorerWeights()
         # Optional seed for reproducible jitter (useful in tests)
         self._rng = random.Random(seed)
+        # Depth-first mode: prefer tasks in the same subsystem
+        self.depth_first_weight = depth_first_weight
+        self.focus_subsystem = focus_subsystem
 
     # =========================================================================
     # Public API
@@ -192,6 +207,17 @@ class PriorityScorer:
         # a push regardless of how their other signals look.
         if task.is_exploration:
             raw = min(1.0, raw + self.w.exploration_bump)
+
+        # Depth-first bonus: if we're currently focused on a subsystem,
+        # give tasks in that same subsystem an additive boost.  This keeps
+        # the system working on one area until it's solid, rather than
+        # constantly switching between subsystems.
+        if (
+            self.depth_first_weight > 0.0
+            and self.focus_subsystem is not None
+            and self._subsystem_match(task)
+        ):
+            raw = min(1.0, raw + self.depth_first_weight)
 
         # Random jitter of ±1% to break exact ties naturally.
         # Without this, two tasks with identical inputs would always be
@@ -325,6 +351,20 @@ class PriorityScorer:
         """
         return _TYPE_VALUES.get(task.type, 0.5)
 
+    def _subsystem_match(self, task: Task) -> bool:
+        """Return True if the task belongs to the current focus subsystem."""
+        task_sub = getattr(task, "subsystem", None)
+        if task_sub is None:
+            return False
+        # Subsystem may be an enum or a plain string
+        task_sub_str = task_sub.value if hasattr(task_sub, "value") else str(task_sub)
+        focus_str = (
+            self.focus_subsystem.value
+            if hasattr(self.focus_subsystem, "value")
+            else str(self.focus_subsystem)
+        )
+        return task_sub_str == focus_str
+
     # =========================================================================
     # Diagnostic helper
     # =========================================================================
@@ -354,5 +394,12 @@ class PriorityScorer:
             "type_bonus": self.w.type_bonus * self._type_component(task),
             # Show 0.0 for exploration_bump when the task isn't an exploration task
             "exploration_bump": self.w.exploration_bump if task.is_exploration else 0.0,
+            "depth_first_bonus": (
+                self.depth_first_weight
+                if self.depth_first_weight > 0.0
+                and self.focus_subsystem is not None
+                and self._subsystem_match(task)
+                else 0.0
+            ),
             "raw_total": self.score(task),
         }

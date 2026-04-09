@@ -35,7 +35,9 @@ How the three loops use this config
                ``architect_timeout``, ``critic_timeout``,
                ``max_researcher_calls_per_loop``, ``context_max_artifacts``,
                ``min_critic_score``, ``max_refinement_iterations``,
-               ``max_validation_retries``
+               ``max_validation_retries``, ``completeness_min_length``
+
+  Scorer     — ``depth_first_weight``
 
   Meso loop  — ``meso_min_artifacts``, ``synthesizer_timeout``
 
@@ -219,16 +221,41 @@ class OrchestratorConfig:
     # Architect is re-prompted with the Critic's feedback injected into its
     # context and the Critic re-evaluates.  Repeats until the score meets the
     # threshold or max_refinement_iterations is exhausted.
-    # Set to 0.0 to disable (default — preserves the original single-pass
-    # behaviour).
-    min_critic_score: float = 0.0
-    max_refinement_iterations: int = 3
+    #
+    # Default: 0.6 — the system will iterate until the Critic deems the output
+    # at least "acceptable".  Set to 0.0 to disable and revert to single-pass
+    # behaviour.  Override via TINKER_MIN_CRITIC_SCORE env var.
+    min_critic_score: float = field(
+        default_factory=lambda: float(os.getenv("TINKER_MIN_CRITIC_SCORE", "0.6"))
+    )
+    max_refinement_iterations: int = field(
+        default_factory=lambda: int(os.getenv("TINKER_MAX_REFINEMENT_ITERATIONS", "5"))
+    )
 
     # ── Validation retry ─────────────────────────────────────────────────────
     # If the Architect returns an output that looks incomplete (very short
     # content), Tinker re-prompts with a note about the failure and retries up
     # to this many times before accepting the result.  Set to 0 to disable.
     max_validation_retries: int = 2
+
+    # ── Completeness verification ────────────────────────────────────────────
+    # After the refinement loop, verify the final output meets a minimum
+    # content length (in characters).  If the output is shorter than this,
+    # the Architect is re-prompted with explicit instructions to elaborate.
+    # This catches "skeleton" or "placeholder" outputs that pass the Critic
+    # but aren't actually useful.  Set to 0 to disable.
+    completeness_min_length: int = field(
+        default_factory=lambda: int(os.getenv("TINKER_COMPLETENESS_MIN_LENGTH", "200"))
+    )
+
+    # ── Depth-first scoring ──────────────────────────────────────────────────
+    # Weight for the "subsystem focus" component in the PriorityScorer.
+    # When > 0, the scorer prefers tasks in the same subsystem that was just
+    # worked on, encouraging the system to finish one area before moving on.
+    # Set to 0.0 to disable (breadth-first, original behaviour).
+    depth_first_weight: float = field(
+        default_factory=lambda: float(os.getenv("TINKER_DEPTH_FIRST_WEIGHT", "0.25"))
+    )
 
     # ── Meso loop ───────────────────────────────────────────────────────────
     # The meso loop synthesises a subsystem-level design document from the
@@ -462,6 +489,12 @@ class OrchestratorConfig:
         )
         self.max_validation_retries = _positive_int(
             self.max_validation_retries, "max_validation_retries", min_val=0
+        )
+        self.completeness_min_length = _positive_int(
+            self.completeness_min_length, "completeness_min_length", min_val=0
+        )
+        self.depth_first_weight = _positive_float(
+            self.depth_first_weight, "depth_first_weight", min_val=0.0
         )
 
         # Research depth

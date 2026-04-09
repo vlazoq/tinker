@@ -92,6 +92,89 @@ async def notify_state_change(publisher: StatePublisher, state_dict: dict) -> No
     )
 
 
+@router.get("/api/activity/stream")
+async def api_activity_stream(request: Request):
+    """SSE endpoint for human-readable activity feed entries.
+
+    Streams real-time activity messages describing what Tinker is doing.
+    Clients receive entries like:
+      - "Selecting next task from queue"
+      - "Critic scored output: 0.72"
+      - "Refinement iteration 2: score 0.45 < 0.60, re-running"
+
+    Connect with EventSource:
+      const es = new EventSource('/api/activity/stream');
+      es.addEventListener('activity', (e) => { ... });
+    """
+
+    async def gen() -> AsyncIterator[str]:
+        queue = await _publisher.subscribe()
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=5.0)
+                    # Only forward activity events
+                    if "\"type\": \"activity\"" in message or '"type":"activity"' in message:
+                        yield message
+                    while not queue.empty():
+                        msg = queue.get_nowait()
+                        if "\"type\": \"activity\"" in msg or '"type":"activity"' in msg:
+                            yield msg
+                except TimeoutError:
+                    # Send keepalive comment to prevent connection timeout
+                    yield ": keepalive\n\n"
+        finally:
+            await _publisher.unsubscribe(queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/api/activity/history")
+async def api_activity_history(limit: int = 50):
+    """Return recent activity feed entries as JSON.
+
+    Useful for populating the UI on initial page load before the SSE
+    stream starts delivering new entries.
+    """
+    feed = _get_activity_feed()
+    if feed is None:
+        return {"entries": [], "count": 0}
+    entries = feed.get_history(limit=min(limit, 200))
+    return {"entries": entries, "count": len(entries)}
+
+
+def _get_activity_feed():
+    """Get the global ActivityFeed instance if available."""
+    try:
+        from infra.observability.activity_feed import ActivityFeed
+        # The feed is attached to the publisher at startup
+        return getattr(_publisher, "_activity_feed", None)
+    except ImportError:
+        return None
+
+
+def attach_activity_feed(feed) -> None:
+    """Attach an ActivityFeed to the publisher so it pushes to SSE clients.
+
+    Called once at startup from bootstrap/components.py or main.py.
+    """
+    _publisher._activity_feed = feed
+
+    async def _on_activity(entry) -> None:
+        """Listener that pushes activity entries to all SSE clients."""
+        data = entry.to_dict()
+        await _publisher.publish("activity", data)
+
+    feed.add_listener(_on_activity)
+    logger.info("ActivityFeed attached to SSE publisher")
+
+
 @router.get("/api/logs/stream")
 async def api_logs_stream(request: Request, level: str = "INFO"):
     """SSE endpoint: true push via StatePublisher with file-poll fallback."""

@@ -254,6 +254,17 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
     except ImportError:
         pass
 
+    # Wire the activity feed to the web UI's SSE publisher so clients
+    # see real-time human-readable status messages.
+    _activity_feed = components.get("activity_feed")
+    if _activity_feed is not None:
+        try:
+            from ui.web.routes.streaming import attach_activity_feed
+
+            attach_activity_feed(_activity_feed)
+        except ImportError:
+            pass
+
     def _dashboard_snapshot_cb() -> None:
         state_dict = orchestrator.state.to_dict()
         _publish_state(_make_dashboard_patch(state_dict))
@@ -284,6 +295,13 @@ async def _async_main(problem: str, use_stubs: bool, dashboard: bool) -> None:
         research_team=components.get("research_team"),
         research_enhancer=components.get("research_enhancer"),
     )
+
+    # ── Wire enterprise components into orchestrator ────────────────────────
+    # The micro loop reads from orch.enterprise to access rate limiters,
+    # idempotency cache, lineage tracker, alerter, and activity feed.
+    orchestrator.enterprise = enterprise
+    if _activity_feed is not None:
+        orchestrator.enterprise["activity_feed"] = _activity_feed
 
     # ── Self-improvement engine ─────────────────────────────────────────────
     _self_improvement_engine = None

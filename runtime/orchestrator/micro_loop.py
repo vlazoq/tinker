@@ -160,9 +160,21 @@ async def run_micro_loop(orch: Orchestrator) -> MicroLoopRecord:
     _audit_log: object | None = enterprise.get("audit_log")
     alerter: object | None = enterprise.get("alerter")
 
+    # ── Activity feed helper ───────────────────────────────────────────────
+    # Posts human-readable status messages to the activity feed (if wired).
+    _activity_feed = enterprise.get("activity_feed")
+
+    async def _activity(msg: str, category: str = "micro", **kw) -> None:
+        if _activity_feed is not None:
+            try:
+                await _activity_feed.post(msg, category=category, **kw)
+            except Exception:
+                pass  # Never let activity feed errors affect the loop
+
     # ── 1. Task Selection ────────────────────────────────────────────────────
     # Ask the task engine for the next task to work on.  If there's nothing
     # in the queue, the task engine is expected to create one.
+    await _activity("Selecting next task from queue", category="task")
     task = await _select_task(orch)
     if task is None:
         # No task available at all — this is unusual.  Raise immediately.
@@ -215,6 +227,11 @@ async def run_micro_loop(orch: Orchestrator) -> MicroLoopRecord:
         iteration,
         task["id"],
         task.get("subsystem"),
+    )
+    await _activity(
+        f"Working on: {task.get('description', task['id'])[:80]} "
+        f"({task.get('subsystem', 'unknown')})",
+        category="task",
     )
 
     # ── Tracing: wrap the entire micro loop in a trace ─────────────────────
@@ -274,6 +291,7 @@ async def run_micro_loop(orch: Orchestrator) -> MicroLoopRecord:
                     exc,
                 )
 
+        await _activity("Calling Architect AI", category="micro")
         with _span("architect_call", {"task_id": task["id"]}):
             architect_result = await _call_architect_with_validation_retry(
                 orch, task, context, cfg.architect_timeout, cfg.max_validation_retries
@@ -355,6 +373,10 @@ async def run_micro_loop(orch: Orchestrator) -> MicroLoopRecord:
             # ── 5a. LLM Critic call (skipped in "human" mode) ───────────────
             critic_result = None
             if cfg.judge_mode != "human":
+                await _activity(
+                    f"Critic evaluating output (iteration {_refinement_iter + 1})",
+                    category="quality",
+                )
                 # Acquire rate-limiter token before each Critic call.
                 if _RATE_LIMITER_AVAILABLE and rate_limiters is not None:
                     try:
@@ -469,6 +491,11 @@ async def run_micro_loop(orch: Orchestrator) -> MicroLoopRecord:
 
             # Score below threshold and iterations remain — re-run Architect
             # with Critic feedback injected, then loop back to re-score.
+            await _activity(
+                f"Refining: score {_score:.2f} < {_min_score:.2f}, "
+                f"re-running Architect with feedback (iteration {_refinement_iter})",
+                category="quality",
+            )
             logger.info(
                 "micro[%d] refinement iter %d: score=%.2f < %.2f — re-running Architect",
                 iteration,
@@ -495,6 +522,53 @@ async def run_micro_loop(orch: Orchestrator) -> MicroLoopRecord:
             )
             record.architect_tokens += architect_result.get("tokens_used", 0)
 
+        # ── 5c. Completeness verification ────────────────────────────────────
+        # Even after refinement, the Architect may produce a "skeleton" output
+        # that technically passes the Critic but is too short to be genuinely
+        # useful.  If the content is below the configured minimum length, we
+        # re-prompt with explicit instructions to produce a complete result.
+        _completeness_min = getattr(cfg, "completeness_min_length", 0)
+        if _completeness_min > 0:
+            _content = architect_result.get("content", "").strip()
+            _completeness_attempts = 0
+            _max_completeness_retries = 2
+            while len(_content) < _completeness_min and _completeness_attempts < _max_completeness_retries:
+                _completeness_attempts += 1
+                logger.warning(
+                    "micro[%d] completeness check failed: %d chars < %d minimum "
+                    "(attempt %d/%d) — re-prompting for complete output",
+                    iteration,
+                    len(_content),
+                    _completeness_min,
+                    _completeness_attempts,
+                    _max_completeness_retries,
+                )
+                _completeness_ctx = dict(_refinement_context)
+                _completeness_ctx["completeness_feedback"] = (
+                    f"Your previous response was only {len(_content)} characters long, "
+                    f"which is below the minimum of {_completeness_min} characters. "
+                    "This output appears to be a skeleton or placeholder. "
+                    "Please produce a COMPLETE, FULLY DETAILED response with:\n"
+                    "- Concrete implementation details (not placeholders)\n"
+                    "- Specific technical decisions with rationale\n"
+                    "- All sections fully written out\n"
+                    "Do NOT use 'TODO', 'TBD', or '...' placeholders."
+                )
+                architect_result = await _call_architect(
+                    orch, task, _completeness_ctx, cfg.architect_timeout
+                )
+                record.architect_tokens += architect_result.get("tokens_used", 0)
+                _content = architect_result.get("content", "").strip()
+
+            if len(_content) < _completeness_min:
+                logger.warning(
+                    "micro[%d] completeness check still failing after %d retries "
+                    "(%d chars) — proceeding with best effort",
+                    iteration,
+                    _max_completeness_retries,
+                    len(_content),
+                )
+
         # ── Quality gate ─────────────────────────────────────────────────────
         # Alert operators when critic quality drops below the configured threshold.
         # Consecutive sub-threshold scores escalate from WARNING to ERROR.
@@ -505,6 +579,7 @@ async def run_micro_loop(orch: Orchestrator) -> MicroLoopRecord:
         # single "artifact" and save it to long-term memory.  This artifact
         # will be used as context in future micro loops and as raw material
         # for the next meso synthesis.
+        await _activity("Storing artifact to memory", category="micro")
         with _span("store_artifact"):
             artifact_id = await _store_artifact(orch, task, architect_result, critic_result)
         record.artifact_id = artifact_id

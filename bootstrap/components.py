@@ -195,6 +195,14 @@ def build_real_components(problem: str) -> dict:
     )
     webhook_dispatcher.attach(event_bus)
 
+    # ── Activity Feed (human-readable status stream) ────────────────────────
+    from infra.observability.activity_feed import ActivityFeed
+
+    activity_feed = ActivityFeed(
+        max_history=int(os.getenv("TINKER_ACTIVITY_HISTORY_SIZE", "200")),
+    )
+    activity_feed.wire_event_bus(event_bus)
+
     return {
         "router": router,
         "memory_manager": memory_manager,
@@ -209,6 +217,7 @@ def build_real_components(problem: str) -> dict:
         "event_bus": event_bus,
         "research_team": research_team,
         "research_enhancer": research_enhancer,
+        "activity_feed": activity_feed,
     }
 
 
