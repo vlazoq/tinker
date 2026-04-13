@@ -52,7 +52,7 @@ dependencies = [
 
     # ── Dashboard / TUI ───────────────────────────────────────────────────────
     "textual>=0.52.0",          # terminal UI framework
-    "rich>=13.7.0",             # rich terminal output (pulled in by Textual)
+    "rich>=15.0.0",             # rich terminal output (pulled in by Textual)
     "loguru>=0.7.0",            # structured logging
 
     # ── Configuration ─────────────────────────────────────────────────────────
